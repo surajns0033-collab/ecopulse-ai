@@ -1,0 +1,16 @@
+{
+  "name": "EcoPulse AI",
+  "short_name": "EcoPulse",
+  "description": "AI-powered environmental assistant",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#22c55e",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}

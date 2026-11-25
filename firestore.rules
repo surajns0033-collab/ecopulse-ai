@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isNonGuest() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function ownsIncoming() {
+      return signedIn() && request.resource.data.userId == request.auth.uid;
+    }
+
+    function ownsExisting() {
+      return signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Guests may read the public channel, but only Google/email accounts post.
+    // Email addresses are not accepted as a community-post field.
+    match /communityPosts/{postId} {
+      allow read: if signedIn();
+      allow create: if isNonGuest()
+        && ownsIncoming()
+        && request.resource.data.keys().hasOnly([
+          'userId', 'author', 'text', 'location', 'tags', 'createdAt'
+        ])
+        && request.resource.data.author is string
+        && request.resource.data.author.size() >= 2
+        && request.resource.data.author.size() <= 24
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1
+        && request.resource.data.text.size() <= 1000
+        && request.resource.data.location is string
+        && request.resource.data.location.size() <= 100;
+      allow update, delete: if isNonGuest() && ownsExisting();
+    }
+
+    match /environmentalReports/{reportId} {
+      allow create: if ownsIncoming();
+      allow read, update, delete: if ownsExisting();
+    }
+
+    match /emailDrafts/{draftId} {
+      allow create: if ownsIncoming();
+      allow read, update, delete: if ownsExisting();
+    }
+
+    match /meetupRSVPs/{rsvpId} {
+      allow create: if ownsIncoming();
+      allow read, update, delete: if ownsExisting();
+    }
+
+    match /meetups/{meetupId} {
+      allow read: if signedIn();
+      allow create: if isNonGuest() && ownsIncoming();
+      allow update, delete: if isNonGuest() && ownsExisting();
+    }
+
+    match /{collectionName}/{documentId} {
+      allow read, write: if signedIn()
+        && collectionName in ['communityActions', 'userActions', 'aiConversations', 'aiActionLogs']
+        && (ownsIncoming() || ownsExisting());
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
