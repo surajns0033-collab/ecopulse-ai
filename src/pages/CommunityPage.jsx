@@ -1,5 +1,5 @@
 // CommunityPage — Public Community Chat Channel across all locations + Upcoming Events
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { tools } from '../services/agentTools';
 import { useAuth } from '../contexts/AuthContext';
@@ -86,6 +86,7 @@ export default function CommunityPage() {
   const [msgText, setMsgText] = useState('');
   const [postCity, setPostCity] = useState('Global');
   const [sending, setSending] = useState(false);
+  const sendLockRef = useRef(false);
   const [nameInput, setNameInput] = useState(communityName || '');
   const [nameError, setNameError] = useState('');
 
@@ -122,7 +123,8 @@ export default function CommunityPage() {
   async function handleSendPost(e) {
     e.preventDefault();
     const text = msgText.trim();
-    if (!text || sending || !canPost) return;
+    if (!text || sending || sendLockRef.current || !canPost) return;
+    sendLockRef.current = true;
     setSending(true);
     try {
       const created = await tools.createCommunityPost({
@@ -138,6 +140,7 @@ export default function CommunityPage() {
     } catch (err) {
       console.error('Failed to post:', err);
     } finally {
+      sendLockRef.current = false;
       setSending(false);
     }
   }
