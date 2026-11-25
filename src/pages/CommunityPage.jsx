@@ -6,9 +6,9 @@ import { useAuth } from '../contexts/AuthContext';
 import Header from '../components/chat/Header';
 import BottomNav from '../components/BottomNav';
 import { format } from 'date-fns';
-import { Users, Calendar, Send, MapPin } from 'lucide-react';
+import { Users, Calendar, Send, MapPin, Trash2 } from 'lucide-react';
 
-function PostCard({ post }) {
+function PostCard({ post, canDelete, onDelete }) {
   function getInitials(name) {
     return (name || 'U').split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
   }
@@ -32,6 +32,7 @@ function PostCard({ post }) {
             <div style={{ fontSize: 11, color: '#94a3b8' }}>{formatDate(post.createdAt)}</div>
           </div>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {post.location && (
           <span style={{
             display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -41,6 +42,17 @@ function PostCard({ post }) {
             <MapPin size={10} /> {post.location}
           </span>
         )}
+        {canDelete && (
+          <button
+            onClick={() => onDelete(post)}
+            aria-label="Delete your message"
+            title="Delete your message"
+            style={{ border: 0, background: '#fee2e2', color: '#b91c1c', borderRadius: 8, padding: 5, cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
+        </div>
       </div>
       <div style={{ fontSize: 13.5, color: '#1e293b', lineHeight: 1.5 }}>{post.text || post.description}</div>
     </div>
@@ -131,6 +143,17 @@ export default function CommunityPage() {
   async function handleSignInToPost() {
     await signOut();
     navigate('/');
+  }
+
+  async function handleDeletePost(post) {
+    if (!user || post.userId !== user.uid) return;
+    if (!window.confirm('Delete this community message?')) return;
+    try {
+      await tools.deleteCommunityPost({ postId: post.id, userId: user.uid });
+      setPosts((current) => current.filter((item) => item.id !== post.id));
+    } catch (err) {
+      console.error('Could not delete community message:', err);
+    }
   }
 
   function formatEventDate(d) {
@@ -240,7 +263,14 @@ export default function CommunityPage() {
                 <div style={{ fontSize: 12, marginTop: 4 }}>Share an eco-update, local alert, or invite people from your city below.</div>
               </div>
             ) : (
-              visiblePosts.map((post, i) => <PostCard key={post.id || i} post={post} />)
+              visiblePosts.map((post, i) => (
+                <PostCard
+                  key={post.id || i}
+                  post={post}
+                  canDelete={Boolean(user && post.userId === user.uid)}
+                  onDelete={handleDeletePost}
+                />
+              ))
             )}
           </div>
         )}

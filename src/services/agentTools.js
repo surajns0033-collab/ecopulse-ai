@@ -167,6 +167,22 @@ export const tools = {
     );
   },
 
+  /** Delete a community post owned by the current user. Firestore rules enforce ownership too. */
+  deleteCommunityPost: async ({ postId, userId }) => {
+    if (!postId || !userId) throw new Error('Post and user are required.');
+    return firestoreOrLocal(
+      async () => {
+        await deleteDoc(doc(db, COLLECTIONS.COMMUNITY_POSTS, postId));
+        return { success: true };
+      },
+      () => {
+        const remaining = readLocal(STORAGE_KEYS.POSTS).filter((post) => !(post.id === postId && post.userId === userId));
+        writeLocal(STORAGE_KEYS.POSTS, remaining);
+        return { success: true };
+      }
+    );
+  },
+
   /**
    * Create an environmental report
    */
