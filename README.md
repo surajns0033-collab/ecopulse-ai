@@ -1,106 +1,203 @@
-# EcoPulse AI
+<div align="center">
+  <img src="public/favicon.svg" alt="EcoPulse AI Logo" width="88" />
+  <h1>EcoPulse AI</h1>
+  <p>
+    <strong>Conversational intelligence for live environmental telemetry, civic grievance routing, and privacy-first community action.</strong>
+  </p>
 
-> A privacy-conscious AI companion for everyday questions, live environmental data, civic complaints, community coordination, and grounded web research.
+  <p>
+    <a href="https://ecopulse-ai-ruby.vercel.app">
+      <img src="https://img.shields.io/badge/Live_Demo-ecopulse--ai-16a34a?style=for-the-badge&logo=vercel&logoColor=white" alt="Live Demo" />
+    </a>
+    <img src="https://img.shields.io/badge/React-19.3-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 19" />
+    <img src="https://img.shields.io/badge/Vite-8.3-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite 8" />
+    <img src="https://img.shields.io/badge/Firebase-Spark-FFCA28?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
+  </p>
 
-**Live application:** https://ecopulse-ai-ruby.vercel.app  
-**Firebase:** Spark free plan · Mumbai region · production security rules
+  <p>
+    <img src="https://img.shields.io/badge/Gemini_AI-Primary_LLM-8E75B2?style=flat-square&logo=googlegemini&logoColor=white" alt="Gemini AI" />
+    <img src="https://img.shields.io/badge/Tavily-Grounded_Search-111827?style=flat-square" alt="Tavily Search" />
+    <img src="https://img.shields.io/badge/Transformers.js-On--Device_CLIP-FFD21E?style=flat-square&logo=huggingface&logoColor=black" alt="Transformers.js" />
+    <img src="https://img.shields.io/badge/Tesseract.js-Opt--In_OCR-2563EB?style=flat-square" alt="Tesseract.js" />
+    <img src="https://img.shields.io/badge/Open--Meteo-Live_AQI_%26_Weather-0284C7?style=flat-square" alt="Open-Meteo" />
+    <img src="https://img.shields.io/badge/Vercel-Serverless_Proxy-000000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel" />
+  </p>
 
-EcoPulse combines natural-language conversation with deterministic tools. Gemini handles open-ended reasoning and writing; trusted APIs provide live AQI, weather, maps, search sources, and authority contacts. The app never needs to invent a live reading or government contact.
+  <p>
+    <a href="https://ecopulse-ai-ruby.vercel.app">Live App</a>
+    &nbsp;·&nbsp;
+    <a href="#-key-capabilities">Capabilities</a>
+    &nbsp;·&nbsp;
+    <a href="#-architecture">Architecture</a>
+    &nbsp;·&nbsp;
+    <a href="#-quick-start">Quick Start</a>
+    &nbsp;·&nbsp;
+    <a href="#-privacy--safety-model">Privacy & Safety</a>
+    &nbsp;·&nbsp;
+    <a href="FIREBASE_SETUP.md">Firebase Setup</a>
+  </p>
+</div>
 
-## Highlights
+---
 
-- **Natural AI conversation** for writing, planning, study, technology, brainstorming, decisions, and supportive chat.
-- **Live AQI and weather** from Open-Meteo with condition-based precautions.
-- **Typo-tolerant global maps** through Open-Meteo, Photon, Nominatim, and Google Maps links.
-- **Grounded web research** through Tavily with clickable citations.
-- **Image understanding** through Gemini Vision with a private on-device CLIP fallback.
-- **Opt-in OCR** for English, Hindi, and Marathi, with verification warnings.
-- **Complaint assistance** with issue classification, authority routing, report previews, and editable drafts.
-- **Privacy-minimized community** using a chosen public alias instead of an email address.
-- **Guest mode** with read-only access to the public community channel.
+## Overview
 
-## Architecture
+**EcoPulse AI** is a mobile-first Progressive Web App and civic-environmental assistant built with React, Vite, Firebase, and a multi-provider AI proxy. It combines natural-language reasoning with real-time environmental telemetry, verified municipal/forest authority routing, on-device vision & OCR fallbacks, and a privacy-minimized community channel.
 
-```text
-React UI
-  ├── Intent router
-  │    ├── AQI / weather        → Open-Meteo
-  │    ├── Maps                 → Open-Meteo + Photon + Nominatim
-  │    ├── Current web facts    → Tavily + cited links
-  │    ├── Complaints           → verified authority directory
-  │    └── General conversation → Gemini + safe fallbacks
-  ├── Image pipeline
-  │    ├── Gemini Vision
-  │    ├── On-device CLIP
-  │    └── Tesseract OCR (opt-in)
-  └── Firebase
-       ├── Google OAuth
-       ├── Passwordless email links
-       ├── Anonymous guest auth
-       └── Firestore community messages
+Instead of leaving users with generic chatbot replies or unverified contact details, EcoPulse AI routes queries through an intent engine to live APIs, verified official `.gov.in` / municipal directories, and server-side grounded search—while keeping all API secrets off the client bundle.
 
-Vite development proxy / Vercel Functions
-  └── keeps AI and search keys server-side
+---
+
+## ✨ Key Capabilities
+
+| Area | What It Does | Powered By |
+| :--- | :--- | :--- |
+| **Conversational Assistant** | Natural-language chat in **English, Hindi, and Hinglish** with automatic language detection, daily-life civic guidance, and deterministic fallback responses. | Gemini AI, OpenRouter Free, `fallbackBrain.js` |
+| **Live AQI & Weather** | Real-time Air Quality Index (`PM2.5`, `PM10`, `NO₂`, `O₃`), weather conditions, and actionable health insights for any city worldwide. | Open-Meteo Air Quality & Forecast APIs |
+| **Typo-Tolerant Global Maps** | Resolves misspelled or landmark-level locations (e.g., reserves, beaches, neighborhoods) into verified coordinates and Google Maps deep links. | Open-Meteo, Photon, Nominatim (OSM) |
+| **Civic Grievance & Email Routing** | Classifies incidents (tree cutting, mangrove dumping, open burning, sewage, waste), surfaces verified helplines/portals, and drafts formal complaints with **Forest Dept CC** and **1-click Gmail Compose**. | `authorityDirectory.js`, `agentTools.js` |
+| **Grounded Web Research** | Answers current-events and policy questions with cited, clickable official sources rather than ungrounded guesses. | Tavily Search API (`/api/ai/chat`) |
+| **Vision & Opt-In OCR** | Analyzes uploaded incident photos for severity and category, with private on-device classification and opt-in multilingual OCR (**English, Hindi, Marathi**). | Gemini Vision, Transformers.js (CLIP), Tesseract.js |
+| **Community & Eco-Meetups** | Public location-tagged community feed and local eco-events (cleanups, plantation drives) with RSVP support and guest read-only mode. | Firebase Auth, Cloud Firestore |
+
+---
+
+## 🏗 Architecture
+
+All AI and web-search provider secrets remain server-side behind `/api/ai/chat` (handled by the Vite dev proxy locally and Vercel Serverless Functions in production).
+
+```mermaid
+flowchart TB
+    UI["React 19 PWA UI<br/>(Chat, Meetups, Community, Report Detail)"] --> IE["Intent Engine & Orchestrator<br/>(intentEngine.js / agentOrchestrator.js)"]
+
+    IE -->|"AQI & Weather"| OM["Open-Meteo APIs"]
+    IE -->|"Geocoding & Maps"| GEO["Open-Meteo + Photon + Nominatim"]
+    IE -->|"Civic Complaints"| DIR["Verified Authority Directory<br/>(authorityDirectory.js / agentTools.js)"]
+    IE -->|"Chat & Web Research"| PROXY["/api/ai/chat<br/>(Vite Dev Proxy / Vercel Function)"]
+
+    PROXY --> GEM["Google Gemini"]
+    PROXY --> TAV["Tavily Grounded Search"]
+    PROXY --> OR["OpenRouter Free Fallback"]
+
+    UI -->|"Image Upload"| VIS["Vision & OCR Pipeline"]
+    VIS -->|"Primary"| GEMV["Gemini Vision"]
+    VIS -->|"Private Fallback"| CLIP["On-Device CLIP (Transformers.js)"]
+    VIS -->|"Opt-In Text"| OCR["Tesseract.js (EN / HI / MR)"]
+
+    UI -->|"Auth & Community"| FB["Firebase (Google, Email Link, Guest, Firestore)"]
 ```
 
-## Provider routing
+### Provider Routing & Resilience
 
-| Need | Primary | Fallback |
-|---|---|---|
-| Conversation and drafting | Gemini | OpenRouter Free / keyless provider / deterministic guidance |
-| Current web information | Tavily | Gemini Search grounding / honest unavailable response |
-| Image understanding | Gemini Vision | On-device CLIP / user confirmation |
-| OCR | Tesseract.js | Ask the user to type unclear text |
-| AQI and weather | Open-Meteo | Honest unavailable state |
+| Capability | Primary Provider | Fallback Chain |
+| :--- | :--- | :--- |
+| **Chat & Drafting** | Google Gemini | OpenRouter Free → Deterministic `fallbackBrain.js` |
+| **Grounded Web Search** | Tavily Search | Gemini grounding → Honest unavailable notice |
+| **Image Classification** | Gemini Vision | On-device CLIP (`onDeviceVision.js`) → User confirmation |
+| **Document / Sign OCR** | Tesseract.js (opt-in) | Prompt user to clarify unclear text |
+| **AQI, Weather & Geo** | Open-Meteo | Photon / Nominatim (OSM) → Clear unavailable state |
 
-All provider secrets stay behind `/api/ai/chat`; they are not bundled into browser JavaScript.
+---
 
-## Privacy model
+## 📁 Project Structure
 
-Firebase Authentication retains the account identifier required for Google or email sign-in. EcoPulse does not copy the email address into public Firestore documents.
+<details>
+<summary><strong>Click to expand repository layout</strong></summary>
 
-A community post contains only:
+```text
+ecopulse-ai/
+├── api/
+│   └── ai/
+│       ├── chat.js                  # Vercel serverless AI & Tavily proxy
+│       └── health.js                # Provider health check endpoint
+├── public/
+│   └── favicon.svg                  # App icon & brand mark
+├── src/
+│   ├── agent/
+│   │   ├── agentOrchestrator.js     # Central intent execution, city extraction & context injection
+│   │   ├── fallbackBrain.js         # Deterministic offline/error fallback responses
+│   │   └── intentEngine.js          # Priority-ordered English/Hindi/Hinglish intent classifier
+│   ├── components/
+│   │   ├── BottomNav.jsx            # Mobile-first bottom navigation
+│   │   ├── chat/
+│   │   │   ├── ChatInput.jsx        # Auto-focused chat composer + image attachment
+│   │   │   ├── Header.jsx           # App header, location badge & account menu
+│   │   │   ├── InlineCards.jsx      # AQI, Report, Email (with CC & Gmail), Meetup & Map cards
+│   │   │   ├── MessageBubble.jsx    # Markdown, citations & inline card renderer
+│   │   │   └── QuickActions.jsx     # Context-aware city quick prompts
+│   │   └── meetups/
+│   │       └── EventCard.jsx        # Eco-event card with RSVP state
+│   ├── contexts/
+│   │   ├── AppContext.jsx           # Location & global app state
+│   │   └── AuthContext.jsx          # Firebase Google, Email-link & Anonymous auth
+│   ├── firebase/
+│   │   ├── collections.js           # Firestore collection helpers
+│   │   └── config.js                # Firebase initialization
+│   ├── pages/
+│   │   ├── LandingPage.jsx          # Entry & onboarding view
+│   │   ├── ChatPage.jsx             # Main conversational assistant interface
+│   │   ├── CommunityPage.jsx        # Public location-tagged community feed
+│   │   ├── MeetupsPage.jsx          # Event discovery, creation & RSVP
+│   │   └── ReportDetailPage.jsx     # Individual environmental report view
+│   ├── services/
+│   │   ├── agentTools.js            # Verified contacts, reports, drafts & meetups store
+│   │   ├── aiClient.js              # Client wrapper for /api/ai/chat
+│   │   ├── authorityDirectory.js    # Official municipal & forest authority lookup
+│   │   ├── environmentalData.js     # Open-Meteo, Photon & Nominatim integrations
+│   │   ├── geminiService.js         # Gemini model chain & system instructions
+│   │   ├── imageOcr.js              # Opt-in Tesseract.js OCR (EN/HI/MR)
+│   │   └── onDeviceVision.js        # Private on-device CLIP image classifier
+│   ├── App.jsx
+│   ├── index.css
+│   └── main.jsx
+├── FIREBASE_SETUP.md                # Step-by-step Firebase & Firestore rules guide
+├── firestore.rules                  # Strict Firestore security rules
+├── firestore.indexes.json           # Composite query indexes
+├── vercel.json                      # Vercel SPA + /api routing
+└── vite.config.js                   # Vite config + local /api/ai dev proxy
+```
 
-- Firebase UID for ownership
-- chosen public alias
-- message text
-- timestamp
-- optional location label (defaults to `Global`)
+</details>
 
-It does **not** contain the user's email, phone number, Google display name, precise GPS coordinates, or private assistant history. Firestore access is governed by [`firestore.rules`](./firestore.rules). Anonymous users can read the public channel but cannot publish.
+---
 
-## Tech stack
+## 🚀 Quick Start
 
-- React 19 and Vite 8
-- Firebase Authentication and Cloud Firestore
-- Google Gemini API
-- Tavily Search API
-- Transformers.js / CLIP
-- Tesseract.js
-- Open-Meteo APIs
-- OpenStreetMap geocoding and Google Maps links
-- Vercel Functions
+### Prerequisites
+- **Node.js 20+** and **npm**
+- A **Google Gemini API key** ([Google AI Studio](https://aistudio.google.com/apikey))
+- A **Firebase project** (optional for local UI testing; required for cloud auth & Firestore community)
 
-## Local development
-
-Requirements: Node.js 20+, npm, a Firebase project, and a Gemini API key.
+### Installation
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/surajns0033-collab/ecopulse-ai.git
 cd ecopulse-ai
+
+# 2. Install dependencies
 npm install
-copy .env.example .env
+
+# 3. Create your local environment file
+cp .env.example .env       # macOS / Linux
+# copy .env.example .env   # Windows CMD / PowerShell
+
+# 4. Start the local dev server (with built-in /api/ai proxy)
 npm run dev
 ```
 
-Important environment variables:
+### Environment Variables
+
+Configure these in `.env` (never commit `.env` to version control):
 
 ```env
-GEMINI_API_KEY=
-TAVILY_API_KEY=
-OPENROUTER_API_KEY=
+# Server-side AI & Search (kept off the client bundle)
+GEMINI_API_KEY=your_gemini_api_key
+TAVILY_API_KEY=your_tavily_api_key          # Optional: grounded web search
+OPENROUTER_API_KEY=your_openrouter_key      # Optional: free-tier fallback
 OPENROUTER_MODEL=openrouter/free
 
+# Firebase (client-side public config)
 VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=
 VITE_FIREBASE_PROJECT_ID=
@@ -109,63 +206,48 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 ```
 
-Never commit `.env`.
+See [`.env.example`](.env.example) for all optional keys (including OpenWeatherMap, WAQI, and Google Maps).
 
-## Firebase
+---
 
-See [`FIREBASE_SETUP.md`](./FIREBASE_SETUP.md) for full setup details.
+## 🔐 Privacy & Safety Model
 
-Required providers:
+- **Minimal Public Footprint:** EcoPulse never copies user email addresses, phone numbers, Google display names, or precise GPS coordinates into public Firestore documents. Community posts store only the Firebase UID, chosen public alias, message text, timestamp, and an optional city/global label.
+- **Guest Mode:** Anonymous users can browse the public community channel in read-only mode without creating an account, enforced by [`firestore.rules`](firestore.rules).
+- **Human-in-the-Loop Complaints:** Drafted complaint emails are **never** sent automatically. Users review, edit, copy, or open them in Gmail with explicit confirmation.
+- **Zero Contact Fabrication:** Authority emails and helplines are pulled strictly from verified official directories or grounded search; unknown cities are routed to official national portals such as [CPGRAMS](https://pgportal.gov.in) and the 24/7 Forest Helpline (`1926`).
+- **Distinguished Guidance:** Responses separate immediate on-the-spot emergency actions from formal grievance filing, and frame health tips as general information rather than medical diagnosis.
 
-1. Google
-2. Email/Password with **Email link (passwordless sign-in)** enabled
-3. Anonymous
+---
 
-Deploy the included privacy rules:
+## ☁️ Deployment
+
+### Firebase Setup
+Follow [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md) to enable **Google**, **Email/Password (Passwordless Email Link)**, and **Anonymous** sign-in providers, then deploy security rules and indexes:
 
 ```bash
 npx firebase-tools deploy --only firestore:rules,firestore:indexes
 ```
 
-## Vercel
+### Vercel Deployment
+The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serverless endpoints (`api/ai/chat.js`, `api/ai/health.js`):
+1. Add server-side keys (`GEMINI_API_KEY`, `TAVILY_API_KEY`, `OPENROUTER_API_KEY`) in **Vercel Project Settings → Environment Variables**.
+2. Add `VITE_FIREBASE_*` variables for the client build.
+3. Add your deployed Vercel domain under **Firebase Authentication → Settings → Authorized domains**.
 
-Production support is included:
+---
 
-- `api/ai/chat.js` — server-side AI/search orchestration
-- `api/ai/health.js` — provider health endpoint
-- `vercel.json` — API and SPA routing
+## 🛠 Available Scripts
 
-Add secret values under Vercel Project Settings → Environment Variables. Add `VITE_FIREBASE_*` values as build-time variables. After deployment, add the Vercel hostname to Firebase Authentication → Settings → Authorized domains.
+| Command | Description |
+| :--- | :--- |
+| `npm run dev` | Start Vite development server with the local `/api/ai` proxy |
+| `npm run build` | Build optimized production bundle into `dist/` |
+| `npm run preview` | Preview the production build locally |
+| `npm run lint` | Run static checks with **Oxlint** |
 
-## Tested behavior
+---
 
-- Misspelled `sanfransico` resolves to San Francisco live data and map.
-- Dynamic Udaipur and Tokyo maps.
-- Polluted naala, waste burning, road obstruction, rubble, excavation material, and garbage images.
-- Normal/non-issue images are rejected rather than forced into a complaint.
-- OCR does not force text-only images into an environmental category.
-- General leave-email drafting, sleep guidance, and casual conversation stay outside environmental routes.
-- Tavily answers render clickable official sources.
-
-Image classifications are probabilistic. The UI shows confidence and asks the user to verify a result before using a draft.
-
-## Safety
-
-- Complaints are never sent automatically.
-- Unknown contacts are not guessed.
-- Current-information questions require grounded sources.
-- Emergency guidance distinguishes immediate danger from ordinary complaint routes.
-- Medical guidance is general information, not diagnosis.
-
-## Commands
-
-| Command | Purpose |
-|---|---|
-| `npm run dev` | Start local development with the AI proxy |
-| `npm run build` | Create the production build |
-| `npm run preview` | Preview the production build |
-| `npm run lint` | Run Oxlint |
-
-## Status
-
-EcoPulse AI is under active development. Before broad public use, review authority contacts periodically and define a moderation/retention policy for public community messages.
+<div align="center">
+  <p>Built for cleaner cities, faster civic action, and privacy-respecting communities.</p>
+</div>
