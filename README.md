@@ -2,6 +2,9 @@
 
 > A privacy-conscious AI companion for everyday questions, live environmental data, civic complaints, community coordination, and grounded web research.
 
+**Live application:** https://ecopulse-ai-ruby.vercel.app  
+**Firebase:** Spark free plan · Mumbai region · production security rules
+
 EcoPulse combines natural-language conversation with deterministic tools. Gemini handles open-ended reasoning and writing; trusted APIs provide live AQI, weather, maps, search sources, and authority contacts. The app never needs to invent a live reading or government contact.
 
 ## Highlights
@@ -83,8 +86,8 @@ It does **not** contain the user's email, phone number, Google display name, pre
 Requirements: Node.js 20+, npm, a Firebase project, and a Gemini API key.
 
 ```bash
-git clone <repository-url>
-cd <repository-folder>
+git clone https://github.com/surajns0033-collab/ecopulse-ai.git
+cd ecopulse-ai
 npm install
 copy .env.example .env
 npm run dev
