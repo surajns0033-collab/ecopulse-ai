@@ -59,6 +59,16 @@ function PostCard({ post, canDelete, onDelete }) {
   );
 }
 
+function uniquePosts(items) {
+  const seen = new Set();
+  return (items || []).filter((post) => {
+    const key = post.id || `${post.userId || ''}:${post.createdAt?.seconds || post.createdAt || ''}:${post.text || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export default function CommunityPage() {
   const navigate = useNavigate();
   const {
@@ -92,7 +102,7 @@ export default function CommunityPage() {
         tools.getCommunityFeed({ limit: 50 }),
         tools.getNearbyMeetups({ limit: 3 }),
       ]);
-      setPosts(postsData);
+      setPosts(uniquePosts(postsData));
       setEvents(eventsData);
     } catch (err) {
       console.error('Community load failed:', err);
@@ -104,7 +114,7 @@ export default function CommunityPage() {
   useEffect(() => {
     loadData();
     const unsubscribe = tools.subscribeCommunityFeed({ limit: 50 }, (latestPosts) => {
-      setPosts(latestPosts);
+      setPosts(uniquePosts(latestPosts));
     });
     return () => unsubscribe?.();
   }, []);
@@ -121,7 +131,9 @@ export default function CommunityPage() {
         text,
         location: postCity.trim() || 'Global',
       });
-      setPosts((prev) => [created, ...prev]);
+      setPosts((prev) => prev.some((post) => post.id === created.id)
+        ? prev
+        : uniquePosts([created, ...prev]));
       setMsgText('');
     } catch (err) {
       console.error('Failed to post:', err);
