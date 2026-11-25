@@ -2,7 +2,7 @@
   <img src="public/favicon.svg" alt="EcoPulse AI Logo" width="88" />
   <h1>EcoPulse AI</h1>
   <p>
-    <strong>Conversational intelligence for live environmental telemetry, civic grievance routing, and privacy-first community action.</strong>
+    <strong>Your personal AI companion for cleaner air, safer routines and smarter everyday decisions during urban pollution.</strong>
   </p>
 
   <p>
@@ -54,11 +54,28 @@ Instead of leaving users with generic chatbot replies or unverified contact deta
 | :--- | :--- | :--- |
 | **Conversational Assistant** | Natural-language chat in **English, Hindi, and Hinglish** with automatic language detection, daily-life civic guidance, and deterministic fallback responses. | Gemini AI, OpenRouter Free, `fallbackBrain.js` |
 | **Live AQI & Weather** | Real-time Air Quality Index (`PM2.5`, `PM10`, `NO₂`, `O₃`), weather conditions, and actionable health insights for any city worldwide. | Open-Meteo Air Quality & Forecast APIs |
+| **Personal Smog Action Plan** | Builds the plan conversationally inside both Chat and AI Talk, combining live AQI forecasts with commute, routine, cooking, filtration, household sensitivity, lower-emission choices, and direct-impact explanations. | Gemini + deterministic exposure/action engine |
+| **AI Talk** | Voice-first NLP conversation with an animated air-flow visualization, automatic language matching, spoken answers, and a typed fallback while keeping standard Chat unchanged. | Web Speech API + Gemini orchestration |
 | **Typo-Tolerant Global Maps** | Resolves misspelled or landmark-level locations (e.g., reserves, beaches, neighborhoods) into verified coordinates and Google Maps deep links. | Open-Meteo, Photon, Nominatim (OSM) |
 | **Civic Grievance & Email Routing** | Classifies incidents (tree cutting, mangrove dumping, open burning, sewage, waste), surfaces verified helplines/portals, and drafts formal complaints with **Forest Dept CC** and **1-click Gmail Compose**. | `authorityDirectory.js`, `agentTools.js` |
 | **Grounded Web Research** | Answers current-events and policy questions with cited, clickable official sources rather than ungrounded guesses. | Tavily Search API (`/api/ai/chat`) |
 | **Vision & Opt-In OCR** | Analyzes uploaded incident photos for severity and category, with private on-device classification and opt-in multilingual OCR (**English, Hindi, Marathi**). | Gemini Vision, Transformers.js (CLIP), Tesseract.js |
-| **Community & Eco-Meetups** | Public location-tagged community feed and local eco-events (cleanups, plantation drives) with RSVP support and guest read-only mode. | Firebase Auth, Cloud Firestore |
+| **Community & Eco-Meetups** | Public location-tagged community feed, stable per-user identity colours, local eco-events, RSVP support, and guest read-only mode. | Firebase Auth, Cloud Firestore |
+
+---
+
+## 🌫 Challenge 6 — Urban Air Quality Assistant
+
+EcoPulse directly addresses the challenge with:
+
+- **Severe winter-smog mode** driven by live AQI, PM2.5, PM10, temperature, and wind.
+- **Lifestyle personalization** for commute mode, work/school/outdoor routine, cooking fuel, air filtration, children, older adults, and heart/lung sensitivity.
+- **Low-emission alternatives** such as public transit, carpooling, trip batching, anti-idling, and zero-tailpipe active travel when exposure conditions allow.
+- **Indoor-air hacks** covering a cleaner-air room, HEPA use, damp cleaning, ventilation timing, cooking exhaust, and avoidance of ozone/ionizer devices.
+- **24-hour AQI planning** that identifies the forecast's lowest-AQI outdoor window.
+- **Action → direct impact** cards that explain both exposure and emissions outcomes without inventing quantified savings.
+- **Community-scale action** for no-burning, no-idling, hotspot evidence, and verified civic reporting.
+- **Privacy-first preferences** stored only in the user's browser rather than a public profile.
 
 ---
 

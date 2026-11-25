@@ -18,10 +18,17 @@ export const INTENTS = {
   GET_ROUTES: 'GET_ROUTES',
   GET_USER_IMPACT: 'GET_USER_IMPACT',
   GET_WASTE_TIPS: 'GET_WASTE_TIPS',
+  GET_SMOG_PLAN: 'GET_SMOG_PLAN',
 };
 
 // Keyword patterns for each intent (ordered & weighted so specific intents aren't hijacked)
 const INTENT_PATTERNS = [
+  {
+    intent: INTENTS.GET_SMOG_PLAN,
+    keywords: ['smog plan', 'winter smog', 'personalized air plan', 'personalised air plan', 'indoor air plan', 'low-emission routine'],
+    confidence: 0.99,
+    tool: null,
+  },
   {
     intent: INTENTS.GET_HEALTH_TIPS,
     keywords: ['aqi health', 'air quality health', 'pollution health', 'pollution mask', 'smog health', 'pm2.5 health'],
@@ -126,6 +133,17 @@ const INTENT_PATTERNS = [
  */
 export function detectIntent(message, conversationHistory = []) {
   const lower = message.toLowerCase().trim();
+
+  if (/\b(smog plan|winter smog|personalized (?:air|clean-air) plan|personalised (?:air|clean-air) plan|indoor air plan|low-emission routine)\b/i.test(lower)) {
+    return {
+      intent: INTENTS.GET_SMOG_PLAN,
+      confidence: 0.99,
+      suggestedTool: null,
+      requiresConfirmation: false,
+      entities: extractEntities(lower),
+      message: lower,
+    };
+  }
 
   // Explicit check: creating/organizing an event or meetup must take priority over FIND_EVENTS
   if (

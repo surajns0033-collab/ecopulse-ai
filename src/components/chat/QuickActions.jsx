@@ -1,9 +1,10 @@
 // Persistent shortcuts for the assistant's core daily-help flows.
-import { Wind, CloudSun, Siren, Image, Heart, Navigation, Users, Recycle } from 'lucide-react';
+import { Wind, CloudSun, CloudFog, Siren, Image, Heart, Navigation, Users, Recycle } from 'lucide-react';
 
 const ACTIONS = [
   { label: 'Air Quality', icon: Wind, command: 'QUICK_AQI' },
   { label: 'Weather Safety', icon: CloudSun, command: 'QUICK_WEATHER_PRECAUTIONS' },
+  { label: 'Smog Plan', icon: CloudFog, command: 'QUICK_SMOG_PLAN' },
   { label: 'Make Complaint', icon: Siren, command: 'START_COMPLAINT' },
   { label: 'Analyze Photo', icon: Image, command: 'OPEN_IMAGE_PICKER' },
   { label: 'Health Tips', icon: Heart, message: 'Give me health tips for today\'s air quality' },

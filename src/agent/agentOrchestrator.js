@@ -4,7 +4,7 @@ import { detectIntent, INTENTS } from './intentEngine';
 import { tools } from '../services/agentTools';
 import { getChatResponse, getJsonResponse, isAIUnavailable } from '../services/geminiService';
 import { buildFallbackReply, buildComplaintEmailTemplate, contactLines } from './fallbackBrain';
-import { getAQIInsight, getAQICategory, geocodeCity, getAirQuality, getWeather } from '../services/environmentalData';
+import { getAQIInsight, getAQICategory, geocodeCity, getAirQuality, getAirQualityForecast, getWeather } from '../services/environmentalData';
 import { getAuthorityBundle } from '../services/authorityDirectory';
 import { COLLECTIONS } from '../firebase/collections';
 import { db, isFirebaseConfigured } from '../firebase/config';
@@ -192,6 +192,8 @@ export async function processMessage(userMessage, conversationHistory, user, loc
     // Prevents each reply from being treated as a fresh general question (which caused fabricated answers).
     if (pendingAction?.type === 'DRAFT_EMAIL_AWAITING_INFO') {
       result = await handleCreateEmail(userMessage, conversationHistory, userId, city);
+    } else if (pendingAction?.type === 'SMOG_PLAN_AWAITING_PROFILE') {
+      result = await handleSmogPlanProfile(userMessage, { city, lat, lng });
     } else {
       switch (intent) {
       case INTENTS.GET_AIR_QUALITY:
@@ -254,6 +256,10 @@ export async function processMessage(userMessage, conversationHistory, user, loc
         result = await handleWasteTips(city, lat, lng);
         break;
 
+      case INTENTS.GET_SMOG_PLAN:
+        result = handleSmogPlanStart(city);
+        break;
+
       default:
         result = await handleGeneralQuestion(userMessage, conversationHistory, { lat, lng, city, locality: localityLabel, hasExplicitCity }, userId);
         break;
@@ -275,6 +281,138 @@ export async function processMessage(userMessage, conversationHistory, user, loc
 }
 
 // ===== HANDLERS =====
+
+function handleSmogPlanStart(city) {
+  return {
+    text: `Let's create your personalized clean-air and winter-smog plan for **${city || 'your city'}**. Reply naturally in one message with whatever you know:\n\n• Usual commute: car / two-wheeler / public transport / walk-cycle / work from home\n• Routine: office-school / outdoor work / mostly home / mixed\n• Cooking: gas / induction-electric / mixed\n• Air cleaning: HEPA / DIY filter / none\n• Household: children, older adults, or heart/lung sensitivity (optional)\n\nExample: *“Car commute, outdoor work, gas stove, HEPA purifier, one child.”*`,
+    cards: [],
+    actions: [],
+    status: 'needs_info',
+    pending: 'SMOG_PLAN_AWAITING_PROFILE',
+  };
+}
+
+function parseSmogProfile(message) {
+  const lower = String(message || '').toLowerCase();
+  let commute = 'public transport';
+  if (/\b(car|drive|driving)\b/.test(lower)) commute = 'car';
+  else if (/\b(two.?wheeler|bike|motorbike|scooter)\b/.test(lower)) commute = 'two-wheeler';
+  else if (/\b(walk|cycle|cycling|bicycle)\b/.test(lower)) commute = 'walk/cycle';
+  else if (/\b(work from home|wfh|remote)\b/.test(lower)) commute = 'work from home';
+  else if (/\b(bus|metro|train|public transport|local)\b/.test(lower)) commute = 'public transport';
+
+  let routine = 'office/school';
+  if (/\b(outdoor work|field work|construction work|delivery|traffic police|street vendor)\b/.test(lower)) routine = 'outdoor work';
+  else if (/\b(mostly home|homemaker|at home)\b/.test(lower)) routine = 'mostly home';
+  else if (/\b(mixed|hybrid)\b/.test(lower)) routine = 'mixed';
+
+  let cooking = 'mixed cooking';
+  if (/\b(gas|lpg)\b/.test(lower)) cooking = 'gas stove';
+  else if (/\b(induction|electric cook|electric stove)\b/.test(lower)) cooking = 'induction/electric';
+
+  let filtration = 'no purifier';
+  if (/\bhepa\b/.test(lower)) filtration = 'HEPA purifier';
+  else if (/\b(diy|filter fan|filtered fan)\b/.test(lower)) filtration = 'DIY filtered-air setup';
+  else if (/\b(no purifier|none|without purifier)\b/.test(lower)) filtration = 'no purifier';
+
+  const vulnerable = [
+    /\b(child|children|kid|baby)\b/.test(lower) && 'children',
+    /\b(older|elderly|senior|grandparent)\b/.test(lower) && 'older adults',
+    /\b(asthma|lung|heart|respiratory|copd)\b/.test(lower) && 'heart/lung sensitivity',
+  ].filter(Boolean);
+  return { commute, routine, cooking, filtration, vulnerable };
+}
+
+function lowestAqiWindow(forecast) {
+  const hours = forecast?.hours || [];
+  const usable = hours.filter((item) => {
+    const hour = Number(String(item.time).slice(11, 13));
+    return hour >= 6 && hour <= 21;
+  });
+  const best = [...(usable.length ? usable : hours)].sort((a, b) => a.aqi - b.aqi)[0];
+  if (!best) return null;
+  const date = new Date(best.time);
+  return {
+    ...best,
+    label: Number.isNaN(date.getTime()) ? best.time.replace('T', ' ') : date.toLocaleString([], { weekday: 'short', hour: 'numeric' }),
+  };
+}
+
+async function handleSmogPlanProfile(userMessage, location) {
+  const targetCity = location?.city || 'your area';
+  const lat = location?.lat;
+  const lng = location?.lng;
+  if (!lat || !lng) {
+    return {
+      text: 'I have your routine, but I need a location for live AQI. Type the city name or share your location, then ask for the smog plan again.',
+      cards: [],
+      actions: [{ label: '📍 Share Location', action: 'REQUEST_LOCATION', variant: 'primary' }],
+      status: 'needs_location',
+    };
+  }
+
+  const profile = parseSmogProfile(userMessage);
+  const [aqi, weather, forecast] = await Promise.all([
+    getAirQuality(lat, lng, targetCity).catch(() => null),
+    getWeather(lat, lng).catch(() => null),
+    getAirQualityForecast(lat, lng).catch(() => null),
+  ]);
+  if (!aqi) {
+    return { text: `Live AQI for **${targetCity}** is temporarily unavailable, so I won't invent a smog plan reading. Please retry shortly.`, cards: [], actions: [], status: 'unavailable' };
+  }
+
+  const category = getAQICategory(aqi.aqi);
+  const severe = aqi.aqi >= 151;
+  const sensitive = aqi.aqi >= 101;
+  const best = lowestAqiWindow(forecast);
+  const vulnerable = profile.vulnerable.length ? profile.vulnerable.join(', ') : 'none stated';
+
+  const commuteAdvice = profile.commute === 'car'
+    ? 'Bundle errands, carpool when practical, avoid idling, and use cabin recirculation near heavy traffic.'
+    : profile.commute === 'two-wheeler'
+      ? `${severe ? 'Use metro/train/bus for the longest leg today; ' : ''}avoid waiting behind buses and trucks.`
+      : profile.commute === 'walk/cycle'
+        ? `${severe ? 'Avoid strenuous roadside exercise today; use transit for the polluted segment.' : 'Use internal lanes away from traffic.'}`
+        : profile.commute === 'work from home'
+          ? 'Preserve the avoided commute benefit by grouping deliveries and unnecessary trips.'
+          : 'Keep the long leg on public transport and reach it through quieter internal streets.';
+  const commuteImpact = profile.commute === 'walk/cycle'
+    ? 'Active travel has zero tailpipe emissions; moving it away from peak smog prevents high breathing rates from multiplying exposure.'
+    : 'Fewer solo vehicle kilometres and less idling reduce tailpipe emissions while quieter routes reduce roadside exposure.';
+
+  const indoorAdvice = profile.filtration === 'HEPA purifier'
+    ? 'Run HEPA in one closed cleaner-air room, keep airflow clear, wet-mop, and avoid ozone/ionizer modes.'
+    : 'Create one low-dust room, damp-clean instead of dry sweeping, close traffic-facing leaks during peaks, and ventilate only when outdoor AQI is lower.';
+  const cookingAdvice = profile.cooking === 'gas stove'
+    ? 'Exhaust the gas stove outdoors every time it runs; prefer back burners and keep children away from the cooking plume.'
+    : 'Use exhaust during frying/high-heat cooking; induction removes combustion pollution but cooking particles still need ventilation.';
+
+  const forecastLine = best
+    ? `**Lower-AQI outdoor window:** ${best.label} (forecast AQI ${best.aqi}, Open-Meteo).`
+    : '**Lower-AQI outdoor window:** forecast temporarily unavailable—check live AQI before going out.';
+  const lowWind = weather?.windSpeed != null && weather.windSpeed < 2
+    ? ` Wind is low at ${weather.windSpeed} m/s, so dispersion may be slow.`
+    : '';
+
+  const factualPlan = `🌫️ **Your clean-air plan — ${targetCity}**\n\n**Live:** AQI **${aqi.aqi} — ${category.label}** · PM2.5 ${aqi.pm25 ?? '—'} · PM10 ${aqi.pm10 ?? '—'}.${lowWind}\n**Profile understood:** ${profile.commute}; ${profile.routine}; ${profile.cooking}; ${profile.filtration}; household sensitivity: ${vulnerable}.\n\n🛡️ **1. Exposure routine**\n${severe ? 'Move exercise indoors, shorten non-essential outdoor tasks, and use a well-fitted N95/FFP2 for unavoidable travel.' : sensitive ? 'Shorten prolonged outdoor exertion, especially beside traffic; sensitive family members should take extra care.' : 'Normal activity is reasonable; keep avoiding visible smoke and idling traffic.'}\n**Direct impact:** reduces inhaled fine-particle dose; this does not reduce the pollution source itself.\n\n🚌 **2. Lower-emission commute**\n${commuteAdvice}\n**Direct impact:** ${commuteImpact}\n\n🏠 **3. Indoor air**\n${indoorAdvice}\n**Direct impact:** source control prevents new indoor particles; filtration removes particles already suspended indoors.\n\n🍳 **4. Cooking**\n${cookingAdvice}\n**Direct impact:** prevents controllable cooking pollution from adding another exposure layer on an outdoor-smog day.\n\n🌿 **5. Community choice**\nDo not burn leaves/waste, discourage idling, share verified AQI guidance, and report smoke/dust hotspots with location and photos.\n**Direct impact:** coordinated no-burning/no-idling behaviour removes emissions at the source and protects nearby families.\n\n🕒 ${forecastLine}`;
+
+  const generated = await getChatResponse(
+    [{ role: 'user', text: `In no more than 55 words, add a warm personalized briefing before this urban-smog plan. Use only: city ${targetCity}, AQI ${aqi.aqi}, commute ${profile.commute}, routine ${profile.routine}, cooking ${profile.cooking}, filtration ${profile.filtration}, vulnerable household ${vulnerable}. Do not invent measurements or savings.` }],
+    'Use only the supplied profile and live AQI. Return the briefing only.',
+    { maxTokens: 700, timeoutMs: 20000, temperature: 0.3 },
+  );
+  const intro = isAIUnavailable(generated) ? '' : `✨ **Personalized briefing**\n${generated}\n\n`;
+
+  return {
+    text: `${intro}${factualPlan}\n\n_General exposure guidance, not medical advice. Follow local advisories and consult a clinician for symptoms or individual medical decisions._`,
+    cards: [{ type: 'aqi', data: { ...aqi, insight: getAQIInsight(aqi) } }],
+    actions: [
+      { label: '💊 AQI Health Tips', action: 'QUICK_HEALTH_TIPS', variant: 'secondary' },
+      { label: '📷 Report a Pollution Source', action: 'OPEN_IMAGE_PICKER', variant: 'secondary' },
+    ],
+    status: 'success',
+  };
+}
 
 async function handleAirQuality(lat, lng, city, userId) {
   if (!lat || !lng) {

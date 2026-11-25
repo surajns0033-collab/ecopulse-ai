@@ -23,6 +23,7 @@ function createWelcomeMessage(user) {
       { label: '📍 Share My Location', action: 'REQUEST_LOCATION', variant: 'primary' },
       { label: '🌬️ Check AQI', action: 'QUICK_AQI', variant: 'secondary' },
       { label: '🌦️ Weather & Precautions', action: 'QUICK_WEATHER_PRECAUTIONS', variant: 'secondary' },
+      { label: '🌫️ Smog Action Plan', action: 'QUICK_SMOG_PLAN', variant: 'secondary' },
       { label: '📣 Make a Complaint', action: 'START_COMPLAINT', variant: 'secondary' },
       { label: '📷 Understand a Photo', action: 'OPEN_IMAGE_PICKER', variant: 'secondary' },
       { label: '📇 Authority Contacts', action: 'QUICK_ALL_CONTACTS', variant: 'secondary' },
@@ -126,6 +127,10 @@ export default function ChatPage() {
           text: '🗺️ Type any city, area, or landmark like **“show map of Udaipur”**, **“map Vashi station”**, or **“Tokyo”**. I’ll resolve the real coordinates and open it on the map.',
           cards: [], actions: [], timestamp: new Date().toISOString(),
         });
+        break;
+
+      case 'QUICK_SMOG_PLAN':
+        await sendMessage('Create my personalized winter smog and clean-air action plan', null);
         break;
 
       case 'START_COMPLAINT':

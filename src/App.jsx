@@ -9,6 +9,7 @@ const ChatPage = lazy(() => import('./pages/ChatPage'));
 const MeetupsPage = lazy(() => import('./pages/MeetupsPage'));
 const CommunityPage = lazy(() => import('./pages/CommunityPage'));
 const ReportDetailPage = lazy(() => import('./pages/ReportDetailPage'));
+const TalkPage = lazy(() => import('./pages/TalkPage'));
 
 function AppLoader({ label = 'Loading EcoPulse AI...' }) {
   return (
@@ -43,6 +44,7 @@ function AppInner() {
         <Route path="/meetups" element={<MeetupsPage />} />
         <Route path="/community" element={<CommunityPage />} />
         <Route path="/report/:id" element={<ReportDetailPage />} />
+        <Route path="/talk" element={<TalkPage />} />
       </Routes>
     </Suspense>
   );

@@ -241,6 +241,37 @@ export async function getAirQuality(lat = 19.0330, lng = 73.0297, cityLabel = nu
   return null;
 }
 
+/** Next 24 hours of AQI data for planning lower-exposure outdoor windows. */
+export async function getAirQualityForecast(lat = 19.0330, lng = 73.0297) {
+  const cacheKey = `aqi-forecast:${Number(lat).toFixed(2)},${Number(lng).toFixed(2)}`;
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi&hourly=us_aqi,pm2_5,pm10&forecast_days=2&timezone=auto`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const times = json.hourly?.time || [];
+    const currentTime = json.current?.time || times[0];
+    let start = times.findIndex((time) => time >= currentTime);
+    if (start < 0) start = 0;
+    const hours = times.slice(start, start + 24).map((time, offset) => {
+      const index = start + offset;
+      return {
+        time,
+        aqi: json.hourly?.us_aqi?.[index] == null ? null : Math.round(json.hourly.us_aqi[index]),
+        pm25: json.hourly?.pm2_5?.[index] == null ? null : Math.round(json.hourly.pm2_5[index] * 10) / 10,
+        pm10: json.hourly?.pm10?.[index] == null ? null : Math.round(json.hourly.pm10[index] * 10) / 10,
+      };
+    }).filter((hour) => hour.aqi != null);
+    return setCached(cacheKey, { hours, source: 'Open-Meteo Air Quality' });
+  } catch (err) {
+    console.warn('Open-Meteo AQI forecast failed:', err.message);
+    return null;
+  }
+}
+
 /**
  * Get current weather — tries OpenWeatherMap (if real key configured), then Open-Meteo (free, no key needed)
  */

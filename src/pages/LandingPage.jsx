@@ -77,11 +77,11 @@ export default function LandingPage() {
           <Leaf size={20} color="#22c55e" strokeWidth={2.5} style={{ marginRight: 6, verticalAlign: 'middle' }} />
           EcoPulse AI
         </h1>
-        <p className="landing-sub">Your Environmental Assistant for Mumbai & Navi Mumbai</p>
+        <p className="landing-sub">Your personal AI companion for cleaner air, safer routines and smarter everyday decisions during urban pollution.</p>
 
         {/* Features */}
         <div className="landing-features">
-          {['🌬️ Real-time Air Quality', '📍 Environmental Reports', '🌿 Eco Events & Meetups', '💧 Water Quality Alerts'].map(f => (
+          {['🌬️ Real-time Air Quality', '🌫️ Personal Smog Plans', '📍 Environmental Reports', '🌿 Community Action'].map(f => (
             <div key={f} className="landing-feature-pill">{f}</div>
           ))}
         </div>
