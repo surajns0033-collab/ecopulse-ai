@@ -305,6 +305,7 @@ export default function CommunityPage() {
             placeholder="Share an update in the public channel..."
             value={msgText}
             onChange={(e) => setMsgText(e.target.value)}
+            maxLength={1000}
             aria-label="Community message"
           />
           <button
