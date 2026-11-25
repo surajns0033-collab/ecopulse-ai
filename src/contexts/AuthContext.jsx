@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import {
   signInAnonymously,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
   signOut as firebaseSignOut,
@@ -51,6 +52,16 @@ export function AuthProvider({ children }) {
   }, [firebaseReady]);
 
   useEffect(() => {
+    if (!firebaseReady) return;
+    // Completes a Google same-tab redirect. onAuthStateChanged updates the UI;
+    // this call also consumes and clears Firebase's pending redirect state.
+    getRedirectResult(auth).catch((error) => {
+      console.warn('Google redirect sign-in could not be completed:', error?.message || error);
+      setLoading(false);
+    });
+  }, [firebaseReady]);
+
+  useEffect(() => {
     if (!firebaseReady || !isSignInWithEmailLink(auth, window.location.href)) return;
     const pendingEmail = sessionStorage.getItem('echopulse_email_link_address');
     if (!pendingEmail) {
@@ -73,9 +84,9 @@ export function AuthProvider({ children }) {
       return;
     }
     const provider = new GoogleAuthProvider();
-    const cred = await signInWithPopup(auth, provider);
-    setUser(cred.user);
+    provider.setCustomParameters({ prompt: 'select_account' });
     setAuthMode('google');
+    await signInWithRedirect(auth, provider);
   }
 
   /** Send a passwordless Firebase email sign-in link. */
