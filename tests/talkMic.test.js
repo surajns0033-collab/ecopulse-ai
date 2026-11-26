@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTalkMic, isTalkStop } from '../src/services/talkMic.js';
+import { createTalkMic, isTalkEcho, isTalkStop } from '../src/services/talkMic.js';
 
-function micFixture() {
+function micFixture({ autoStart = true } = {}) {
   const sessions = [];
   let recording = null;
   class Recognition {
@@ -10,7 +10,7 @@ function micFixture() {
       assert.equal(recording, null, 'The previous browser session must release the mic first');
       recording = this;
       sessions.push(this);
-      this.onstart();
+      if (autoStart) this.onstart();
     }
     say(transcript, isFinal = true, { index = 0, confidence = .91 } = {}) {
       const results = [];
@@ -36,6 +36,50 @@ test('voice stop accepts explicit commands without treating ordinary speech or p
   }
   assert.equal(isTalkStop('stop', 'Don’t stop your prescribed medication.'), false);
   assert.equal(isTalkStop('stop speaking', 'Don’t stop your prescribed medication.'), true);
+});
+
+test('the follow-up mic stays open through a tap and ignores the question’s late echo', () => {
+  const { mic, sessions } = micFixture();
+  const playback = 'Which city should I check?';
+  mic.listen({ language: 'en-IN', playback, onStop: () => assert.fail('echo is not a stop'), onEnd: () => assert.fail('stale end') });
+  const [monitor] = sessions;
+  monitor.say('An earlier playback segment.');
+  monitor.say('Which city should', false, { index: 1 });
+  const answers = [];
+  let ready = 0, heard = 0;
+  mic.listen({ language: 'en-IN', playback, followUp: true, onStart: () => ready++, onInput: () => heard++, onEnd: (outcome) => answers.push(outcome) });
+  assert.equal(ready, 1);
+  assert.equal(sessions.length, 1);
+  mic.finishInput();
+  assert.equal(monitor.stopped, undefined);
+  monitor.say('An earlier playback segment.', true, { index: 0 });
+  monitor.say('Which city should I check?', true, { index: 1 });
+  assert.equal(heard, 0);
+  monitor.say('Mumbai, Maharashtra, India.', true, { index: 2 });
+  assert.equal(heard, 1);
+  mic.finishInput();
+  assert.equal(monitor.stopped, true);
+  monitor.end();
+  assert.deepEqual(answers, [{ result: { transcript: 'Mumbai, Maharashtra, India.', confidence: .91 }, error: undefined }]);
+  assert.equal(isTalkEcho('San Francisco, California, United States', 'Did you mean San Francisco, California, United States?'), false);
+});
+
+test('interrupting a reply while recognition is starting waits for the mic to be ready', () => {
+  const { mic, sessions } = micFixture({ autoStart: false });
+  const prompt = { language: 'en-IN', playback: 'Which city should I check?' };
+  mic.listen({ ...prompt, onStop: () => assert.fail('stale stop'), onStart: () => assert.fail('stale monitor'), onEnd: () => assert.fail('stale end') });
+  let ready = false;
+  const answers = [];
+  mic.listen({ ...prompt, onStart: () => { ready = true; }, onEnd: (result) => answers.push(result) });
+  assert.equal(ready, false);
+  const [input] = sessions;
+  assert.equal(input.aborted, undefined);
+  input.onstart();
+  assert.equal(ready, true);
+  input.say('Mumbai');
+  input.end();
+  assert.equal(answers[0].result.transcript, 'Mumbai');
+  assert.equal(sessions.length, 1);
 });
 
 test('the playback mic ignores echo and other speech, then handles stop without dictating it', () => {
@@ -116,7 +160,47 @@ test('finishing dictation allows a late final result and does not send partial g
   mic.listen({ onEnd: (outcome) => answers.push(outcome) });
   sessions[1].say('weather in Pennsylvania', false);
   sessions[1].end();
-  assert.equal(answers[1].result, undefined);
+  assert.deepEqual(answers[1], { result: undefined, error: 'unrecognized-speech' });
+  assert.equal(sessions.length, 2, 'An unsuccessful attempt must not open the mic again');
+  mic.listen({ onEnd: (outcome) => answers.push(outcome) });
+  assert.equal(sessions[2].continuous, false, 'Try single-utterance recognition on the next explicit attempt');
+  sessions[2].say('Panvel');
+  sessions[2].end();
+  assert.equal(answers[2].result.transcript, 'Panvel');
+});
+
+test('a speech-end event requests a final result after the pause, not while the speaker is continuing', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { mic, sessions } = micFixture();
+  const answers = [];
+  mic.listen({ onEnd: (outcome) => answers.push(outcome) });
+  const [input] = sessions;
+  input.onspeechstart();
+  input.say('weather in', false);
+  input.onspeechend();
+  t.mock.timers.tick(750);
+  input.onspeechstart();
+  t.mock.timers.tick(750);
+  assert.equal(input.stopped, undefined);
+  input.onspeechend();
+  t.mock.timers.tick(1000);
+  assert.equal(input.stopped, true);
+  input.say('weather in Mumbai');
+  input.end();
+  assert.equal(answers[0].result.transcript, 'weather in Mumbai');
+});
+
+test('an opening microphone that never becomes ready reports an error and does not retry', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { mic, sessions } = micFixture({ autoStart: false });
+  const answers = [];
+  mic.listen({ onStart: () => assert.fail('Mic is not ready'), onEnd: (outcome) => answers.push(outcome) });
+  t.mock.timers.tick(8000);
+  assert.equal(sessions[0].aborted, true);
+  sessions[0].onstart();
+  t.mock.timers.tick(750);
+  assert.deepEqual(answers, [{ result: undefined, error: 'start-timeout' }]);
+  assert.equal(sessions.length, 1);
 });
 
 test('Stop clears a queued follow-up before an asynchronous mic release', () => {
@@ -138,7 +222,7 @@ test('an unanswered follow-up closes its mic even when the browser does not send
   t.mock.timers.tick(1200);
   assert.equal(sessions[0].aborted, true);
   t.mock.timers.tick(750);
-  assert.deepEqual(ended, [{ result: undefined, error: undefined }]);
+  assert.deepEqual(ended, [{ result: undefined, error: 'no-speech' }]);
   sessions[0].end();
   assert.equal(ended.length, 1);
 });

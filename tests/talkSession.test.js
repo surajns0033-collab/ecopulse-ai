@@ -24,6 +24,13 @@ test('recent text and an unanswered city question survive returning to Talk', as
   const resumed = await resolveTalkTurn('Mumbai', returned.current.context, { lookup: async () => ({ location: mumbai }) });
   assert.equal(resumed.message, question);
   assert.deepEqual(resumed.location, mumbai);
+  returned.update({ context: resumed.context, questionLocale: '' });
+
+  const refreshed = createTalkSession('member', storage);
+  const next = await resolveTalkTurn('AQI in my city', refreshed.current.context, {
+    lookup: () => assert.fail('A verified local city should not need another lookup'),
+  });
+  assert.deepEqual(next.location, mumbai);
 });
 
 test('session history is bounded, account-scoped, clearable, and has a private in-memory fallback', () => {

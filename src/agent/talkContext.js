@@ -1,5 +1,6 @@
 import { detectIntent, INTENTS } from './intentEngine.js';
 import { isSmogProfile } from './smogProfile.js';
+import { isTalkEcho } from '../services/talkMic.js';
 import { getTalkDeviceLocation, lookupTalkPlace } from '../services/talkPlaces.js';
 
 const WEATHER = /\b(?:weather|temperature|forecast|rain(?:ing)?|mausam|baarish|havaman)\b|मौसम|बारिश|हवामान|तापमान|पाऊस/iu;
@@ -14,6 +15,12 @@ const SMOG = /\b(?:smog plan|(?:personalized|personalised|clean.air|cleaner.air|
 const LOCAL_NEWS = /\b(?:news|headlines|what(?:['’]s| is) (?:going on|happening))\s+(?:in|near|around|for)\b/i;
 const PLACE_COMMAND = /^(?:i live in|i (?:am|come) from|i['’]m from|(?:set|change) (?:my )?(?:city|location) to|use the city of)\s+(.+)$/i;
 const PLACE_FOLLOWUP = /^(?:i (?:am|live)|i['’]m) in\s+(.+)$/i;
+const STATED_CITY = /^(?:(?:i am|i['’]m) (?:currently |now )?in|my (?:current )?city is)\s+(.+)$/i;
+const CITY_ANSWER = /^(?:city\s*:\s*|(?:the|my) city is\s+|it(?:['’]s| is)\s+|(?:please )?(?:check|use)(?: in)?\s+|(?:yes|no)[, ]+|(?:शहर(?: का नाम)?(?: है)?|शहराचं नाव)\s+)/iu;
+const REPEATED_CITY = /^(?:i (?:already |just )?(?:said|told you) (?:it|(?:my|the) (?:city|location))(?: (?:already|earlier|before))?|i (?:said|told you) (?:earlier|before))[.!?]*$/i;
+const CITY_PROMPT_ECHO = /^(?:which|what) city(?: and state or country)? should i (?:check|use)[.!?]*$/i;
+const EMAIL_TOPIC = /\b(?:e-?mail|mail|letter|draft|complain|complaint|authorit(?:y|ies)|officers?)\b|ईमेल|मेल|शिकायत|तक्रार/iu;
+const MIC_CHECK = /^(?:(?:hi|hello|hey)[,\s]+)?(?:(?:can|could|do) you hear me|are you (?:listening(?: to me)?|able to hear me))(?: (?:here|now|right now|here now|clearly))?[.!?\s]*$|^(?:क्या\s+)?(?:आप|तुम)\s+(?:मुझे|मेरी आवा(?:ज़|ज\u093c?))\s+सुन.{0,24}[?।.]*$|^(?:तुम्हाला\s+)?माझा आवाज\s+ऐकू\s+येतो का[?।.]*$/iu;
 const MAP = /^(?:(?:can you |please )?(?:show|open|find) (?:me )?(?:(?:the|a) )?)?maps?(?:\s+(?:of|in|for|to))?(?:\s+(.+))?$/i;
 const MAP_QUESTION = /^(?:where(?: is|['’]s)|locate|show (?:me )?(?:the )?location (?:of|for))\s+(.+)$/i;
 const ON_MAP = /^(?:can you |please )?show (?:me )?(.+?)\s+on (?:the |a )?map$/i;
@@ -58,7 +65,41 @@ export function labeledCity(text) {
   return talkPlaceName(text.match(/\bcity:\s*([^.!?;\n]+)/i)?.[1]);
 }
 
-export function routeTalkRequest(text, history = []) {
+function statedCity(text) {
+  const clean = text.trim();
+  return clean.match(STATED_CITY)?.[1] ||
+    clean.match(/^मैं(?: अभी)?\s+(.+?)\s+में\s+(?:हूँ|हूं)[.!?।]*$/u)?.[1] ||
+    clean.match(/^मेरा शहर(?: का नाम)?\s+(.+?)\s+है[.!?।]*$/u)?.[1] ||
+    clean.match(/^मी\s+(.+?)(?:मध्ये|\s+इथे|\s+येथे)?\s+आहे[.!?।]*$/u)?.[1] || '';
+}
+
+function talkCityAnswer(text) {
+  const spoken = text.trim().replace(/^(?:(?:um|uh|erm)[,\s]+)+/i, '');
+  const stripped = spoken.replace(/^i (?:already |just )?(?:said|meant)[,:\s]+/i, '');
+  const clean = stripped === spoken ? spoken : stripped.replace(/\s+(?:earlier|before)[.?!\s]*$/i, '');
+  const explicit = statedCity(clean) || clean.match(PLACE_FOLLOWUP)?.[1];
+  const unwrapped = explicit || clean.replace(CITY_ANSWER, '');
+  if (unwrapped === clean && /[?？]$/u.test(clean)) return '';
+  // A city may be lowercase in a transcript. Accept a place-shaped phrase,
+  // not an ordinary sentence or the assistant's own question.
+  const place = talkPlaceName(unwrapped).replace(/[,\s]+$/u, '');
+  if (!place || /\b(?:i|you|me|my|am|are|is|can|could|would|should|said|hear|listen|tell|which|because|already|again|joke|simpler|words|testing)\b/i.test(place) ||
+      !/^[\p{L}\p{M}.'’\-,\s]+$/u.test(place)) return '';
+  return place;
+}
+
+function currentTalkRoute(text, history) {
+  const reported = statedCity(text);
+  // A standalone city statement sets a preference; a request mentioning a
+  // city still goes through the normal grounded lookup.
+  if (reported && !/[?？]\s*$/u.test(text) && !/\b(?:can|could|should|what|why|tell|give|check|show)\b/i.test(reported)) {
+    const city = talkCityAnswer(reported);
+    if (city) return { kind: 'city', needsPlace: true, place: city };
+  }
+  return routeTalkRequest(text, history, { strictEmail: true });
+}
+
+export function routeTalkRequest(text, history = [], { strictEmail = false } = {}) {
   const clean = text.trim();
   const relative = HERE.test(clean) || /\b(?:air|weather|temperature) outside\b/i.test(clean);
   if (DEVICE_LOCATION.test(clean)) return { kind: 'device' };
@@ -78,14 +119,16 @@ export function routeTalkRequest(text, history = []) {
     return { kind: 'web', needsPlace: relative, relative, place: relative ? labeledCity(clean) : '' };
   }
 
-  const detected = detectIntent(clean, history);
-  const isSmog = SMOG.test(clean) || detected.intent === INTENTS.GET_SMOG_PLAN;
+  const { intent: detected } = detectIntent(clean, history);
+  // “Send me the weather” and “send me a joke” are not civic email drafts.
+  const intent = strictEmail && detected === INTENTS.CREATE_EMAIL && !EMAIL_TOPIC.test(clean) ? INTENTS.ASK_QUESTION : detected;
+  const isSmog = SMOG.test(clean) || intent === INTENTS.GET_SMOG_PLAN;
   const air = AIR.test(clean);
   const weather = WEATHER.test(clean);
   const localNews = LOCAL_NEWS.test(clean);
-  const contact = detected.intent === INTENTS.GET_AUTHORITY_CONTACTS || (detected.intent !== INTENTS.CREATE_EMAIL &&
+  const contact = intent === INTENTS.GET_AUTHORITY_CONTACTS || (intent !== INTENTS.CREATE_EMAIL &&
     CIVIC_OFFICE.test(clean) && /\b(?:email|phone|helpline|contacts?|portal)\b/i.test(clean));
-  const place = air || weather || isSmog || contact || PLACE_TOOLS.has(detected.intent) || relative || localNews
+  const place = air || weather || isSmog || contact || PLACE_TOOLS.has(intent) || relative || localNews
     ? explicitPlace(clean, air || weather || isSmog) : '';
   const definition = /^(?:what (?:is|does)|define|explain)\s+(?:the term\s+)?(?:aqi|air quality|air pollution|pm\s*2\.5|pm\s*10|weather|smog)(?:\s+(?:mean|stand for))?[.?!]*$/i.test(clean) ||
     (!place && !relative && /\b(?:how (?:to|can i|do we) (?:reduce|improve|prevent)|what causes|effects of|why (?:does|is))\b/i.test(clean));
@@ -96,28 +139,27 @@ export function routeTalkRequest(text, history = []) {
   if (localNews || (WEB.test(clean) && (READING_RELATED_NEWS.test(clean) || (!air && !weather && !contact))) || (relative && /\b(?:news|what['’]?s (?:going on|happening))\b/i.test(clean))) {
     return { kind: 'web', needsPlace: relative || localNews, relative, place };
   }
-  if (!definition && detected.intent === INTENTS.GET_HEALTH_TIPS) {
-    return { kind: 'tool', needsPlace: true, intent: detected.intent, relative, place };
-  }
-  const incident = detected.intent === INTENTS.CREATE_REPORT &&
-    /\b(?:burning|dumping|sewage|smoke|cutting|complaint|garbage|report|blocked)\b/i.test(clean);
-  if (contact || detected.intent === INTENTS.CREATE_EMAIL || incident) {
-    const intent = contact ? INTENTS.GET_AUTHORITY_CONTACTS : detected.intent;
+  if (!definition && intent === INTENTS.GET_HEALTH_TIPS) {
     return { kind: 'tool', needsPlace: true, intent, relative, place };
+  }
+  const incident = intent === INTENTS.CREATE_REPORT &&
+    /\b(?:burning|dumping|sewage|smoke|cutting|complaint|garbage|report|blocked)\b/i.test(clean);
+  if (contact || intent === INTENTS.CREATE_EMAIL || incident) {
+    return { kind: 'tool', needsPlace: true, intent: contact ? INTENTS.GET_AUTHORITY_CONTACTS : intent, relative, place };
   }
   if (!definition && (air || weather)) {
     return { kind: 'tool', needsPlace: true, intent: air ? INTENTS.GET_AIR_QUALITY : INTENTS.GET_WEATHER, relative, place };
   }
-  if (PLACE_TOOLS.has(detected.intent) && (place || relative ||
+  if (PLACE_TOOLS.has(intent) && (place || relative ||
     /\b(?:report|complaint|eco.event|eco.meetup|cleanup|low.pollution route)\b/i.test(clean))) {
-    return { kind: 'tool', needsPlace: true, intent: detected.intent, relative, place };
+    return { kind: 'tool', needsPlace: true, intent, relative, place };
   }
   if (relative && /\b(?:current|live|local|weather|news|outside|now|today|city)\b/i.test(clean)) {
     return { kind: 'web', needsPlace: true, relative, place };
   }
-  if ([INTENTS.UPLOAD_PHOTO_REPORT, INTENTS.GET_COMMUNITY, INTENTS.GET_USER_IMPACT, INTENTS.GET_WASTE_TIPS].includes(detected.intent) &&
+  if ([INTENTS.UPLOAD_PHOTO_REPORT, INTENTS.GET_COMMUNITY, INTENTS.GET_USER_IMPACT, INTENTS.GET_WASTE_TIPS].includes(intent) &&
     /\b(?:analy[sz]e (?:a |this )?photo|community feed|my (?:reports|eco impact)|waste (?:segregation|reduction)|recycling tips)\b/i.test(clean)) {
-    return { kind: 'tool', intent: detected.intent };
+    return { kind: 'tool', intent };
   }
   return { kind: 'general' };
 }
@@ -126,6 +168,12 @@ const replies = {
   en: {
     city: 'Which city should I check?', region: 'Which city and state or country should I use?',
     confirm: (city) => `Did you mean ${city}?`, set: (city) => `Okay, I’ll use ${city} when you ask for local information.`,
+    useDiscussed: (city) => `Should I use ${city} for this lookup?`,
+    retryCity: 'Say or type just the city name to continue this lookup.',
+    retryRegion: 'I couldn’t verify the city. Try typing its name with the state or country.',
+    retryConfirm: 'Say “yes” to confirm the city I suggested, or type the city and its state or country.',
+    receivedVoice: 'Your browser recognized your question. Go ahead.',
+    receivedText: 'I received your typed message. Tap the wave to try voice input.',
     unclear: 'I didn’t catch that clearly. Could you say it again?',
     noDevice: 'I couldn’t verify your device location. Which city should I check?',
     notFound: (place) => `I couldn’t verify ${place}. Could you say the city and its state or country?`,
@@ -133,6 +181,12 @@ const replies = {
   hi: {
     city: 'किस शहर की जानकारी चाहिए?', region: 'कौन सा शहर और राज्य या देश बताना चाहेंगे?',
     confirm: (city) => `क्या आपका मतलब ${city} है?`, set: (city) => `ठीक है, स्थानीय जानकारी के लिए मैं ${city} इस्तेमाल करूँगी।`,
+    useDiscussed: (city) => `क्या इस जानकारी के लिए ${city} इस्तेमाल करूँ?`,
+    retryCity: 'आगे बढ़ने के लिए बस शहर का नाम बोलें या लिखें।',
+    retryRegion: 'मैं शहर की पुष्टि नहीं कर सकी। शहर के साथ राज्य या देश भी लिखें।',
+    retryConfirm: 'अगर सुझाया गया शहर सही है, तो “हाँ” कहें। वरना शहर के साथ राज्य या देश लिखें।',
+    receivedVoice: 'आपके ब्राउज़र ने आपका सवाल पहचान लिया है। आगे बोलिए।',
+    receivedText: 'आपका लिखा हुआ संदेश मिल गया है। आवाज़ से पूछने के लिए वेव पर टैप करें।',
     unclear: 'मुझे साफ़ सुनाई नहीं दिया। क्या आप फिर से बोल सकते हैं?',
     noDevice: 'मैं आपके डिवाइस की जगह की पुष्टि नहीं कर सकी। किस शहर की जानकारी चाहिए?',
     notFound: (place) => `मैं ${place} की पुष्टि नहीं कर पाई। शहर और उसका राज्य या देश बताएँगे?`,
@@ -140,6 +194,12 @@ const replies = {
   mr: {
     city: 'कोणत्या शहराची माहिती पाहू?', region: 'शहर आणि त्याचं राज्य किंवा देश सांगाल का?',
     confirm: (city) => `तुम्हाला ${city} म्हणायचं आहे का?`, set: (city) => `ठीक आहे, स्थानिक माहितीसाठी मी ${city} वापरेन.`,
+    useDiscussed: (city) => `या माहितीसाठी ${city} वापरू का?`,
+    retryCity: 'पुढे जाण्यासाठी फक्त शहराचं नाव सांगा किंवा लिहा.',
+    retryRegion: 'शहराची खात्री झाली नाही. शहरासोबत राज्य किंवा देशाचं नाव लिहा.',
+    retryConfirm: 'सुचवलेलं शहर बरोबर असेल तर “हो” म्हणा. नाहीतर शहरासोबत राज्य किंवा देश लिहा.',
+    receivedVoice: 'तुमच्या ब्राउझरने तुमचा प्रश्न ओळखला आहे. पुढे बोला.',
+    receivedText: 'तुम्ही लिहिलेला संदेश मिळाला आहे. आवाज वापरण्यासाठी वेव्हवर टॅप करा.',
     unclear: 'मला नीट ऐकू आलं नाही. पुन्हा सांगाल का?',
     noDevice: 'मला तुमच्या डिव्हाइसचे ठिकाण खात्रीने मिळाले नाही. कोणते शहर पाहू?',
     notFound: (place) => `मला ${place} खात्रीने सापडलं नाही. शहर आणि त्याचं राज्य किंवा देश सांगाल का?`,
@@ -158,12 +218,16 @@ export async function resolveTalkTurn(text, context, {
   confidence, fromMic = confidence !== undefined, language = 'en', history, pending, signal,
   lookup = lookupTalkPlace, locateDevice = getTalkDeviceLocation, route,
 } = {}) {
+  // Chat supplies its own route and keeps its own place clarification UI.
+  const inTalk = !route;
   const copy = replies[language] || replies.en;
   const say = (reply, update = context) => ({ kind: 'reply', text: reply, context: update });
   const ask = (reply, update) => ({ ...say(reply, update), expectsReply: true });
-  if (!/[\p{L}\p{N}]/u.test(text) || unclearTalkInput(confidence)) return ask(copy.unclear);
+  const hint = (reply, update = context) => ({ ...say(reply, update), silent: true });
+  if (!/[\p{L}\p{N}]/u.test(text) || unclearTalkInput(confidence)) return inTalk ? hint(copy.unclear) : ask(copy.unclear);
+  if (inTalk && MIC_CHECK.test(text.trim())) return say(fromMic ? copy.receivedVoice : copy.receivedText);
 
-  let turn = { ...(route || routeTalkRequest(text, history)), message: text };
+  let turn = { ...(route || currentTalkRoute(text, history)), message: text };
   const explicitlyChooseCity = turn.kind === 'city';
   const waiting = context.waiting;
   const profileReply = pending?.intent === INTENTS.GET_SMOG_PLAN && isSmogProfile(text);
@@ -178,21 +242,27 @@ export async function resolveTalkTurn(text, context, {
   let confirmed = null;
   let answeringLocation = false;
   if (waiting) {
+    const echo = inTalk && fromMic && (CITY_PROMPT_ECHO.test(text.trim()) ||
+      [waiting.prompt, copy.city, copy.region].some((prompt) => isTalkEcho(text, prompt)));
+    if (inTalk && (echo || REPEATED_CITY.test(text.trim()))) {
+      return hint(waiting.candidate ? copy.retryConfirm : copy.retryCity);
+    }
     if (/^(?:cancel|never mind|forget it)[.!?]*$/i.test(text.trim())) {
       return { kind: 'general', message: text, context: { ...context, waiting: null } };
     }
     const confirmation = text.trim().replace(/[.!?।]+$/u, '').replace(/[,\s]+/gu, ' ').trim();
-    const yes = /^(?:(?:yes|yeah|yep)(?: (?:please|correct|that['’]s (?:right|correct)))?|correct|that['’]s (?:right|correct)|haan|han|हाँ|हां|हो|बरोबर)$/iu.test(confirmation);
+    const yes = /^(?:(?:yes|yeah|yep)(?: (?:please|correct|use it|that['’]s (?:right|correct|the one)))?|correct|that['’]s (?:right|correct)|haan|han|हाँ|हां|हो|बरोबर)$/iu.test(confirmation);
     const no = /^(?:(?:no|nope)(?: not that one)?|not that one|nahi|नहीं|नाही)$/iu.test(confirmation);
     if (yes && waiting.candidate) {
       turn = waiting.turn;
       answeringLocation = true;
       confirmed = waiting.candidate;
     } else if (no || (yes && !waiting.candidate)) {
-      return ask(copy.region, { ...context, waiting: { ...waiting, candidate: null } });
+      const next = { ...context, waiting: { ...waiting, candidate: null } };
+      return inTalk ? hint(copy.retryCity, next) : ask(copy.region, next);
     } else if (turn.kind === 'city' || (turn.kind === 'general' && !profileReply)) {
       const followUp = text.trim().match(PLACE_FOLLOWUP);
-      const place = turn.place || talkPlaceName(followUp?.[1] || text.replace(/^city:\s*/i, ''));
+      const place = turn.place || (inTalk ? talkCityAnswer(text) : talkPlaceName(followUp?.[1] || text.replace(/^city:\s*/i, '')));
       if (place) {
         turn = { ...waiting.turn, place };
         answeringLocation = true;
@@ -207,25 +277,41 @@ export async function resolveTalkTurn(text, context, {
   if (!turn.needsPlace) return { ...turn, context: { ...context, waiting: null } };
 
   const pinLocation = explicitlyChooseCity || turn.kind === 'city' || Boolean(answeringLocation && waiting.pinLocation);
-  const defer = (reply, candidate = null) => ask(reply, {
-    ...context, waiting: { turn, candidate, pinLocation: pinLocation || (turn.relative && !turn.place) },
+  const sameLookup = waiting?.turn?.kind === turn.kind && waiting.turn.intent === turn.intent;
+  const deferred = (prompt, candidate = null) => ({
+    ...context, waiting: { turn, candidate, pinLocation: pinLocation || (turn.relative && !turn.place), ...(inTalk && { prompt }) },
   });
+  const defer = (reply, candidate) => ask(reply, deferred(reply, candidate));
+  const confirm = (candidate) => {
+    const prompt = copy.confirm(candidate.city);
+    return inTalk && sameLookup && waiting.candidate?.city === candidate.city
+      ? hint(copy.retryConfirm, deferred(prompt, candidate)) : defer(prompt, candidate);
+  };
   let location = confirmed;
   if (!location && turn.place) {
     const hit = await lookup(turn.place, { signal, map: Boolean(turn.map) });
     if (!hit.location) {
-      if (hit.candidate) return defer(copy.confirm(hit.candidate.city), hit.candidate);
+      if (hit.candidate) return confirm(hit.candidate);
+      if (inTalk && (!hit.ambiguous || (sameLookup && waiting.prompt === copy.region))) return hint(copy.retryRegion, deferred(copy.region));
       return { ...defer(hit.ambiguous ? copy.region : copy.notFound(turn.place)), ambiguous: Boolean(hit.ambiguous) };
     }
     location = hit.location;
-    if (fromMic && (!confidence || confidence < .78) && location.city !== context.location?.city) {
-      return defer(copy.confirm(location.city), location);
+    const previouslyVerified = inTalk && pinLocation ? context.chosenLocation : context.location;
+    if (fromMic && (!confidence || confidence < .78) && location.city !== previouslyVerified?.city) {
+      return confirm(location);
     }
   }
   if (!location && turn.kind !== 'city' && !turn.relative) location = context.location || context.chosenLocation;
   // A city asked about in a previous turn is not proof of the user's location.
   if (!location && turn.relative && turn.kind !== 'city') location = context.chosenLocation;
-  if (!location) return defer(copy.city);
+  if (!location) {
+    if (inTalk && sameLookup) {
+      if (waiting.turn.message === turn.message) return hint(waiting.candidate ? copy.retryConfirm : copy.retryCity);
+      return hint(copy.retryCity, deferred(copy.city));
+    }
+    if (inTalk && turn.relative && context.location) return defer(copy.useDiscussed(context.location.city), context.location);
+    return defer(copy.city);
+  }
 
   const next = { location: turn.map && !pinLocation ? context.location : location, chosenLocation: pinLocation ? location : context.chosenLocation, waiting: null };
   if (turn.kind === 'city') return { ...say(copy.set(location.city), next), selected: location };

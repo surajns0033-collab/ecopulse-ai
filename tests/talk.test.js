@@ -55,12 +55,93 @@ test('a city answer finishes the original question rather than starting an unrel
   assert.equal(followUp.context.chosenLocation, Mumbai);
 });
 
-test('a city asked about earlier does not become the user’s physical location', async () => {
+test('a discussed city is offered for a local lookup, but never assumed', async () => {
   const topic = await resolveTalkTurn('Weather in Panvel', emptyTalkContext(), { lookup: async () => ({ location: Panvel }) });
   const plain = await resolveTalkTurn('And the AQI?', topic.context, { lookup: forbidLookup });
   assert.equal(plain.location, Panvel);
   const here = await resolveTalkTurn('AQI here', plain.context, { lookup: forbidLookup });
-  assert.equal(here.text, 'Which city should I check?');
+  assert.equal(here.kind, 'reply');
+  assert.match(here.text, /Should I use Panvel, Maharashtra, India/);
+  assert.equal(here.context.chosenLocation, null);
+  assert.equal(here.expectsReply, true);
+  const confirmed = await resolveTalkTurn('Yes, use it', here.context, { lookup: forbidLookup });
+  assert.equal(confirmed.message, 'AQI here');
+  assert.equal(confirmed.location, Panvel);
+  assert.equal(confirmed.context.chosenLocation, Panvel);
+  const later = await resolveTalkTurn('What is the weather outside?', confirmed.context, { lookup: forbidLookup });
+  assert.equal(later.location, Panvel);
+});
+
+test('a standalone verified city statement sets Talk’s local city', async () => {
+  for (const [input, city] of [["I’m currently in Mumbai", 'Mumbai'], ['My city is Mumbai', 'Mumbai'], ['मैं मुंबई में हूँ', 'मुंबई'], ['मेरा शहर मुंबई है', 'मुंबई'], ['मी मुंबईमध्ये आहे', 'मुंबई']]) {
+    const selected = await resolveTalkTurn(input, emptyTalkContext(), {
+      lookup: async (query) => { assert.equal(query, city); return { location: Mumbai }; },
+    });
+    assert.equal(selected.selected, Mumbai, input);
+    const weather = await resolveTalkTurn('Weather in my city', selected.context, { lookup: forbidLookup });
+    assert.equal(weather.location, Mumbai);
+  }
+});
+
+test('echo, repeating the request, and reminding Talk do not replay the city question or lose it', async () => {
+  const request = 'What is the weather near me?';
+  const waiting = await resolveTalkTurn(request, emptyTalkContext(), { lookup: forbidLookup });
+  for (const input of ['Which city should I check', 'What city should I check?', request, 'I already said my city earlier', 'yes']) {
+    const turn = await resolveTalkTurn(input, waiting.context, { fromMic: true, confidence: .91, lookup: forbidLookup });
+    assert.equal(turn.silent, true, input);
+    assert.ok(!turn.expectsReply);
+    assert.equal(turn.context.waiting.turn.message, request);
+    assert.equal(turn.context.chosenLocation, null);
+  }
+  for (const input of ['the city is Mumbai', 'please check Mumbai', 'I said Mumbai earlier', 'um Mumbai please']) {
+    const turn = await resolveTalkTurn(input, waiting.context, {
+      fromMic: true, confidence: .91,
+      lookup: async (query) => { assert.equal(query, 'Mumbai'); return { location: Mumbai }; },
+    });
+    assert.equal(turn.kind, 'tool', input);
+    assert.equal(turn.intent, INTENTS.GET_WEATHER);
+    assert.equal(turn.message, request);
+    assert.equal(turn.context.chosenLocation, Mumbai);
+  }
+});
+
+test('failed or repeatedly uncertain city answers offer a retry without inventing a location', async () => {
+  const options = { fromMic: true, confidence: .68 };
+  const first = await resolveTalkTurn('AQI here', emptyTalkContext(), { lookup: forbidLookup });
+  const absent = await resolveTalkTurn('Unknownville', first.context, { ...options, lookup: async () => ({}) });
+  assert.equal(absent.silent, true);
+  assert.equal(absent.context.chosenLocation, null);
+  const possible = await resolveTalkTurn('Panvel', absent.context, { ...options, lookup: async () => ({ location: Panvel }) });
+  assert.match(possible.text, /^Did you mean Panvel/);
+  const repeat = await resolveTalkTurn('Panvel', possible.context, { ...options, lookup: async () => ({ location: Panvel }) });
+  assert.equal(repeat.silent, true);
+  assert.equal(repeat.context.chosenLocation, null);
+  const done = await resolveTalkTurn('Yes', repeat.context, { fromMic: true, confidence: .91, lookup: forbidLookup });
+  assert.equal(done.location, Panvel);
+  assert.equal(done.message, 'AQI here');
+});
+
+test('a mic check or general request does not become a city lookup', async () => {
+  const waiting = await resolveTalkTurn('AQI here', emptyTalkContext(), { lookup: forbidLookup });
+  const voice = await resolveTalkTurn('Can you hear me here now?', waiting.context, { fromMic: true, confidence: .91, lookup: forbidLookup });
+  assert.match(voice.text, /browser recognized your question/);
+  assert.equal(voice.context.waiting, waiting.context.waiting);
+  assert.ok(!voice.expectsReply);
+  const typed = await resolveTalkTurn('Can you hear me?', waiting.context, { lookup: forbidLookup });
+  assert.match(typed.text, /typed message/);
+  const joke = await resolveTalkTurn('Send me a joke', waiting.context, { fromMic: true, confidence: .91, lookup: forbidLookup });
+  assert.equal(joke.kind, 'general');
+  const weather = await resolveTalkTurn('Send me weather for Mumbai', emptyTalkContext(), { lookup: async () => ({ location: Mumbai }) });
+  assert.equal(weather.intent, INTENTS.GET_WEATHER);
+  assert.equal(weather.location, Mumbai);
+});
+
+test('Chat retains its existing place clarification flow', async () => {
+  const text = 'AQI here';
+  const chat = await resolveTalkTurn(text, { ...emptyTalkContext(), location: Panvel }, { route: routeTalkRequest(text), lookup: forbidLookup });
+  assert.equal(chat.text, 'Which city should I check?');
+  const retry = await resolveTalkTurn('yes', chat.context, { route: routeTalkRequest('yes'), lookup: forbidLookup });
+  assert.equal(retry.text, 'Which city and state or country should I use?');
 });
 
 test('a different city lookup does not overwrite the city that was explicitly chosen', async () => {
@@ -82,6 +163,7 @@ test('general English and unclear mic input do not introduce places', async () =
   for (const text of ['…', 'Weather in Pennsylvania']) {
     const turn = await resolveTalkTurn(text, emptyTalkContext(), { lookup: forbidLookup, confidence: .35 });
     assert.equal(turn.text, 'I didn’t catch that clearly. Could you say it again?');
+    assert.equal(turn.silent, true);
   }
 });
 
