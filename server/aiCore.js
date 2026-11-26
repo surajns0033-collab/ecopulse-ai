@@ -1,4 +1,6 @@
-﻿const state = {
+﻿import { officialLinkRequest } from '../src/services/webSources.js'
+
+const state = {
   geminiModels: null,
   geminiModelsAt: 0,
   geminiWorkingModel: null,
@@ -22,8 +24,9 @@ function realKey(value) {
 async function fetchJson(url, options = {}, timeoutMs = 45000) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal })
+    const res = await fetch(url, { ...options, signal })
     const raw = await res.text()
     let json = null
     try { json = JSON.parse(raw) } catch { /* not json */ }
@@ -37,6 +40,10 @@ function geminiErrorText(json, raw) {
   const message = json?.error?.message
   if (message) return message
   return (raw || '').slice(0, 220)
+}
+
+function isWebUrl(value) {
+  try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false }
 }
 
 const MODEL_BLOCKLIST = /embedding|aqa|imagen|veo|tts|native-audio|live|image|thinking/i
@@ -94,16 +101,13 @@ function buildGeminiContents(messages, images) {
 }
 
 async function callGemini(payload) {
-  if (Date.now() < state.geminiDisabledUntil) throw new Error('Gemini key rejected earlier â€” skipped')
+  if (Date.now() < state.geminiDisabledUntil) throw new Error('Gemini key rejected earlier; skipping request')
 
-  const candidates = [payload.model, state.geminiWorkingModel].filter(Boolean)
-  if (!state.geminiModels) {
-    const listed = await listGeminiModels(payload.key)
-    candidates.push(...listed)
-  } else {
-    candidates.push(...state.geminiModels)
+  let models = [payload.model]
+  if (!payload.talk) {
+    const listed = state.geminiModels || await listGeminiModels(payload.key)
+    models = [...new Set([payload.model, state.geminiWorkingModel, ...listed].filter(Boolean))].slice(0, 4)
   }
-  const models = [...new Set(candidates)].slice(0, 4)
   if (!models.length) throw new Error('No Gemini text model available for this key')
 
   let lastError = null
@@ -116,6 +120,7 @@ async function callGemini(payload) {
         temperature: typeof payload.temperature === 'number' ? payload.temperature : 0.7,
         maxOutputTokens: Math.min(Math.max(payload.maxTokens || 600, 64), 2048),
         topP: 0.95,
+        ...(payload.talk ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } } : {}),
       },
     }
     const { ok, status, json, raw } = await fetchJson(
@@ -123,6 +128,7 @@ async function callGemini(payload) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': payload.key },
+        signal: payload.signal,
         body: JSON.stringify(body),
       },
       payload.timeoutMs || 45000
@@ -130,6 +136,7 @@ async function callGemini(payload) {
     if (ok) {
       const candidate = json?.candidates?.[0]
       const text = (candidate?.content?.parts || [])
+        .filter((part) => !part?.thought)
         .map((p) => p?.text || '')
         .join('')
         .trim()
@@ -138,7 +145,7 @@ async function callGemini(payload) {
         const chunks = candidate?.groundingMetadata?.groundingChunks || []
         const sources = chunks
           .map((chunk) => chunk?.web)
-          .filter((web) => web?.uri)
+          .filter((web) => isWebUrl(web?.uri))
           .map((web) => ({ title: web.title || 'Web source', url: web.uri }))
           .filter((source, index, list) => list.findIndex((item) => item.url === source.url) === index)
           .slice(0, 6)
@@ -204,11 +211,12 @@ async function callOpenAICompatible(payload, env) {
   return { text, provider: `openai:${model}` }
 }
 
-async function callTavilySearch(payload, env) {
+async function callTavilySearch(payload, env, signal) {
   const key = realKey(env.TAVILY_API_KEY)
   if (!key) throw new Error('No Tavily search key configured')
   const query = [...(payload.messages || [])].reverse().find((message) => message.role !== 'assistant')?.text?.trim()
   if (!query) throw new Error('No search query supplied')
+  const official = payload.mode === 'talk' ? officialLinkRequest(query) : null
 
   const { ok, status, json, raw } = await fetchJson(
     'https://api.tavily.com/search',
@@ -218,25 +226,27 @@ async function callTavilySearch(payload, env) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`,
       },
+      signal,
       body: JSON.stringify({
         query,
         search_depth: 'basic',
         topic: 'general',
         max_results: 5,
-        include_answer: 'basic',
+        include_answer: official ? false : 'basic',
         include_raw_content: false,
+        ...(official?.domain ? { include_domains: [official.domain] } : {}),
       }),
     },
     payload.timeoutMs || 45000
   )
   if (!ok) throw new Error(`Tavily ${status}: ${geminiErrorText(json, raw)}`)
 
-  const sources = (json?.results || [])
-    .filter((result) => result?.url)
+  const results = (json?.results || []).filter((result) => isWebUrl(result?.url))
+  const sources = results
     .map((result) => ({ title: result.title || 'Web source', url: result.url }))
     .slice(0, 5)
   const answer = String(json?.answer || '').trim()
-  const text = answer || (json?.results || []).slice(0, 4).map((result) => (
+  const text = answer || results.slice(0, 4).map((result) => (
     `**${result.title || 'Source'}**\n${String(result.content || '').slice(0, 500)}`
   )).join('\n\n')
   if (!text) throw new Error('Tavily returned no answer or search results')
@@ -369,6 +379,9 @@ export function makeAiHandler(env) {
     }
 
     const geminiKey = realKey(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || env.GOOGLE_API_KEY)
+    if (payload?.mode === 'talk') {
+      return respondToTalk(payload, env, geminiKey, res)
+    }
     const attempts = []
 
     const providers = []
@@ -399,6 +412,7 @@ export function makeAiHandler(env) {
     for (const provider of providers) {
       try {
         const result = await provider.run()
+        if (payload.useSearch && !result.sources?.length) throw new Error('Provider returned no web sources')
         state.lastProvider = result.provider
         state.lastError = null
         res.statusCode = 200
@@ -423,6 +437,42 @@ export function makeAiHandler(env) {
   }
 }
 
+// Talk has one provider per turn. Don't forward its history to unrelated
+// fallbacks, or swap in a different model when the free tier is unavailable.
+async function respondToTalk(payload, env, key, res) {
+  const controller = new AbortController()
+  const close = () => controller.abort()
+  res.once('close', close)
+  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('Cache-Control', 'no-store')
+  const timeoutMs = Math.min(14000, Math.max(1000, Number(payload.timeoutMs) || 12000))
+  try {
+    const result = payload.useSearch
+      ? await callTavilySearch({ ...payload, timeoutMs }, env, controller.signal)
+      : key && await callGemini({
+        key,
+        contents: buildGeminiContents(payload.messages),
+        system: payload.system,
+        model: 'gemini-3.1-flash-lite',
+        temperature: 0.4,
+        maxTokens: 384,
+        timeoutMs,
+        talk: true,
+        signal: controller.signal,
+      })
+    if (!result || (payload.useSearch && !result.sources?.length)) throw new Error('No verified reply')
+    if (controller.signal.aborted) return
+    res.statusCode = 200
+    res.end(JSON.stringify(result))
+  } catch {
+    if (controller.signal.aborted) return
+    res.statusCode = 503
+    res.end(JSON.stringify({ error: 'Talk reply is unavailable' }))
+  } finally {
+    res.off('close', close)
+  }
+}
+
 function readJsonBody(req) {
   if (req.body != null) {
     if (typeof req.body === 'object') return Promise.resolve(req.body)
@@ -444,5 +494,3 @@ function readJsonBody(req) {
     req.on('error', reject)
   })
 }
-
-

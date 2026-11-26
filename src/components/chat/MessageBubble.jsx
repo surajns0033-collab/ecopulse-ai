@@ -84,7 +84,9 @@ function MarkdownText({ text }) {
 }
 
 function renderLinkedText(text, keyPrefix) {
-  return String(text).split(/(https?:\/\/[^\s]+)/g).map((part, index) => {
+  return String(text).split(/(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s]+)/g).map((part, index) => {
+    const labeled = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+    if (labeled) return <a key={`${keyPrefix}-${index}`} href={labeled[2]} target="_blank" rel="noopener noreferrer">{labeled[1]}</a>;
     if (/^https?:\/\//.test(part)) {
       const cleanUrl = part.replace(/[.,;!?]+$/, '');
       const trailing = part.slice(cleanUrl.length);

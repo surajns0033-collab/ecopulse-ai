@@ -9,7 +9,7 @@ const GREETING = /^(hi+|hello+|hey+|yo|hola|namaste|namaskar|namaskaram|good\s+(
 const THANKS = /\b(thanks?|thank you|thx|shukriya|dhanyawad|dhanyavad)\b/i;
 const BYE = /^(bye+|goodbye|see you|good night|gn|ok bye)\b/i;
 const WHO = /\b(who are you|what are you|what can you do|what do you do|your name|tum kaun|aap kaun|kaun ho|kya kar sakte)\b/i;
-const COMPLAINT = /\b(complain|complaint|shikayat|grievance|report|portal|authority|email|mail|contact|helpline|kisko|kahan|kaha|kaise|where to|whom to|nmmc|bmc|mcgm|municipal|pollution board|mpcb|forest)\b/i;
+const COMPLAINT = /\b(complain|complaint|shikayat|grievance|authority contacts?|complaint portal|helpline|nmmc|bmc|mcgm|municipal|pollution board|mpcb)\b/i;
 
 function cityLabel(location) {
   const city = location?.city;
@@ -19,12 +19,15 @@ function cityLabel(location) {
 
 export function contactLines(recipient) {
   if (!recipient) return [];
+  if (recipient.jurisdiction !== 'india') return recipient.disclaimer ? [recipient.disclaimer] : [];
   const lines = [];
-  if (recipient.organization) lines.push(`🏛️ **Local — ${recipient.organization}**`);
+  if (recipient.localUnavailable) lines.push('📍 **No verified local contact**');
+  else if (recipient.organization) lines.push(`🏛️ **Local — ${recipient.organization}**`);
   if (recipient.email && recipient.email.includes('@')) lines.push(`📧 Email: ${recipient.email}`);
   if (recipient.helpline) lines.push(`📞 Helpline: ${recipient.helpline}`);
   if (recipient.whatsapp) lines.push(`💬 WhatsApp: ${recipient.whatsapp}`);
-  if (recipient.portalUrl) lines.push(`🌐 Portal: ${recipient.portalUrl}`);
+  if (recipient.portalUrl) lines.push(`🌐 ${recipient.localUnavailable ? 'National portal' : 'Portal'}: ${recipient.portalUrl}`);
+  if (recipient.sourceUrl) lines.push(`[Official contact listing](${recipient.sourceUrl})`);
   if (recipient.forestEmail) {
     lines.push(`🌳 Forest / Tree Cell: ${recipient.forestEmail}${recipient.forestHelpline ? ` · ${recipient.forestHelpline}` : ''}`);
   }
@@ -51,9 +54,7 @@ export function contactLines(recipient) {
     if (bits.length) lines.push(bits.join('  |  '));
   }
   if (recipient.nationalPortal) lines.push(`🧾 Tracked grievance: ${recipient.nationalPortal}`);
-  if (recipient.jurisdiction === 'outside-india') {
-    lines.push('🚨 For an emergency, use the number published by the local government or police; none is guessed here.');
-  } else if (recipient.civicDomain === 'traffic') {
+  if (recipient.civicDomain === 'traffic') {
     lines.push('🚨 Immediate danger / blocked emergency access: **112**');
   } else {
     lines.push('🚨 Fire, chemical leak, or immediate danger to life: **112**');
@@ -76,7 +77,6 @@ function liveSummary(aqi, weather, city) {
 export function buildFallbackReply({
   message = '',
   location,
-  history = [],
   recipient = null,
   aqi = null,
   weather = null,
@@ -91,12 +91,8 @@ export function buildFallbackReply({
   // 1. Greeting / small talk
   if (GREETING.test(text) && text.split(/\s+/).length <= 5) {
     return {
-      text: `Hello! 👋 I'm **EcoPulse AI** — I can check live air quality and weather for **${city}**, tell you exactly which authority to complain to, draft a complaint email, or help you report an issue with a photo. What's going on?`,
-      cards: [],
-      actions: [
-        { label: '🌬️ Air Quality', action: 'QUICK_AQI', variant: 'primary' },
-        { label: '📋 Report an Issue', action: 'QUICK_REPORT', variant: 'secondary' },
-      ],
+      text: 'Hi! How’s your day going?',
+      cards: [], actions: [],
       status: 'success',
     };
   }
@@ -138,10 +134,10 @@ export function buildFallbackReply({
   if (COMPLAINT.test(lower) || isComplaintContext) {
     const contactBlock = contacts.length
       ? contacts.join('\n')
-      : `🏛️ For **${city}**, file a tracked grievance at **https://pgportal.gov.in** (CPGRAMS) and use your city/district's official portal to verify the responsible local department.`;
+      : 'Which city and country is the issue in? I don’t have a verified local contact yet.';
 
     return {
-      text: `Here's the verified route for a complaint in **${city}**:\n\n${contactBlock}\n\n**How to make it stick**\n• Send it in writing with the **exact location, date and time**.\n• Attach **photos/video** — they speed up inspection.\n• Note the complaint/reference number and follow up after 7 days.\n• If it's happening right now (burning, dumping, sewage overflow), call the helpline first so the flying squad can act on the spot.\n\nTell me what exactly is happening and I'll draft the complaint email for you. 📧`,
+      text: `${contactBlock}\n\nFor a written complaint, include the **exact location, date and time**, attach any evidence, and keep the reference number.`,
       cards: [],
       actions: [
         { label: '📧 Draft Complaint Email', action: 'QUICK_DRAFT_EMAIL', variant: 'primary' },
@@ -225,18 +221,14 @@ export function buildFallbackReply({
   };
 }
 
-/** Safe, factual complaint email used when the model cannot draft one. */
-export function buildComplaintEmailTemplate({ situation, recipient, city, cc, ccLabel, issueLabel, hasPhoto = false }) {
+/** Factual complaint draft from provided details; the user reviews it before sending. */
+export function buildComplaintEmailTemplate({ situation, recipient, city, issueLabel, hasPhoto = false }) {
   const place = city && city !== 'Unknown' ? city : 'my locality';
-  const org = recipient?.organization || 'the concerned authority';
   const name = recipient?.name || 'Sir/Madam';
   const issueText = issueLabel ? issueLabel.toLowerCase() : 'an environmental problem';
   const subject = `Environmental complaint${issueLabel ? ` — ${issueLabel}` : ''} — ${place}`;
 
   const body = [
-    `To: ${org}`,
-    `Subject: ${subject}`,
-    '',
     `Dear ${name},`,
     '',
     `I wish to report ${issueText} in ${place}.`,
@@ -247,17 +239,15 @@ export function buildComplaintEmailTemplate({ situation, recipient, city, cc, cc
     'Location: [Building / street / landmark]',
     'Since when: [Date and time noticed]',
     'Affected residents: [Approximate number or "my household and neighbours"]',
-    hasPhoto ? 'I have attached a photograph of the site as evidence.' : null,
+    hasPhoto ? '[Attach the photo of the site if it is safe and appropriate to share.]' : null,
     '',
-    'Kindly inspect the site and take the necessary action at the earliest. I am available for any follow-up and can share photographs or video evidence.',
+    'Please inspect the site and let me know what action can be taken.',
     '',
     'Regards,',
     '[Your full name]',
     '[Your address]',
     '[Your phone number]',
-    '',
-    cc ? `Cc: ${ccLabel || 'Concerned department'} <${cc}>` : null,
-  ].filter(Boolean).join('\n');
+  ].filter((line) => line !== null).join('\n');
 
   return { subject, body };
 }

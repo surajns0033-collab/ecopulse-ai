@@ -24,14 +24,14 @@ function withTimeout(ms) {
   return { signal: controller.signal, done: () => clearTimeout(timer) };
 }
 
-async function postJson(url, body, timeoutMs) {
+async function postJson(url, body, timeoutMs, signal) {
   const t = withTimeout(timeoutMs);
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: t.signal,
+      signal: signal ? AbortSignal.any([t.signal, signal]) : t.signal,
     });
     const raw = await res.text();
     let json = null;
@@ -43,7 +43,7 @@ async function postJson(url, body, timeoutMs) {
 }
 
 /** Direct browser → Gemini REST call (works even when the dev proxy is absent). */
-async function callGeminiDirect({ system, messages, images, temperature, maxTokens, timeoutMs, useSearch, model }) {
+async function callGeminiDirect({ system, messages, images, temperature, maxTokens, timeoutMs, useSearch, model, signal }) {
   const key = (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
   if (!key || /^your_/i.test(key)) throw new Error('No browser Gemini key configured');
 
@@ -89,7 +89,8 @@ async function callGeminiDirect({ system, messages, images, temperature, maxToke
     const { ok, status, json, raw } = await postJson(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
       body,
-      timeoutMs || 20000
+      timeoutMs || 20000,
+      signal,
     );
     if (ok) {
       const candidate = json?.candidates?.[0];
@@ -125,13 +126,15 @@ export async function requestAI({
   maxTokens = 600,
   timeoutMs = 30000,
   useSearch = false,
+  mode,
   model = '',
+  signal,
 } = {}) {
   const cleanMessages = (messages || [])
     .map((m) => ({ role: m.role === 'assistant' || m.role === 'ai' ? 'assistant' : 'user', text: (m.text || '').trim() }))
     .filter((m) => m.text);
 
-  if (!cleanMessages.length) return null;
+  if (!cleanMessages.length || signal?.aborted) return null;
 
   const payload = {
     system,
@@ -141,13 +144,14 @@ export async function requestAI({
     maxTokens,
     timeoutMs,
     useSearch,
+    mode,
     model,
   };
 
   // 1. Server proxy (preferred — keeps keys private, handles CORS & provider fallback)
   if (Date.now() > state.proxyUnavailableUntil) {
     try {
-      const { ok, status, json, raw } = await postJson(PROXY, payload, timeoutMs + 10000);
+      const { ok, status, json, raw } = await postJson(PROXY, payload, timeoutMs + 10000, signal);
       if (ok && json?.text) {
         state.lastProvider = json.provider || 'proxy';
         return { text: json.text, sources: json.sources || [], provider: state.lastProvider };
@@ -160,13 +164,15 @@ export async function requestAI({
         state.lastError = (json?.attempts || []).map((a) => `${a.provider}: ${a.error}`).join(' | ') || json?.error || raw.slice(0, 200);
       }
     } catch (err) {
+      if (signal?.aborted) return null;
       state.lastError = String(err?.message || err);
     }
   }
 
   // 2. Direct Gemini from the browser (only if a real key is present)
+  if (signal?.aborted || mode === 'talk') return null;
   try {
-    const direct = await callGeminiDirect({ system, messages: cleanMessages, images, temperature, maxTokens, timeoutMs, useSearch, model });
+    const direct = await callGeminiDirect({ system, messages: cleanMessages, images, temperature, maxTokens, timeoutMs, useSearch, model, signal });
     state.lastProvider = direct.provider;
     return direct;
   } catch (err) {

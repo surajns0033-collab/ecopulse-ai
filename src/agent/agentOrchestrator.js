@@ -1,32 +1,26 @@
 // Agent Orchestrator — processes user messages and returns structured responses
 
 import { detectIntent, INTENTS } from './intentEngine';
+import { isSmogProfile, parseSmogProfile } from './smogProfile';
+import { AWAITING_CHAT_PLACE, AWAITING_DRAFT_DETAILS, incidentCity, isDraftDetailFragment, resolveChatPlace } from './chatPlaces';
+import { asksForForecast } from './talkContext';
 import { tools } from '../services/agentTools';
 import { getChatResponse, getJsonResponse, isAIUnavailable } from '../services/geminiService';
 import { buildFallbackReply, buildComplaintEmailTemplate, contactLines } from './fallbackBrain';
-import { getAQIInsight, getAQICategory, geocodeCity, getAirQuality, getAirQualityForecast, getWeather } from '../services/environmentalData';
-import { getAuthorityBundle } from '../services/authorityDirectory';
+import { getAQIInsight, getAQICategory, getAirQuality, getAirQualityForecast, getWeather } from '../services/environmentalData';
+import { lookupTalkPlace } from '../services/talkPlaces';
+import { getAuthorityBundle, isIndianPlace } from '../services/authorityDirectory';
 import { COLLECTIONS } from '../firebase/collections';
 import { db, isFirebaseConfigured } from '../firebase/config';
 import { addDoc, collection, Timestamp } from 'firebase/firestore';
-import { format } from 'date-fns';
 
 async function logAction(userId, action, data) {
-  if (!isFirebaseConfigured) return;
+  if (!userId || !isFirebaseConfigured) return;
   try {
     await addDoc(collection(db, COLLECTIONS.AI_ACTION_LOGS), {
       userId, action, data, timestamp: Timestamp.now(),
     });
-  } catch (_) {}
-}
-
-function formatDate(d) {
-  if (!d) return 'TBD';
-  try {
-    if (d?.toDate) return format(d.toDate(), 'EEE, d MMM yyyy');
-    if (d instanceof Date) return format(d, 'EEE, d MMM yyyy');
-    return String(d);
-  } catch { return 'TBD'; }
+  } catch { /* analytics must not block a reply */ }
 }
 
 /** Resolve the best city label — dynamic, never hardcoded */
@@ -35,169 +29,63 @@ function resolveCity(city) {
   return null; // null = location unknown
 }
 
-const KNOWN_CITIES = [
-  'navi mumbai', 'mumbai', 'bengaluru', 'bangalore', 'new delhi', 'delhi',
-  'pune', 'hyderabad', 'chennai', 'kolkata', 'ahmedabad', 'surat', 'jaipur',
-  'thiruvananthapuram', 'trivandrum', 'kochi', 'cochin', 'lucknow', 'chandigarh',
-  'indore', 'bhopal', 'thane', 'nagpur', 'tadoba', 'goa', 'patna', 'bhubaneswar',
-  'guwahati', 'visakhapatnam', 'vadodara', 'ghaziabad', 'ludhiana', 'agra', 'nashik',
-];
-
-// Neighbourhoods / suburbs. These are NOT geocoded on their own — a generic
-// geocoder happily maps "Vashi" to a village in Russia. They are kept as a
-// locality label on top of the user's current city instead.
-const KNOWN_LOCALITIES = new Set([
-  'vashi', 'kharghar', 'belapur', 'cbd belapur', 'nerul', 'seawoods', 'airoli', 'ulwe',
-  'ghansoli', 'koparkhairane', 'sanpada', 'juinagar', 'turbhe', 'digha', 'vashi node',
-  'andheri', 'bandra', 'powai', 'dadar', 'borivali', 'colaba', 'worli', 'juhu', 'kurla',
-  'malad', 'goregaon', 'chembur', 'mulund', 'ghatkopar', 'vikhroli', 'bhandup', 'dahisar',
-  'kandivali', 'sion', 'wadala', 'mahim', 'byculla', 'lower parel', 'bkc', 'kalyan',
-]);
-
-function findKnownLocality(value) {
-  if (!value) return null;
-  const lower = String(value).toLowerCase().trim();
-  return [...KNOWN_LOCALITIES]
-    .sort((a, b) => b.length - a.length)
-    .find((locality) => lower === locality || lower.startsWith(`${locality} `) || lower.endsWith(` ${locality}`)) || null;
-}
-
-/** "in Vashi", "near Kharghar station" → "Vashi" / "Kharghar" (capitalised places only). */
-function extractLocality(msg) {
-  if (!msg) return null;
-  const match = msg.match(/\b(?:in|at|near|behind|opposite|beside|outside|around)\s+([A-Z][A-Za-z]{2,}(?:\s+[A-Z][A-Za-z]{2,})?)\b/);
-  if (!match) return null;
-  const candidate = match[1].trim();
-  if (/^(The|My|Our|This|That|India)$/i.test(candidate)) return null;
-  return candidate;
-}
-
-/** Extract a city/place mentioned in the user message if any */
-function extractMentionedCity(msg) {
-  if (!msg) return null;
-  const lower = msg.toLowerCase();
-
-  // 0. Fast match for known cities anywhere in the sentence (e.g. "in bangalore majesty area tyre burning")
-  const knownHit = KNOWN_CITIES.find((c) => new RegExp(`\\b${c}\\b`, 'i').test(lower));
-  if (knownHit) return knownHit;
-
-  const ignore = new Set([
-    'my city', 'my area', 'your city', 'india', 'the', 'this', 'here', 'me',
-    'health', 'tips', 'weather', 'aqi', 'air', 'quality', 'pollution', 'route',
-    'routes', 'waste', 'report', 'detail', 'details', 'info', 'today', 'hello', 'hi',
-    'draft', 'email', 'mail', 'help', 'create', 'join', 'plan', 'impact', 'community',
-    'events', 'event', 'meetup', 'meetups', 'water', 'garbage', 'complaint', 'complain',
-    'recycling', 'recycle', 'compost', 'composting', 'climate', 'energy', 'electricity',
-    'ok', 'okay', 'yes', 'no', 'thanks', 'thank you', 'cancel', 'done',
-  ]);
-
-  const nonPlaceWords = new Set([
-    'i', 'im', 'i’m', 'ineed', 'need', 'want', 'wanna', 'help', 'assist', 'assistance',
-    'ur', 'your', 'you', 'my', 'me', 'please', 'pls', 'can', 'could', 'would', 'should',
-    'tell', 'give', 'show', 'explain', 'guide', 'ask', 'question', 'problem', 'issue',
-    'what', 'whats', "what's", 'why', 'how', 'who', 'when', 'going', 'happening', 'up', 'do', 'does', 'is', 'are', 'am', 'about',
-    'environment', 'environmental', 'recycling', 'compost', 'composting', 'climate',
-    'electricity', 'energy', 'plastic', 'complaint', 'report', 'photo', 'image',
-  ]);
-  const looksConversational = (candidate) => {
-    const phrase = candidate.toLowerCase().trim();
-    if (ignore.has(phrase)) return true;
-    return phrase.split(/\s+/).some((word) => nonPlaceWords.has(word));
-  };
-
-  // Only interpret "in/for/near X" as a location when the sentence is
-  // actually location-dependent. This prevents "prepare for interview" or
-  // "benefits of exercise" from being mistaken for city searches.
-  const hasLocationContext = /\b(weather|aqi|air quality|pollution|map|location|complaint|report|authority|garbage|dumping|burning|sewage|naala|nala|tree|parking|event|meetup|route|nearby)\b/i.test(msg);
-  if (hasLocationContext) {
-    const prepMatch = msg.match(/\b(?:in|of|at|for|near)\s+([A-Za-z][A-Za-z\s]{1,30}?)(?=\s*(?:\?|!|\.|,|right now|today|weather|aqi|air|pollution|detail|details|info|$))/i);
-    if (prepMatch) {
-      const candidate = prepMatch[1].trim();
-      if (!looksConversational(candidate)) return candidate;
-    }
-  }
-
-  // Topic-first form: "weather San Francisco", "map Vashi station".
-  const topicMatch = msg.match(/^(?:show\s+)?(?:weather|aqi|air quality|map|location|details?|info)(?:\s+(?:in|for|of))?\s+([A-Za-z][A-Za-z\s]{1,30})$/i);
-  if (topicMatch) {
-    const candidate = topicMatch[1].trim();
-    if (!looksConversational(candidate)) return candidate;
-  }
-
-  // 2. Leading city form: "and bangalore", "bangalore detail", "delhi aqi", "pune weather", "mumbai"
-  const cleaned = msg.trim().replace(/^(?:and|also|now|what about|how about|about|for|check)\s+/i, '');
-  const leadMatch = cleaned.match(/^([A-Za-z][A-Za-z\s]{1,25}?)(?:\s+(?:detail|details|info|aqi|weather|pollution|air quality|report|events|routes))?$/i);
-  if (leadMatch) {
-    const candidate = leadMatch[1].trim();
-    if (candidate.length >= 3 && !looksConversational(candidate)) return candidate;
-  }
-
-  return null;
-}
-
-export async function processMessage(userMessage, conversationHistory, user, location, imageData, pendingAction) {
+export async function processMessage(userMessage, conversationHistory, user, location, imageData, pendingAction, { chosenLocation, photoLocation, voiceIntent, signal } = {}) {
   const userId = user?.uid || 'anonymous';
-  let lat = location?.lat;
-  let lng = location?.lng;
-  let city = resolveCity(location?.city);
-  let hasExplicitCity = false;
-  let failedCityLookup = null;
-
-  let localityLabel = null;
-  const mentionedCity = extractMentionedCity(userMessage);
-  const localityCandidate = extractLocality(userMessage) || mentionedCity;
-  const knownLocality = findKnownLocality(localityCandidate) || findKnownLocality(mentionedCity);
-
-  if (knownLocality) {
-    // A suburb we know — keep it as a label, don't trust a global geocoder with it.
-    localityLabel = localityCandidate || mentionedCity || knownLocality;
-  } else if (mentionedCity) {
-    const geo = await geocodeCity(mentionedCity);
-    if (geo) {
-      lat = geo.lat;
-      lng = geo.lng;
-      city = geo.city;
-      hasExplicitCity = true;
-    } else {
-      failedCityLookup = mentionedCity;
-    }
-  }
-
-  if (imageData?.base64) {
-    return handleImageAnalysis(imageData, userMessage, userId, {
-      ...location, lat, lng, city, locality: localityLabel,
-    });
-  }
-
-  const explicitlyAskedForLocation = /\b(weather|aqi|air quality|map|maps|location|locate|coordinates|city|where is)\b/i.test(userMessage);
-  if (failedCityLookup && explicitlyAskedForLocation && !pendingAction && userMessage.trim().split(/\s+/).length <= 8) {
-    return {
-      text: `I couldn't locate **${failedCityLookup}** reliably, so I won't reuse your previous city or guess. Please check the spelling, or type it as **City, State/Region, Country**.`,
-      cards: [],
-      actions: [{ label: '📍 Share My Location', action: 'REQUEST_LOCATION', variant: 'secondary' }],
-      status: 'needs_location',
-    };
-  }
-
-  const { intent, confidence, entities, suggestedTool, requiresConfirmation } = detectIntent(
-    userMessage, conversationHistory
-  );
-
-  logAction(userId, 'intent_detected', { intent, confidence, message: userMessage });
+  const logUserId = voiceIntent ? null : userId;
+  const followingSmog = pendingAction?.type === 'SMOG_PLAN_AWAITING_PROFILE' && (voiceIntent || isSmogProfile(userMessage));
 
   try {
+    if (imageData?.base64) {
+      // The city in a different Chat turn needn't be where a photo was taken.
+      // Keep the analysis useful, but don't prefill a recipient from that city.
+      const candidate = incidentCity(userMessage || '');
+      const verifiedLocation = candidate ? (await lookupTalkPlace(candidate, { signal })).location : null;
+      return await handleImageAnalysis(imageData, userMessage, userId, verifiedLocation);
+    }
+
+    // Photo actions must not inherit the city being discussed elsewhere in Chat.
+    const fromPhoto = photoLocation !== undefined;
+    const chatLocation = fromPhoto ? photoLocation : location;
+    const draftDetails = !fromPhoto && pendingAction?.type === AWAITING_DRAFT_DETAILS &&
+      (describesIssue(userMessage) || isDraftDetailFragment(userMessage));
+    const placeTurn = voiceIntent || followingSmog ? null :
+      await resolveChatPlace(userMessage, conversationHistory, chatLocation, fromPhoto ? null : pendingAction, {
+        chosenLocation: fromPhoto ? null : chosenLocation, draftDetails, fromPhoto, signal,
+      });
+    const contextUpdate = placeTurn?.context;
+    const placeUpdate = {
+      ...(!fromPhoto && contextUpdate?.location && contextUpdate.location !== location ? { resolvedLocation: contextUpdate.location } : {}),
+      ...(!fromPhoto && contextUpdate?.chosenLocation && contextUpdate.chosenLocation !== chosenLocation ? { chosenLocation: contextUpdate.chosenLocation } : {}),
+    };
+    if (placeTurn?.kind === 'reply') {
+      const { waiting } = placeTurn.context;
+      if (placeTurn.selected) return { ...chatMap(placeTurn.selected, true), ...placeUpdate };
+      return {
+        text: waiting?.turn?.draftDetails ? `${placeTurn.text} I’ll keep these details for the draft.` : placeTurn.text,
+        cards: [],
+        actions: [{ label: '📍 Share My Location', action: 'REQUEST_LOCATION', variant: 'secondary' }],
+        status: 'needs_location',
+        ...(waiting ? { pending: AWAITING_CHAT_PLACE, pendingData: { waiting } } : {}),
+      };
+    }
+    if (placeTurn?.kind === 'map') return { ...chatMap(placeTurn.location), ...placeUpdate };
+
+    const active = placeTurn?.location || (followingSmog && pendingAction.location) || chatLocation;
+    const { lat, lng } = active || {};
+    const city = resolveCity(active?.city);
+    const message = placeTurn?.message || userMessage;
+    const { intent: detectedIntent, confidence, entities } = detectIntent(message, conversationHistory);
+    const intent = voiceIntent || placeTurn?.intent || (placeTurn?.kind === 'web' ? INTENTS.ASK_QUESTION : detectedIntent);
+    logAction(logUserId, 'intent_detected', { intent, confidence });
+
     let result;
 
-    // Continue an in-progress email draft: user is answering clarifying questions.
-    // Prevents each reply from being treated as a fresh general question (which caused fabricated answers).
-    if (pendingAction?.type === 'DRAFT_EMAIL_AWAITING_INFO') {
-      result = await handleCreateEmail(userMessage, conversationHistory, userId, city);
-    } else if (pendingAction?.type === 'SMOG_PLAN_AWAITING_PROFILE') {
-      result = await handleSmogPlanProfile(userMessage, { city, lat, lng });
+    if (followingSmog) {
+      result = await handleSmogPlanProfile(message, { city, lat, lng }, Boolean(voiceIntent), signal);
     } else {
       switch (intent) {
       case INTENTS.GET_AIR_QUALITY:
-        result = await handleAirQuality(lat, lng, city, userId);
+        result = await handleAirQuality(lat, lng, city, logUserId, { signal, forecast: asksForForecast(message) });
         break;
 
       case INTENTS.GET_WATER_QUALITY:
@@ -205,11 +93,11 @@ export async function processMessage(userMessage, conversationHistory, user, loc
         break;
 
       case INTENTS.GET_WEATHER:
-        result = await handleWeather(lat, lng, city, userId);
+        result = await handleWeather(lat, lng, city, logUserId, { signal, forecast: asksForForecast(message) });
         break;
 
       case INTENTS.FIND_EVENTS:
-        result = await handleFindEvents(lat, lng, city, entities?.category, userId);
+        result = await handleFindEvents(city, entities?.category, logUserId);
         break;
 
       case INTENTS.JOIN_EVENT:
@@ -217,31 +105,31 @@ export async function processMessage(userMessage, conversationHistory, user, loc
         break;
 
       case INTENTS.CREATE_EVENT:
-        result = await handleCreateEventPrompt(userMessage, userId, city, lat, lng);
+        result = await handleCreateEventPrompt(message, city, lat, lng);
         break;
 
       case INTENTS.CREATE_REPORT:
-        result = await handleCreateReport(userMessage, userId, { lat, lng, city, locality: localityLabel });
+        result = voiceIntent ? await handleAuthorityContacts(message, { city }) : await handleCreateReport(message, userId, { lat, lng, city });
         break;
 
       case INTENTS.CREATE_EMAIL:
-        result = await handleCreateEmail(userMessage, conversationHistory, userId, city);
+        result = voiceIntent ? await handleAuthorityContacts(message, { city }) : await handleCreateEmail(message, conversationHistory, city, placeTurn);
         break;
 
       case INTENTS.GET_AUTHORITY_CONTACTS:
-        result = await handleAuthorityContacts(userMessage, { city, locality: localityLabel });
+        result = await handleAuthorityContacts(message, { city });
         break;
 
       case INTENTS.GET_COMMUNITY:
-        result = await handleCommunityFeed(userId);
+        result = await handleCommunityFeed();
         break;
 
       case INTENTS.GET_DAILY_PLAN:
-        result = await handleDailyPlan(userId, lat, lng);
+        result = await handleDailyPlan(lat, lng);
         break;
 
       case INTENTS.GET_HEALTH_TIPS:
-        result = await handleHealthTips(lat, lng, city, userId);
+        result = voiceIntent ? await handleAirQuality(lat, lng, city, null, { signal }) : await handleHealthTips(lat, lng, city);
         break;
 
       case INTENTS.GET_ROUTES:
@@ -261,18 +149,19 @@ export async function processMessage(userMessage, conversationHistory, user, loc
         break;
 
       default:
-        result = await handleGeneralQuestion(userMessage, conversationHistory, { lat, lng, city, locality: localityLabel, hasExplicitCity }, userId);
+        result = await handleGeneralQuestion(message, conversationHistory, { lat, lng, city }, userId, {
+          snapshot: placeTurn?.snapshot, web: placeTurn?.kind === 'web', webLocation: placeTurn?.location, signal,
+        });
         break;
       }
     }
 
-    if (hasExplicitCity && lat && lng && city) {
-      result.resolvedLocation = { lat, lng, city };
-    }
-    return result;
+    if (result.pending && active) result.pendingData = { ...result.pendingData, location: active };
+    return { ...result, ...placeUpdate };
   } catch (err) {
+    signal?.throwIfAborted();
     console.error('Orchestrator error:', err);
-    logAction(userId, 'error', { intent, error: err.message });
+    logAction(logUserId, 'error', { error: err.message });
     return {
       text: "I encountered an issue processing that request. Please try again.",
       cards: [], actions: [], status: 'error',
@@ -281,6 +170,15 @@ export async function processMessage(userMessage, conversationHistory, user, loc
 }
 
 // ===== HANDLERS =====
+
+function chatMap(place, selected = false) {
+  return {
+    text: selected ? `📍 **${place.city}** is your selected city for Chat.` : `🗺️ Here is **${place.city}** on the map.`,
+    cards: [{ type: 'map', data: { ...place, label: place.city } }],
+    actions: selected ? [{ label: '🌬️ Check Air Quality', action: 'QUICK_AQI', variant: 'primary' }] : [],
+    status: 'success',
+  };
+}
 
 function handleSmogPlanStart(city) {
   return {
@@ -292,37 +190,6 @@ function handleSmogPlanStart(city) {
   };
 }
 
-function parseSmogProfile(message) {
-  const lower = String(message || '').toLowerCase();
-  let commute = 'public transport';
-  if (/\b(car|drive|driving)\b/.test(lower)) commute = 'car';
-  else if (/\b(two.?wheeler|bike|motorbike|scooter)\b/.test(lower)) commute = 'two-wheeler';
-  else if (/\b(walk|cycle|cycling|bicycle)\b/.test(lower)) commute = 'walk/cycle';
-  else if (/\b(work from home|wfh|remote)\b/.test(lower)) commute = 'work from home';
-  else if (/\b(bus|metro|train|public transport|local)\b/.test(lower)) commute = 'public transport';
-
-  let routine = 'office/school';
-  if (/\b(outdoor work|field work|construction work|delivery|traffic police|street vendor)\b/.test(lower)) routine = 'outdoor work';
-  else if (/\b(mostly home|homemaker|at home)\b/.test(lower)) routine = 'mostly home';
-  else if (/\b(mixed|hybrid)\b/.test(lower)) routine = 'mixed';
-
-  let cooking = 'mixed cooking';
-  if (/\b(gas|lpg)\b/.test(lower)) cooking = 'gas stove';
-  else if (/\b(induction|electric cook|electric stove)\b/.test(lower)) cooking = 'induction/electric';
-
-  let filtration = 'no purifier';
-  if (/\bhepa\b/.test(lower)) filtration = 'HEPA purifier';
-  else if (/\b(diy|filter fan|filtered fan)\b/.test(lower)) filtration = 'DIY filtered-air setup';
-  else if (/\b(no purifier|none|without purifier)\b/.test(lower)) filtration = 'no purifier';
-
-  const vulnerable = [
-    /\b(child|children|kid|baby)\b/.test(lower) && 'children',
-    /\b(older|elderly|senior|grandparent)\b/.test(lower) && 'older adults',
-    /\b(asthma|lung|heart|respiratory|copd)\b/.test(lower) && 'heart/lung sensitivity',
-  ].filter(Boolean);
-  return { commute, routine, cooking, filtration, vulnerable };
-}
-
 function lowestAqiWindow(forecast) {
   const hours = forecast?.hours || [];
   const usable = hours.filter((item) => {
@@ -331,18 +198,20 @@ function lowestAqiWindow(forecast) {
   });
   const best = [...(usable.length ? usable : hours)].sort((a, b) => a.aqi - b.aqi)[0];
   if (!best) return null;
-  const date = new Date(best.time);
+  // Open-Meteo already sent wall-clock time for the target city. Preserve it
+  // even if the device is in another zone (or has a DST transition that day).
+  const date = new Date(`${best.time}Z`);
   return {
     ...best,
-    label: Number.isNaN(date.getTime()) ? best.time.replace('T', ' ') : date.toLocaleString([], { weekday: 'short', hour: 'numeric' }),
+    label: Number.isNaN(date.getTime()) ? best.time.replace('T', ' ') : date.toLocaleString([], { weekday: 'short', hour: 'numeric', timeZone: 'UTC' }),
   };
 }
 
-async function handleSmogPlanProfile(userMessage, location) {
+async function handleSmogPlanProfile(userMessage, location, voice, signal) {
   const targetCity = location?.city || 'your area';
   const lat = location?.lat;
   const lng = location?.lng;
-  if (!lat || !lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {
       text: 'I have your routine, but I need a location for live AQI. Type the city name or share your location, then ask for the smog plan again.',
       cards: [],
@@ -353,17 +222,17 @@ async function handleSmogPlanProfile(userMessage, location) {
 
   const profile = parseSmogProfile(userMessage);
   const [aqi, weather, forecast] = await Promise.all([
-    getAirQuality(lat, lng, targetCity).catch(() => null),
-    getWeather(lat, lng).catch(() => null),
-    getAirQualityForecast(lat, lng).catch(() => null),
+    getAirQuality(lat, lng, targetCity, { signal }),
+    voice ? null : getWeather(lat, lng, { signal }),
+    voice ? null : getAirQualityForecast(lat, lng, { signal }),
   ]);
-  if (!aqi) {
-    return { text: `Live AQI for **${targetCity}** is temporarily unavailable, so I won't invent a smog plan reading. Please retry shortly.`, cards: [], actions: [], status: 'unavailable' };
+  const hasAqi = aqi?.aqi != null && Number.isFinite(Number(aqi.aqi));
+  if (voice) {
+    return { speechData: { profile }, cards: hasAqi ? [{ type: 'aqi', data: aqi }] : [], status: hasAqi ? 'success' : 'unavailable' };
   }
-
-  const category = getAQICategory(aqi.aqi);
-  const severe = aqi.aqi >= 151;
-  const sensitive = aqi.aqi >= 101;
+  const category = getAQICategory(aqi?.aqi);
+  const severe = hasAqi && aqi.aqi >= 151;
+  const sensitive = hasAqi && aqi.aqi >= 101;
   const best = lowestAqiWindow(forecast);
   const vulnerable = profile.vulnerable.length ? profile.vulnerable.join(', ') : 'none stated';
 
@@ -375,7 +244,9 @@ async function handleSmogPlanProfile(userMessage, location) {
         ? `${severe ? 'Avoid strenuous roadside exercise today; use transit for the polluted segment.' : 'Use internal lanes away from traffic.'}`
         : profile.commute === 'work from home'
           ? 'Preserve the avoided commute benefit by grouping deliveries and unnecessary trips.'
-          : 'Keep the long leg on public transport and reach it through quieter internal streets.';
+          : profile.commute === 'public transport'
+            ? 'Keep the long leg on public transport and reach it through quieter internal streets.'
+            : 'Choose public transport or carpool for longer journeys where practical, and avoid idling.';
   const commuteImpact = profile.commute === 'walk/cycle'
     ? 'Active travel has zero tailpipe emissions; moving it away from peak smog prevents high breathing rates from multiplying exposure.'
     : 'Fewer solo vehicle kilometres and less idling reduce tailpipe emissions while quieter routes reduce roadside exposure.';
@@ -385,27 +256,31 @@ async function handleSmogPlanProfile(userMessage, location) {
     : 'Create one low-dust room, damp-clean instead of dry sweeping, close traffic-facing leaks during peaks, and ventilate only when outdoor AQI is lower.';
   const cookingAdvice = profile.cooking === 'gas stove'
     ? 'Exhaust the gas stove outdoors every time it runs; prefer back burners and keep children away from the cooking plume.'
-    : 'Use exhaust during frying/high-heat cooking; induction removes combustion pollution but cooking particles still need ventilation.';
+    : 'If you fry or cook at high heat, use an exhaust fan that vents outdoors.';
+
+  const profileSummary = [profile.commute, profile.routine, profile.cooking, profile.filtration].filter(Boolean).join('; ') || 'routine not specified';
 
   const forecastLine = best
-    ? `**Lower-AQI outdoor window:** ${best.label} (forecast AQI ${best.aqi}, Open-Meteo).`
+    ? `**Lower-AQI outdoor window:** ${best.label} (city local time; forecast U.S. AQI ${best.aqi}). [Open-Meteo forecast](${forecast.sourceUrl}). Check the latest reading before going out.`
     : '**Lower-AQI outdoor window:** forecast temporarily unavailable—check live AQI before going out.';
   const lowWind = weather?.windSpeed != null && weather.windSpeed < 2
-    ? ` Wind is low at ${weather.windSpeed} m/s, so dispersion may be slow.`
+    ? ` Wind is low at ${weather.windSpeed} m/s ([${weather.source}](${weather.sourceUrl})), so dispersion may be slow.`
     : '';
 
-  const factualPlan = `🌫️ **Your clean-air plan — ${targetCity}**\n\n**Live:** AQI **${aqi.aqi} — ${category.label}** · PM2.5 ${aqi.pm25 ?? '—'} · PM10 ${aqi.pm10 ?? '—'}.${lowWind}\n**Profile understood:** ${profile.commute}; ${profile.routine}; ${profile.cooking}; ${profile.filtration}; household sensitivity: ${vulnerable}.\n\n🛡️ **1. Exposure routine**\n${severe ? 'Move exercise indoors, shorten non-essential outdoor tasks, and use a well-fitted N95/FFP2 for unavoidable travel.' : sensitive ? 'Shorten prolonged outdoor exertion, especially beside traffic; sensitive family members should take extra care.' : 'Normal activity is reasonable; keep avoiding visible smoke and idling traffic.'}\n**Direct impact:** reduces inhaled fine-particle dose; this does not reduce the pollution source itself.\n\n🚌 **2. Lower-emission commute**\n${commuteAdvice}\n**Direct impact:** ${commuteImpact}\n\n🏠 **3. Indoor air**\n${indoorAdvice}\n**Direct impact:** source control prevents new indoor particles; filtration removes particles already suspended indoors.\n\n🍳 **4. Cooking**\n${cookingAdvice}\n**Direct impact:** prevents controllable cooking pollution from adding another exposure layer on an outdoor-smog day.\n\n🌿 **5. Community choice**\nDo not burn leaves/waste, discourage idling, share verified AQI guidance, and report smoke/dust hotspots with location and photos.\n**Direct impact:** coordinated no-burning/no-idling behaviour removes emissions at the source and protects nearby families.\n\n🕒 ${forecastLine}`;
-
-  const generated = await getChatResponse(
-    [{ role: 'user', text: `In no more than 55 words, add a warm personalized briefing before this urban-smog plan. Use only: city ${targetCity}, AQI ${aqi.aqi}, commute ${profile.commute}, routine ${profile.routine}, cooking ${profile.cooking}, filtration ${profile.filtration}, vulnerable household ${vulnerable}. Do not invent measurements or savings.` }],
-    'Use only the supplied profile and live AQI. Return the briefing only.',
-    { maxTokens: 700, timeoutMs: 20000, temperature: 0.3 },
-  );
-  const intro = isAIUnavailable(generated) ? '' : `✨ **Personalized briefing**\n${generated}\n\n`;
+  const reading = hasAqi
+    ? `**Current:** AQI **${aqi.aqi} — ${category.label}** · PM2.5 ${aqi.pm25 ?? '—'} · PM10 ${aqi.pm10 ?? '—'} (${aqi.source}).`
+    : '**Current AQI:** temporarily unavailable. The steps below are based on your routine, not on an assumed reading.';
+  const exposure = !hasAqi ? 'Check the current AQI before strenuous outdoor activity, and avoid visible smoke and idling vehicles.'
+    : severe ? 'Move exercise indoors, shorten non-essential outdoor tasks, and use a well-fitted N95/FFP2 for unavoidable travel.'
+      : sensitive ? 'Shorten prolonged outdoor exertion, especially beside traffic; sensitive family members should take extra care.'
+        : 'Follow local guidance and avoid visible smoke and idling traffic.';
+  const workAdvice = profile.routine === 'outdoor work' && (sensitive || !hasAqi)
+    ? ' If you work outside, take breaks in a cleaner indoor space when possible.' : '';
+  const factualPlan = `🌫️ **Your clean-air plan — ${targetCity}**\n\n${reading}${lowWind}\n**Profile understood:** ${profileSummary}; household sensitivity: ${vulnerable}.\n\n🛡️ **1. Exposure routine**\n${exposure}${workAdvice}\n**Direct impact:** reduces inhaled fine-particle dose; this does not reduce the pollution source itself.\n\n🚌 **2. Lower-emission commute**\n${commuteAdvice}\n**Direct impact:** ${commuteImpact}\n\n🏠 **3. Indoor air**\n${indoorAdvice}\n**Direct impact:** source control prevents new indoor particles; filtration removes particles already suspended indoors.\n\n🍳 **4. Cooking**\n${cookingAdvice}\n**Direct impact:** prevents controllable cooking pollution from adding another exposure layer on an outdoor-smog day.\n\n🌿 **5. Community choice**\nDo not burn leaves or waste, discourage idling, share verified AQI guidance, and report smoke or dust hotspots with location and photos.\n**Direct impact:** avoiding burning and idling cuts emissions at the source.\n\n🕒 ${forecastLine}`;
 
   return {
-    text: `${intro}${factualPlan}\n\n_General exposure guidance, not medical advice. Follow local advisories and consult a clinician for symptoms or individual medical decisions._`,
-    cards: [{ type: 'aqi', data: { ...aqi, insight: getAQIInsight(aqi) } }],
+    text: `${factualPlan}\n\n_General exposure guidance, not medical advice. Follow local advisories and consult a clinician for symptoms or individual medical decisions._`,
+    cards: hasAqi ? [{ type: 'aqi', data: { ...aqi, insight: getAQIInsight(aqi) } }] : [],
     actions: [
       { label: '💊 AQI Health Tips', action: 'QUICK_HEALTH_TIPS', variant: 'secondary' },
       { label: '📷 Report a Pollution Source', action: 'OPEN_IMAGE_PICKER', variant: 'secondary' },
@@ -414,24 +289,22 @@ async function handleSmogPlanProfile(userMessage, location) {
   };
 }
 
-async function handleAirQuality(lat, lng, city, userId) {
-  if (!lat || !lng) {
+async function handleAirQuality(lat, lng, city, userId, { signal, forecast = false } = {}) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {
-      text: city
-        ? `I need your GPS coordinates to fetch live air quality for **${city}**. Please share your location!`
-        : "Please share your location so I can fetch real-time air quality for your area.",
+      text: 'Which city should I check for air quality?',
       cards: [],
       actions: [{ label: '📍 Share Location', action: 'REQUEST_LOCATION', variant: 'primary' }],
       status: 'needs_location',
     };
   }
 
-  const aqiData = await getAirQuality(lat, lng, city).catch(() => null);
+  const aqiData = await getAirQuality(lat, lng, city, { signal });
   const displayCity = city || aqiData?.city || `(${lat.toFixed(2)}, ${lng.toFixed(2)})`;
 
-  if (!aqiData) {
+  if (aqiData?.aqi == null || !Number.isFinite(Number(aqiData.aqi))) {
     return {
-      text: `I couldn't reach the live air-quality feed for **${displayCity}** just now 🌬️\n\nTry again in a minute, or check **https://aqicn.org/map/** / the CPCB **Sameer** app. If you can see smoke, dust or burning nearby, that itself is worth reporting — want me to give you the local authority?`,
+      text: `I couldn't verify the air-quality reading for **${displayCity}**. Try again later, or check [World Air Quality Index](https://aqicn.org/map/)${isIndianPlace(city) ? ' or the CPCB Sameer app' : ''}.`,
       cards: [],
       actions: [{ label: '📋 Report Air Issue', action: 'QUICK_REPORT', variant: 'primary' }],
       status: 'unavailable',
@@ -442,7 +315,7 @@ async function handleAirQuality(lat, lng, city, userId) {
   logAction(userId, 'aqi_fetched', { city: displayCity, aqi: aqiData.aqi });
 
   return {
-    text: `Hey! I just checked the live air quality for **${aqiData.city || displayCity}** — here's how it's looking right now 🌬️`,
+    text: `${forecast ? "I couldn't verify AQI for the time you asked about. " : ''}Here's the current air quality for **${displayCity}**. 🌬️`,
     cards: [{ type: 'aqi', data: { ...aqiData, insight } }],
     actions: [
       { label: '💊 Health Tips', action: 'QUICK_HEALTH_TIPS', variant: 'secondary' },
@@ -465,9 +338,7 @@ async function handleWaterQuality(city) {
 function getWeatherPrecautions(weather) {
   const tips = [];
   const description = String(weather?.description || '').toLowerCase();
-  const temp = Number(weather?.temp);
-  const humidity = Number(weather?.humidity);
-  const wind = Number(weather?.windSpeed);
+  const { temp, humidity, windSpeed: wind } = weather;
 
   if (/thunder|storm/.test(description)) {
     tips.push('Stay indoors during lightning; avoid open grounds, isolated trees, metal fencing, and water bodies.');
@@ -493,22 +364,22 @@ function getWeatherPrecautions(weather) {
   return tips.slice(0, 4);
 }
 
-async function handleWeather(lat, lng, city, userId) {
-  if (!lat || !lng) {
+async function handleWeather(lat, lng, city, userId, { signal, forecast } = {}) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {
-      text: "I need your location to get weather data. Please share your location!",
+      text: 'Which city should I check for weather?',
       cards: [],
       actions: [{ label: '📍 Share Location', action: 'REQUEST_LOCATION', variant: 'primary' }],
       status: 'needs_location',
     };
   }
 
-  const weather = await getWeather(lat, lng).catch(() => null);
+  const weather = await getWeather(lat, lng, { signal });
   const displayCity = city || `(${lat.toFixed(2)}, ${lng.toFixed(2)})`;
 
   if (!weather) {
     return {
-      text: `Weather data for **${displayCity}** isn't available right now. Add your OpenWeatherMap API key to .env to enable this feature.`,
+      text: `I couldn't verify the current weather for **${displayCity}** right now.`,
       cards: [],
       actions: [],
       status: 'unavailable',
@@ -519,7 +390,8 @@ async function handleWeather(lat, lng, city, userId) {
   const precautions = getWeatherPrecautions(weather);
 
   return {
-    text: `Here's the live weather in **${displayCity}** right now. 🌤️\n\n🌡️ Temperature: **${weather.temp?.toFixed(1)}°C** (feels like ${weather.feelsLike?.toFixed(1)}°C)\n💧 Humidity: ${weather.humidity}%\n💨 Wind: ${weather.windSpeed} m/s\n☁️ Conditions: ${weather.description}\n\n🛡️ **Precautions based on the current reading**\n${precautions.map((tip) => `• ${tip}`).join('\n')}\n\n_These are current-condition precautions, not a severe-weather warning or medical advice._`,
+    text: `${forecast ? "I couldn't verify a forecast for the time you asked about. " : ''}Here's the current weather in **${displayCity}**. 🌤️\n\n🌡️ Temperature: **${weather.temp}°C**${Number.isFinite(weather.feelsLike) ? ` (feels like ${weather.feelsLike}°C)` : ''}\n💧 Humidity: ${Number.isFinite(weather.humidity) ? `${weather.humidity}%` : 'unavailable'}\n💨 Wind: ${Number.isFinite(weather.windSpeed) ? `${weather.windSpeed} m/s` : 'unavailable'}\n☁️ Conditions: ${weather.description}\n\n🛡️ **Precautions based on the current reading**\n${precautions.map((tip) => `• ${tip}`).join('\n')}\n\nSource: [${weather.source}](${weather.sourceUrl}). These are current-condition precautions, not a severe-weather warning or medical advice.`,
+    speechData: { weather },
     cards: [],
     actions: [
       { label: '🌬️ Check AQI', action: 'QUICK_AQI', variant: 'secondary' },
@@ -529,14 +401,17 @@ async function handleWeather(lat, lng, city, userId) {
   };
 }
 
-async function handleFindEvents(lat, lng, city, category, userId) {
-  const events = await tools.getNearbyMeetups({ lat, lng, category, limit: 8 });
-  const displayCity = city || 'your area';
-  logAction(userId, 'events_fetched', { count: events.length, category, city: displayCity });
+async function handleFindEvents(city, category, userId) {
+  const today = new Date().toISOString().slice(0, 10);
+  const events = (await tools.getNearbyMeetups({ category, limit: 30 })).filter((event) => {
+    const date = new Date(event.date?.toDate?.() || event.date);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) >= today;
+  }).slice(0, 8);
+  logAction(userId, 'events_fetched', { count: events.length, category: category || null });
 
   if (!events || events.length === 0) {
     return {
-      text: `No upcoming eco-meetups found for **${displayCity}** right now 😕 Be the first to organize one!`,
+      text: 'I didn’t find any upcoming meetups in the EcoPulse listings. You can check the Events tab or organize one.',
       cards: [],
       actions: [{ label: '➕ Create Meetup', action: 'CREATE_EVENT', variant: 'primary' }],
       status: 'empty',
@@ -544,7 +419,7 @@ async function handleFindEvents(lat, lng, city, category, userId) {
   }
 
   return {
-    text: `Found **${events.length}** upcoming eco-event${events.length > 1 ? 's' : ''} near **${displayCity}**! 🌍`,
+    text: `Here are upcoming events listed on EcoPulse.${city ? ` I can’t verify that they’re near **${city}**; check the venue before you go.` : ''}`,
     cards: [{ type: 'meetup-list', data: { events } }],
     actions: [
       { label: '🗓️ See All Events', action: 'GOTO_MEETUPS', variant: 'secondary' },
@@ -563,7 +438,7 @@ function handleJoinEventPrompt() {
   };
 }
 
-async function handleCreateEventPrompt(userMessage, userId, city, lat, lng) {
+async function handleCreateEventPrompt(userMessage, city, lat, lng) {
   const defaultCity = city || 'Your City';
   const lower = (userMessage || '').toLowerCase();
   const hasDetails = userMessage && userMessage.trim().split(/\s+/).length >= 4 &&
@@ -612,7 +487,6 @@ Only use details the user actually gave; use sensible defaults for the rest.`,
 
 async function handleCreateReport(userMessage, userId, location) {
   const city = resolveCity(location?.city) || 'your area';
-  const locality = location?.locality || null;
   const lat = location?.lat;
   const lng = location?.lng;
 
@@ -646,7 +520,7 @@ async function handleCreateReport(userMessage, userId, location) {
 
   if (askingWhere) {
     const immediateNumber = !/emergency only/i.test(recipient.helpline || '')
-      ? (recipient.helpline || recipient.forestHelpline)
+      ? (recipient.helpline || (isTreeOrMangrove ? recipient.forestHelpline : null))
       : null;
     const contactBlock = [
       `🏛️ **${recipient.organization}**`,
@@ -654,11 +528,12 @@ async function handleCreateReport(userMessage, userId, location) {
       recipient.helpline ? `📞 Helpline: ${recipient.helpline}` : null,
       recipient.whatsapp ? `💬 WhatsApp: ${recipient.whatsapp}` : null,
       recipient.portalUrl ? `🌐 Portal: ${recipient.portalUrl}` : null,
+      recipient.sourceUrl ? `[Official contact listing](${recipient.sourceUrl})` : null,
       forestLine,
     ].filter(Boolean).join('\n');
 
     return {
-      text: `Here's exactly where to send a complaint for **${city}**:\n\n${contactBlock}\n\n**To make it count:** write it down with the **exact location, date and time**, attach **photos/video**, and note the **reference number** you get back.${immediateNumber ? ` If it's happening right now, call **${immediateNumber}** first so the responsible team can inspect.` : recipient.jurisdiction === 'outside-india' ? ' Use the local government or police website to verify the correct emergency number; I will not guess one.' : ' If there is fire or immediate danger to life, call **112**; otherwise use the official portal for a tracked complaint.'}\n\nWant me to draft the email? 📧`,
+      text: `Here's how to report the issue for **${city}**:\n\n${contactBlock}\n${recipient.disclaimer}\n\n**To make it count:** write it down with the **exact location, date and time**, attach **photos/video**, and note the **reference number** you get back.${immediateNumber ? ` If it's happening right now, call **${immediateNumber}** first so the responsible team can inspect.` : recipient.jurisdiction !== 'india' ? ' Verify the emergency number for this location with local authorities.' : ' If there is fire or immediate danger to life, call **112**; otherwise use the official portal for a tracked complaint.'}\n\nWant me to draft the email? 📧`,
       cards: [],
       actions: [
         { label: '📧 Draft Complaint Email', action: 'QUICK_DRAFT_EMAIL', variant: 'primary' },
@@ -669,7 +544,7 @@ async function handleCreateReport(userMessage, userId, location) {
   }
   // Use AI to structure title/description/locality cleanly from the user's message.
   // If the model is unreachable we keep the user's own words — never invent place names.
-  let finalLocation = locality ? `${locality}, ${city}` : city;
+  let finalLocation = city;
   let finalDescription = userMessage.trim();
   const structured = await getJsonResponse(
     `Extract a concise report title, a clean factual 1-2 sentence description, and the specific locality from this complaint.
@@ -683,8 +558,8 @@ Respond in JSON: {"title":"...","description":"...","locality":"..."}`,
   if (structured) {
     if (structured.title) title = String(structured.title).slice(0, 120);
     if (structured.description) finalDescription = String(structured.description).slice(0, 600);
-    if (structured.locality && !/unknown|not specified/i.test(structured.locality)) {
-      const loc = String(structured.locality).slice(0, 120);
+    const loc = typeof structured.locality === 'string' ? structured.locality.trim().slice(0, 120) : '';
+    if (loc && lower.includes(loc.toLowerCase()) && !/unknown|not specified/i.test(loc)) {
       const cityShort = city.split(',')[0].trim();
       finalLocation = loc.toLowerCase().includes(cityShort.toLowerCase()) ? loc : `${loc}, ${city}`;
     }
@@ -706,13 +581,14 @@ Respond in JSON: {"title":"...","description":"...","locality":"..."}`,
     recipient.helpline ? `📞 Helpline: ${recipient.helpline}` : null,
     recipient.whatsapp ? `💬 WhatsApp: ${recipient.whatsapp}` : null,
     recipient.portalUrl ? `🌐 Portal: ${recipient.portalUrl}` : null,
+    recipient.sourceUrl ? `[Official contact listing](${recipient.sourceUrl})` : null,
     isTreeOrMangrove && recipient.forestEmail
       ? `🌿 **Forest / Tree Protection Cell CC:** ${recipient.forestEmail}${recipient.forestHelpline ? ` (Helpline: ${recipient.forestHelpline})` : ''}`
       : (isTreeOrMangrove && recipient.forestHelpline ? `🌿 **State Forest Helpline (24/7):** ${recipient.forestHelpline}` : null),
   ].filter(Boolean).join('\n');
 
   const urgentHelpline = !/emergency only/i.test(recipient.helpline || '')
-    ? (recipient.helpline || recipient.forestHelpline)
+    ? (recipient.helpline || (isTreeOrMangrove ? recipient.forestHelpline : null))
     : null;
 
   const proofHint = isTreeOrMangrove
@@ -720,7 +596,7 @@ Respond in JSON: {"title":"...","description":"...","locality":"..."}`,
     : '📸 *Got a photo? Attach it — evidence makes the complaint much harder to ignore.*';
 
   return {
-    text: `Thank you for speaking up for **${finalLocation}**! 🙌 Reporting this really makes a difference in our community.${urgentHelpline ? `\n\n🚨 **Happening right now?** Call **${urgentHelpline}** so the responsible local team can inspect it.` : recipient.jurisdiction === 'outside-india' ? '\n\n🚨 Verify the correct emergency number on the local government or police website; none is guessed here.' : '\n\n🚨 If there is fire, a hazardous leak, or immediate danger to life, call **112**; otherwise submit the written complaint below.'}\n\n${authorityLines}\n\n${proofHint}`,
+    text: `Thank you for speaking up for **${finalLocation}**! 🙌 Reporting this really makes a difference in our community.${urgentHelpline ? `\n\n🚨 **Happening right now?** Call **${urgentHelpline}** so the responsible local team can inspect it.` : recipient.jurisdiction !== 'india' ? '\n\n🚨 Verify the correct emergency number on the local government or police website; none is guessed here.' : '\n\n🚨 If there is fire, a hazardous leak, or immediate danger to life, call **112**; otherwise review the written complaint below.'}\n\n${authorityLines}\n${recipient.disclaimer}\n\n${proofHint}`,
     cards: [{ type: 'report-preview', data: previewData }],
     actions: [
       { label: '📧 Draft Email', action: 'QUICK_DRAFT_EMAIL', variant: 'secondary' },
@@ -736,18 +612,18 @@ Respond in JSON: {"title":"...","description":"...","locality":"..."}`,
  * point at the official grievance form rather than inventing an address.
  */
 async function handleAuthorityContacts(userMessage, location) {
-  const city = resolveCity(location?.city) || 'your area';
-  const locality = location?.locality || null;
-  const place = locality ? `${locality}, ${city}` : city;
+  const city = resolveCity(location?.city);
+  const place = city;
 
   const bundle = getAuthorityBundle(city);
   const recipient = await tools.findVerifiedRecipient({
     issueCategory: detectIssueCategory(userMessage),
     city,
   });
-  if (recipient.jurisdiction === 'outside-india') {
+  if (recipient.jurisdiction !== 'india') {
     return {
-      text: `I can map **${place}** and fetch live environmental data, but I do **not** have a verified authority directory for this country yet. I won't show Indian contacts or invent a local email.\n\nUse the official city/regional government website and look for its **environment, sanitation, public works, or police** complaint page. If you share an official URL, I can help explain the form and draft the complaint text without changing any contact details.`,
+      text: recipient.jurisdiction === 'unknown' ? 'Which city and country do you need the authority contacts for?'
+        : `I don't have verified local contacts for **${place}**. Check the official city or regional website for its **environment, sanitation, public works, or police** complaint page.`,
       cards: [],
       actions: [],
       status: 'info',
@@ -797,12 +673,13 @@ async function handleAuthorityContacts(userMessage, location) {
   }
 
   // ---- Local ----
-  const localLines = [`📍 **${recipient.organization}**`];
+  const localLines = [recipient.localUnavailable ? '📍 **No verified local contact**' : `📍 **${recipient.organization}**`];
   if (recipient.email && recipient.email.includes('@')) localLines.push(`📧 ${recipient.email}`);
   else localLines.push('📧 No verified email published — use the portal form');
   if (recipient.helpline) localLines.push(`📞 ${recipient.helpline}`);
   if (recipient.whatsapp) localLines.push(`💬 WhatsApp: ${recipient.whatsapp}`);
-  if (recipient.portalUrl) localLines.push(`🌐 ${recipient.portalUrl}`);
+  if (recipient.portalUrl) localLines.push(`🌐 ${recipient.localUnavailable ? 'National portal: ' : ''}${recipient.portalUrl}`);
+  if (recipient.sourceUrl) localLines.push(`[Official contact listing](${recipient.sourceUrl})`);
   if (recipient.forestEmail) {
     localLines.push(`🌳 Forest / Tree Cell: ${recipient.forestEmail}${recipient.forestHelpline ? ` (Helpline: ${recipient.forestHelpline})` : ''}`);
   }
@@ -835,6 +712,7 @@ async function handleAuthorityContacts(userMessage, location) {
   return {
     text,
     cards: [],
+    speechData: recipient.portalUrl ? { contact: { organization: recipient.organization, portal: recipient.portalUrl, source: recipient.sourceUrl, national: Boolean(recipient.localUnavailable) } } : null,
     actions: [
       { label: '📧 Draft Complaint Email', action: 'QUICK_DRAFT_EMAIL', variant: 'primary' },
       { label: '📋 File Report', action: 'QUICK_REPORT', variant: 'secondary' },
@@ -889,56 +767,45 @@ function hasConcreteIssue(text) {
   return hasIssueWord && wordCount >= 2;
 }
 
-async function handleCreateEmail(userMessage, conversationHistory, userId, city) {
+const DRAFT_REQUEST = /^(?:(?:please|(?:can|could|would) you|i (?:want|need) (?:you )?to)\s+)?(?:draft|write|compose|prepare|create|send|generate|make)\b/i;
+const OBSERVATION = /\b(?:i|we)\s+(?:saw|noticed|witnessed|observed)\b/i;
+
+function describesIssue(text) {
+  if (!hasConcreteIssue(text)) return false;
+  if (/^(?:how|why|what|which|where|who|can i|is there|should i|tell me|show me|check)\b/i.test(text.trim())) return false;
+  return !DRAFT_REQUEST.test(text.trim()) || OBSERVATION.test(text);
+}
+
+async function handleCreateEmail(userMessage, conversationHistory, city, turn) {
   const recentUserMessages = (conversationHistory || [])
     .filter((m) => m.role === 'user' && m.text)
     .slice(-4)
     .map((m) => m.text);
 
-  const currentHasIssue = hasConcreteIssue(userMessage);
-  const historyIssueMsg = [...recentUserMessages].reverse().find((t) => hasConcreteIssue(t));
-  // Only reject historyIssueMsg if it explicitly names a DIFFERENT known city than the current city
-  const cityLower = (city || '').toLowerCase();
-  const historyCity = historyIssueMsg ? extractMentionedCity(historyIssueMsg) : null;
-  const historyMatchesCurrentCity = !historyCity || !cityLower ||
-    cityLower.includes(historyCity.toLowerCase()) ||
-    (historyCity.toLowerCase() === 'bangalore' && cityLower.includes('bengaluru')) ||
-    (historyCity.toLowerCase() === 'trivandrum' && cityLower.includes('thiruvananthapuram'));
+  const cityOnly = /^city:\s*[^.!?;\n]+[.!?]?$/i.test(userMessage.trim());
+  const currentHasIssue = !cityOnly && (turn?.draftDetails || describesIssue(userMessage));
+  const historyIssueMsg = [...recentUserMessages].reverse().find(describesIssue);
+  const historyPlace = historyIssueMsg ? incidentCity(historyIssueMsg) : '';
+  const parts = (value) => String(value || '').toLowerCase().split(/\s*,\s*/).filter(Boolean);
+  const historyMatchesCurrentCity = historyPlace && parts(historyPlace).every((part) => parts(city).includes(part));
 
   // If user hasn't explained a concrete issue/situation for the current city yet, ask clarifying questions
   if (!currentHasIssue && (!historyIssueMsg || !historyMatchesCurrentCity)) {
-    const authInfo = await tools.findVerifiedRecipient({ issueCategory: detectIssueCategory(userMessage), city });
-    const chatHistory = (conversationHistory || []).map((m) => ({
-      role: m.role,
-      text: m.text || '',
-    }));
-    chatHistory.push({ role: 'user', text: userMessage });
-
-    const aiAsk = await getChatResponse(
-      chatHistory,
-      `User location: ${city || 'not specified'}.
-Verified local authority: ${authInfo.organization}, Email: ${authInfo.email}, Portal: ${authInfo.portalUrl}, Helpline: ${authInfo.helpline || 'N/A'}.
-Instruction: The user wants to draft an email/complaint ("${userMessage}") but has NOT explained their situation yet.
-Ask concise, friendly questions to understand their situation (what happened, where, since when, and how it affects them — only what is needed).
-Do NOT generate an email draft, do NOT invent any example scenario, and do NOT invent any email address.`,
-      { maxTokens: 300, timeoutMs: 20000 }
-    );
-
-    const clarifyingQuestion = isAIUnavailable(aiAsk)
-      ? `Sure — I'll draft it for **${city || 'your area'}**. 📧 Quick check so the email is accurate:\n\n• **What exactly is happening?** (garbage dumping / burning / sewage overflow / tree cutting / other)\n• **Where?** — building, street or landmark\n• **Since when**, and who is affected?\n\nGive me even one line and I'll write the full complaint with the right authority's email and portal.`
-      : aiAsk;
-
     return {
-      text: clarifyingQuestion,
+      text: `I can draft a complaint${city ? ` for **${city}**` : ''}. What happened, where exactly, and when did you notice it? If it happened in a different city, include its name and state or country.`,
       cards: [],
       actions: [],
       status: 'needs_info',
-      pending: 'DRAFT_EMAIL_AWAITING_INFO',
+      pending: AWAITING_DRAFT_DETAILS,
+      pendingData: { draftIssue: cityOnly ? turn?.draftIssue : detectIssueCategory(userMessage) },
     };
   }
 
-  const situationText = currentHasIssue ? userMessage : historyIssueMsg;
-  const issueCategory = detectIssueCategory(situationText);
+  const raw = (currentHasIssue ? userMessage : historyIssueMsg).trim();
+  const startOfObservation = DRAFT_REQUEST.test(raw) ? raw.search(OBSERVATION) : -1;
+  const situationText = startOfObservation >= 0 ? raw.slice(startOfObservation) : raw;
+  const detectedCategory = detectIssueCategory(situationText);
+  const issueCategory = detectedCategory === 'default' ? (turn?.draftIssue || detectedCategory) : detectedCategory;
   const recipient = await tools.findVerifiedRecipient({ issueCategory, city });
 
   let cc = null;
@@ -952,57 +819,42 @@ Do NOT generate an email draft, do NOT invent any example scenario, and do NOT i
     ccLabel = recipient.forestHelpline ? `State Forest Dept (Helpline: ${recipient.forestHelpline})` : 'State Forest Department';
   }
 
-  const prompt = `Draft a formal, concise civic complaint email to ${recipient.name} (${recipient.organization}) in ${city || 'the user\'s city'} based STRICTLY on the user's situation below.
-Do NOT invent any dates, street names, phone numbers, or facts not mentioned by the user. If a detail is missing, use a clear bracketed placeholder like [Your Area/Street] or [Your Name].
-Keep it under 180 words, polite and specific, and end with a clear request for inspection and action.
-
-User's situation: "${situationText}"
-
-Respond ONLY in valid JSON: {"subject":"...","body":"..."}`;
-
-  const drafted = await getJsonResponse(prompt, '', { timeoutMs: 25000, maxTokens: 900 });
-  let subject = drafted?.subject ? String(drafted.subject).slice(0, 160) : `Environmental complaint — ${city || 'Local Area'}`;
-  let body = drafted?.body ? String(drafted.body) : null;
-
-  // Model unreachable? Build a factual template from the user's own words.
-  // Placeholders are intentional — nothing is invented on their behalf.
-  if (!body) {
-    const template = buildComplaintEmailTemplate({
-      situation: situationText,
-      recipient,
-      city,
-      cc,
-      ccLabel,
-      issueLabel: ISSUE_LABELS[issueCategory],
-      hasPhoto: /photo|image|picture|📸/i.test(situationText),
-    });
-    subject = template.subject;
-    body = template.body;
-  }
+  // Keep the observed facts verbatim. Unknown dates and addresses stay as
+  // placeholders, and we do not send complaint details to a model to guess them.
+  const { subject, body } = buildComplaintEmailTemplate({
+    situation: situationText,
+    recipient,
+    city,
+    issueLabel: ISSUE_LABELS[issueCategory],
+    hasPhoto: /\b(?:i have|i took|and have|attached|attaching)\b.*\b(?:photo|picture|image)\b/i.test(situationText),
+  });
 
   const draftData = {
     to: recipient.email,
     recipientName: recipient.name,
     organization: recipient.organization,
+    location: city,
     cc,
     ccLabel,
     portalUrl: recipient.portalUrl,
+    sourceUrl: recipient.sourceUrl,
     helpline: recipient.helpline,
     subject,
     body,
     disclaimer: recipient.disclaimer,
   };
 
-  const ccText = cc ? ` and CC'd the ${ccLabel} (${cc})` : '';
   return {
-    text: `Got it! I've put together this complaint email to **${recipient.name}**${ccText} 📧 Take a look and tap **Open in Gmail** or copy when ready:`,
+    text: recipient.email
+      ? `I drafted this complaint for **${recipient.organization}**. Review the details and fill in any blanks before sending.`
+      : 'I drafted the complaint without an email address because I couldn’t verify one. Review the details and use the official portal if listed.',
     cards: [{ type: 'email-preview', data: draftData }],
     actions: [],
     status: 'preview',
   };
 }
 
-async function handleCommunityFeed(userId) {
+async function handleCommunityFeed() {
   const posts = await tools.getCommunityFeed({ limit: 5 });
 
   if (!posts || posts.length === 0) {
@@ -1025,8 +877,8 @@ async function handleCommunityFeed(userId) {
   };
 }
 
-async function handleDailyPlan(userId, lat, lng) {
-  const plan = await tools.getDailyActionPlan({ userId, lat, lng });
+async function handleDailyPlan(lat, lng) {
+  const plan = await tools.getDailyActionPlan({ lat, lng });
 
   return {
     text: "Here's your personalized eco-action plan for today! 🌱 Small actions make a big difference:",
@@ -1036,9 +888,9 @@ async function handleDailyPlan(userId, lat, lng) {
   };
 }
 
-async function handleHealthTips(lat, lng, city, userId) {
+async function handleHealthTips(lat, lng, city) {
   const displayCity = city || 'your area';
-  const [aqiData, weatherData] = lat && lng
+  const [aqiData, weatherData] = Number.isFinite(lat) && Number.isFinite(lng)
     ? await Promise.all([
         getAirQuality(lat, lng, city).catch(() => null),
         getWeather(lat, lng).catch(() => null),
@@ -1046,11 +898,11 @@ async function handleHealthTips(lat, lng, city, userId) {
     : [null, null];
 
   const aqiContext = aqiData
-    ? `Live AQI in ${displayCity}: ${aqiData.aqi} (${getAQICategory(aqiData.aqi).label}), PM2.5: ${aqiData.pm25} µg/m³, PM10: ${aqiData.pm10} µg/m³.`
+    ? `Current AQI in ${displayCity}: ${aqiData.aqi} (${getAQICategory(aqiData.aqi).label}). Source: ${aqiData.source}.`
     : `Live AQI for ${displayCity} is currently unavailable.`;
   const weatherContext = weatherData
     ? `Current weather in ${displayCity}: ${weatherData.temp}°C, ${weatherData.description}, humidity ${weatherData.humidity}%.`
-    : '';
+    : 'Current weather unavailable.';
 
   const prompt = `Give concise, practical, location-specific health tips for someone in ${displayCity} right now based ONLY on the live data provided. Do not include raw pollutant tables or unrelated topics.`;
   const aiText = await getChatResponse(
@@ -1088,28 +940,17 @@ async function handleHealthTips(lat, lng, city, userId) {
   }
 
   return {
-    text: aiText,
-    cards: [],
+    text: `${aqiContext}\n${weatherContext}\n\n${aiText}`,
+    cards: aqiData ? [{ type: 'aqi', data: aqiData }] : [],
     actions: [{ label: '🌬️ View Full AQI Details', action: 'QUICK_AQI', variant: 'secondary' }],
     status: 'success',
   };
 }
 
 async function handleRoutes(city, lat, lng) {
-  const displayCity = city || 'your area';
-  const prompt = `Suggest practical low-pollution commuting tips, green corridors, and public transit options specifically for ${displayCity}. Keep it concise with bullet points.`;
-  const aiText = await getChatResponse(
-    [{ role: 'user', text: prompt }],
-    `Target city: ${displayCity}${lat && lng ? ` (${lat.toFixed(4)}, ${lng.toFixed(4)})` : ''}.`
-  );
-
-  const text = isAIUnavailable(aiText)
-    ? `🗺️ **Getting around ${displayCity} with less pollution:**\n\n• Prefer **metro/local train** for the long leg, then walk or cycle the last kilometre.\n• Walk or cycle on **internal/side lanes** instead of main-road footpaths during peak traffic.\n• Use **carpooling or shared autos** for repeat errands; combine trips into one loop.\n• Travel **before 8 AM or after 8 PM** when traffic and roadside pollution are lower.\n• If you must drive, keep tyres inflated and switch the engine off at long signals.\n\nHere's your area on the map:`
-    : aiText;
-
   return {
-    text,
-    cards: [{ type: 'map', data: { lat, lng, city: displayCity, label: `${displayCity} — Your Area`, query: displayCity } }],
+    text: `I can’t verify which route has the lowest pollution${city ? ` in **${city}**` : ''}. For less roadside exposure, choose quieter parallel streets and avoid lingering beside idling vehicles. Public transit or carpooling can reduce emissions compared with driving alone.`,
+    cards: Number.isFinite(lat) && Number.isFinite(lng) ? [{ type: 'map', data: { lat, lng, city } }] : [],
     actions: [],
     status: 'success',
   };
@@ -1154,8 +995,21 @@ async function handleWasteTips(city, lat, lng) {
   };
 }
 
+function photoIssueActions(location) {
+  return [
+    ['🗑️ Garbage dumping', 'garbage'],
+    ['🔥 Open burning', 'burning'],
+    ['💧 Sewage overflow', 'sewage'],
+    ['🌳 Tree cutting', 'trees'],
+  ].map(([label, category], index) => ({
+    label, action: 'PHOTO_ISSUE', variant: index === 0 ? 'primary' : 'secondary',
+    data: { issue: ISSUE_LABELS[category], photoLocation: location ?? null },
+  }));
+}
+
 async function handleImageAnalysis(imageData, userMessage, userId, location) {
   const city = resolveCity(location?.city);
+  const photoLocation = location ?? null;
   const result = await tools.analyzeEnvironmentalImage({
     base64: imageData.base64,
     mimeType: imageData.mimeType,
@@ -1172,21 +1026,15 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
       ? `\n\n📝 **Text I could read (OCR — verify against the photo):** ${result.visibleText.map((line) => `“${line}”`).join(' · ')}`
       : '';
     return {
-      text: `I checked the photo, but I **couldn't identify a specific environmental problem confidently** — so I won't invent one. 🔍${ocrText}\n\nIf the issue is visible but subtle, tap the closest option below (or type one sentence about what I should focus on) and I'll produce the full complaint draft immediately.\n\n${contactLines(recipient).join('\n')}`,
+      text: `I checked the photo, but I **couldn't identify a specific environmental problem confidently**. 🔍${ocrText}\n\nChoose what you can confirm in the photo below to start a complaint draft.\n\n${contactLines(recipient).join('\n')}`,
       cards: [],
-      actions: [
-        { label: '🗑️ Garbage dumping', action: 'IMAGE_ISSUE_GARBAGE', variant: 'primary' },
-        { label: '🔥 Open burning', action: 'IMAGE_ISSUE_BURNING', variant: 'secondary' },
-        { label: '💧 Sewage overflow', action: 'IMAGE_ISSUE_SEWAGE', variant: 'secondary' },
-        { label: '🌳 Tree cutting', action: 'IMAGE_ISSUE_TREES', variant: 'secondary' },
-      ],
+      actions: photoIssueActions(location),
       status: 'info',
     };
   }
 
   // Vision unavailable — never pretend to see the photo.
-  // If the user described the issue in the same message, use their own words and
-  // hand them a ready-to-send draft. Otherwise let them pick with one tap.
+  // Use details from the note if present; otherwise let the user pick the issue.
   if (!result) {
     const note = (userMessage || '').trim();
     const userDescribed = note.length > 3 && hasConcreteIssue(note);
@@ -1201,23 +1049,23 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
         situation: note,
         recipient,
         city,
-        cc,
-        ccLabel,
         issueLabel: ISSUE_LABELS[category] || ISSUE_LABELS.other,
         hasPhoto: true,
       });
 
       return {
-        text: `I couldn't read the photo automatically, but I've used your description to prepare the complaint. 📧 **Add your name, address and phone number, then send it.**\n\n${contactLines(recipient).join('\n')}`,
+        text: `I couldn't analyze the photo automatically. I prepared a draft from your description instead. Review it and verify the recipient before sending.\n\n${contactLines(recipient).join('\n')}`,
         cards: [{
           type: 'email-preview',
           data: {
             to: recipient.email,
             recipientName: recipient.name,
             organization: recipient.organization,
+            location: city,
             cc,
             ccLabel,
             portalUrl: recipient.portalUrl,
+            sourceUrl: recipient.sourceUrl,
             helpline: recipient.helpline,
             subject: template.subject,
             body: template.body,
@@ -1228,7 +1076,7 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
           label: '📋 Also file a report',
           action: 'FILE_REPORT_FROM_ANALYSIS',
           variant: 'secondary',
-          data: { situation: note, category },
+          data: { situation: note, category, photoLocation },
         }],
         status: 'preview',
       };
@@ -1236,14 +1084,9 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
 
     const recipient = await tools.findVerifiedRecipient({ issueCategory: 'default', city });
     return {
-      text: `I can't analyse the photo automatically right now — no vision model is connected, and I won't guess what's in it. 🔍\n\n**Tap what the photo shows** and I'll immediately write the full complaint email for **${city || 'your area'}**, ready to send:\n\n${contactLines(recipient).join('\n')}`,
+      text: `I can't analyze the photo automatically right now, and I won't guess what's in it. 🔍\n\nChoose what you can confirm in the photo below to start a complaint draft.\n\n${contactLines(recipient).join('\n')}`,
       cards: [],
-      actions: [
-        { label: '🗑️ Garbage dumping', action: 'IMAGE_ISSUE_GARBAGE', variant: 'primary' },
-        { label: '🔥 Open burning', action: 'IMAGE_ISSUE_BURNING', variant: 'secondary' },
-        { label: '💧 Sewage overflow', action: 'IMAGE_ISSUE_SEWAGE', variant: 'secondary' },
-        { label: '🌳 Tree cutting', action: 'IMAGE_ISSUE_TREES', variant: 'secondary' },
-      ],
+      actions: photoIssueActions(location),
       status: 'info',
     };
   }
@@ -1253,7 +1096,7 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
     : (result.category === 'burning' || result.category === 'industrial' ? 'air' : result.category);
   const recipient = await tools.findVerifiedRecipient({ issueCategory: recipientCategory, city });
   const contacts = contactLines(recipient).join('\n');
-  const urgentNumber = recipient.helpline || recipient.forestHelpline || '112';
+  const urgentNumber = recipient.helpline || (result.category === 'trees' ? recipient.forestHelpline : null);
   const isUrgent = result.severity === 'severe' || result.category === 'burning';
 
   // Turn the visual finding into a usable draft immediately. The wording says
@@ -1282,8 +1125,6 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
     situation: imageSituation,
     recipient,
     city,
-    cc: draftCc,
-    ccLabel: draftCcLabel,
     issueLabel: ISSUE_LABELS[result.category] || result.issue,
     hasPhoto: true,
   });
@@ -1292,16 +1133,17 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
   const nextSteps = (result.actions || []).slice(0, 3).map((a) => `• ${a}`).join('\n');
 
   const text = [
-    `🔍 **What I see:** ${result.issue} — ${severityLabel} (${Math.round((result.confidence || 0.6) * 100)}% confidence)`,
+    `🔍 **Possible finding:** ${result.issue} — ${severityLabel}`,
     result.description,
-    result.needsUserVerification ? '⚠️ **Please verify this finding before sending** — the photo was classified automatically on your device.' : null,
+    '⚠️ This is an automated assessment. Please verify it against the photo before sending.',
     result.visibleText?.length
       ? `📝 **Text read from the photo (OCR — please verify):** ${result.visibleText.map((line) => `“${line}”`).join(' · ')}`
       : null,
-    isUrgent ? `🚨 **Happening right now?** Call **${urgentNumber}** immediately — the flying squad can stop it on the spot.` : null,
+    isUrgent ? (urgentNumber ? `🚨 **Happening right now?** Check the appropriate official helpline: **${urgentNumber}**.`
+      : '🚨 If there is immediate danger, follow local emergency guidance. I don’t have a verified local number for this report.') : null,
     nextSteps ? `**What to do next**\n${nextSteps}` : null,
     contacts ? `**Who to send it to**\n${contacts}` : null,
-    '📧 **I also prepared a complaint draft below.** Fill in the bracketed personal/location details, attach the original photo, and review it before opening Gmail.',
+    '📧 **I also prepared a complaint draft below.** Review it against the original photo and confirm the recipient before sending.',
   ].filter(Boolean).join('\n\n');
 
   return {
@@ -1312,7 +1154,7 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
         data: {
           ...result,
           preview: imageData.preview,
-          location: city || 'Your Location',
+          location: city || 'Incident location not verified',
           authority: {
             organization: recipient.organization,
             email: recipient.email,
@@ -1327,9 +1169,11 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
           to: recipient.email,
           recipientName: recipient.name,
           organization: recipient.organization,
+          location: city,
           cc: draftCc,
           ccLabel: draftCcLabel,
           portalUrl: recipient.portalUrl,
+          sourceUrl: recipient.sourceUrl,
           helpline: recipient.helpline,
           subject: emailTemplate.subject,
           body: emailTemplate.body,
@@ -1342,59 +1186,38 @@ async function handleImageAnalysis(imageData, userMessage, userId, location) {
         label: '📋 File Report',
         action: 'FILE_REPORT_FROM_ANALYSIS',
         variant: 'primary',
-        data: { situation: result.description, category: result.category },
+        data: { situation: result.description, category: result.category, photoLocation },
       },
-      { label: '📇 All Contacts', action: 'QUICK_ALL_CONTACTS', variant: 'secondary', data: { category: result.category } },
+      { label: '📇 All Contacts', action: 'QUICK_ALL_CONTACTS', variant: 'secondary', data: { category: result.category, photoLocation } },
     ],
     status: 'success',
   };
 }
 
-async function handleGeneralQuestion(userMessage, conversationHistory, location, userId) {
+async function handleGeneralQuestion(userMessage, conversationHistory, location, userId, { snapshot = false, web = false, webLocation, signal } = {}) {
   const city = resolveCity(location?.city);
   const lat = location?.lat;
   const lng = location?.lng;
-  const locality = location?.locality;
-  const hasExplicitCity = Boolean(location?.hasExplicitCity);
   const lower = (userMessage || '').toLowerCase();
   const isOpenEndedHelp = /^(?:i\s*need|ineed|need|can you|could you|please|pls)?.{0,18}\bhelp(?:\s+me)?[.!?]*$/i.test(lower.trim());
   const isCasualSmallTalk = /^(?:what'?s?\s+(?:going(?:\s+on)?|up|new)|whatsgoing|how(?:'s| is|s)\s+it\s+going|how\s+are\s+you|sup|wassup|wyd)[.!?]*$/i.test(lower.trim());
   const isPersonalConversation = /\b(not (?:good|okay|ok|well)|bad day|feeling (?:sad|low|down|stressed|anxious|lonely|tired)|i(?:'m| am) (?:sad|upset|stressed|anxious|lonely|tired)|need to talk)\b/i.test(lower);
 
-  const wantsLiveData = /\b(aqi|air|weather|temperature|pollution|mausam|garmi|humid|rain|health|mask|smog)\b/i.test(lower);
-  const needsWebSearch = /\b(search (?:the )?web|google (?:this|it|for)|look (?:this )?up|latest|recent news|today'?s news|current (?:rule|rules|law|laws|policy|policies|deadline|official update)|what happened today|2026 update)\b/i.test(lower);
-  const complaintContext = /\b(complain|complaint|grievance|report|portal|authority|email|contact|call|helpline|forest|mangrove|midc|mpcb|nmmc|bmc|mcd|bbmp|steps|burning|buring|garbage|sewage|tree|cutting|kachra|shikayat|kisko|kahan)\b/i.test(userMessage);
+  const needsWebSearch = web || /\b(search (?:the )?web|google (?:this|it|for)|look (?:this )?up|latest|recent news|today['’]?s news|current (?:rule|rules|law|laws|policy|policies|deadline|official update)|what happened today)\b/i.test(lower);
+  const complaintContext = /\b(complain|complaint|grievance|authority contacts?|helpline|midc|mpcb|nmmc|bmc|mcd|bbmp|shikayat)\b/i.test(userMessage);
 
   let liveAqi = null;
   let liveWeather = null;
-  if (lat && lng && (hasExplicitCity || wantsLiveData)) {
+  if (snapshot && Number.isFinite(lat) && Number.isFinite(lng)) {
     [liveAqi, liveWeather] = await Promise.all([
-      getAirQuality(lat, lng, city).catch(() => null),
-      getWeather(lat, lng).catch(() => null),
+      getAirQuality(lat, lng, city, { signal }),
+      getWeather(lat, lng, { signal }),
     ]);
   }
 
-  const mapPlace = locality ? `${locality}, ${city || ''}`.replace(/,\s*$/, '') : city;
-  const wantsMap = /\b(map|maps|show location|where is|locate)\b/i.test(lower);
-  if (wantsMap && mapPlace && lat && lng) {
-    return {
-      text: `🗺️ Here is **${mapPlace}** on the map. The link opens a live Google Maps search, so you can zoom to the exact street or landmark.`,
-      cards: [{ type: 'map', data: { lat, lng, city: mapPlace, label: mapPlace, query: mapPlace } }],
-      actions: [
-        { label: '🌬️ Check AQI', action: 'QUICK_AQI', variant: 'secondary' },
-        { label: '📇 Authority Contacts', action: 'QUICK_ALL_CONTACTS', variant: 'secondary' },
-      ],
-      status: 'success',
-    };
-  }
-
-  // A bare city name ("Navi Mumbai", "Pune", "Delhi") is a location switch,
-  // not an open-ended AI question. Answer it directly from live APIs so this
-  // route still works when every language-model provider is offline.
-  const isCityOnly = hasExplicitCity && userMessage.trim().split(/\s+/).filter(Boolean).length <= 3;
-  if (isCityOnly) {
-    const cityParts = String(city || '').split(',').map((part) => part.trim()).filter(Boolean);
-    const outsideIndia = cityParts.length >= 3 && !/\bindia\b/i.test(cityParts[cityParts.length - 1]);
+  // A bare city name requests a snapshot; it does not set the user's local city.
+  if (snapshot && city) {
+    const outsideIndia = !isIndianPlace(city);
     const lines = [`📍 **${city} — live environmental snapshot**`];
 
     if (liveAqi) {
@@ -1405,7 +1228,7 @@ async function handleGeneralQuestion(userMessage, conversationHistory, location,
     }
 
     if (liveWeather) {
-      lines.push(`🌤️ **${liveWeather.temp}°C**, ${liveWeather.description}; feels like ${liveWeather.feelsLike}°C, humidity ${liveWeather.humidity}%, wind ${liveWeather.windSpeed} m/s`);
+      lines.push(`🌤️ **${liveWeather.temp}°C**, ${liveWeather.description} ([${liveWeather.source}](${liveWeather.sourceUrl}))`);
     } else {
       lines.push('🌤️ Live weather data is temporarily unavailable.');
     }
@@ -1432,9 +1255,9 @@ async function handleGeneralQuestion(userMessage, conversationHistory, location,
     };
   }
 
-  let context = lat || city
-    ? `Optional location context: ${city || 'Unknown city'} (coordinates: ${lat?.toFixed(4)}, ${lng?.toFixed(4)}). Use this ONLY when the user's request is location-dependent. Do not mention the city, AQI, weather, civic authorities, or environmental features in an unrelated answer.`
-    : 'User location: not shared yet. If location-specific info is needed, ask the user to share their location.';
+  let context = city
+    ? `Most recently discussed city: ${city}. This is not evidence of the user's physical whereabouts. Use it only when the request clearly refers to that city.`
+    : 'No city confirmed. If a city is needed, ask which city to use.';
 
   if (isOpenEndedHelp) {
     context += '\nInstruction: The user has only said they need help. Reply with one warm, open-ended sentence asking what they need help with. Do not list capabilities, examples, location, or environmental features.';
@@ -1449,10 +1272,12 @@ async function handleGeneralQuestion(userMessage, conversationHistory, location,
   // Verified contacts, only when the conversation is about complaining/reporting.
   let recipient = null;
   const recentCombined = `${userMessage} ${(conversationHistory || []).slice(-4).map((m) => m.text || '').join(' ')}`;
-  const recipientNeeded = complaintContext || /\b(complain|complaint|grievance|report|portal|authority|email|contact|helpline|forest|mangrove|midc|mpcb|nmmc|bmc|mcd|bbmp|steps|burning|buring|garbage|sewage|tree|cutting)\b/i.test(recentCombined);
+  const recipientNeeded = complaintContext && !needsWebSearch && Boolean(city);
   if (recipientNeeded) {
     recipient = await tools.findVerifiedRecipient({ issueCategory: detectIssueCategory(recentCombined), city });
-    context += `\nVerified local authority for ${city || 'this area'}: ${recipient.organization}, Email: ${recipient.email}, Portal: ${recipient.portalUrl}, Helpline: ${recipient.helpline || 'N/A'}, National Portal: ${recipient.nationalPortal}.`;
+    context += !recipient.localUnavailable && recipient.jurisdiction === 'india'
+      ? `\nVerified local authority for ${city}: ${recipient.organization}, Email: ${recipient.email}, Portal: ${recipient.portalUrl}, Helpline: ${recipient.helpline || 'N/A'}.`
+      : `\nNo verified local contact for ${city}.${recipient.portalUrl ? ` National portal: ${recipient.portalUrl}.` : ''}`;
     if (recipient.forestEmail) {
       context += `\nVerified Forest / Tree Cell contact: Email: ${recipient.forestEmail}${recipient.forestHelpline ? `, Forest Helpline: ${recipient.forestHelpline}` : ''}.`;
     }
@@ -1471,42 +1296,32 @@ async function handleGeneralQuestion(userMessage, conversationHistory, location,
     context += '\nInstruction: quote only these contacts. If a level is missing, say so and point to the official portal — never invent an email or phone number.';
   }
 
-  if (liveAqi) {
-    context += `\nLive AQI for ${city}: ${liveAqi.aqi} (PM2.5: ${liveAqi.pm25} µg/m³, PM10: ${liveAqi.pm10} µg/m³, source: ${liveAqi.source}).`;
-  }
-  if (liveWeather) {
-    context += `\nLive Weather for ${city}: ${liveWeather.temp}°C (feels like ${liveWeather.feelsLike}°C), ${liveWeather.description}, humidity ${liveWeather.humidity}%, wind ${liveWeather.windSpeed} m/s.`;
-  }
-  if (hasExplicitCity && userMessage.trim().split(/\s+/).length <= 3) {
-    context += `\nInstruction: The user only entered the city name "${city}". Reply concisely with ONLY the live weather & AQI summary for ${city} and ask how you can help them there. Do NOT generate email drafts or unrelated content from earlier turns.`;
-  }
   if (needsWebSearch) {
-    context += '\nInstruction: This question requires current web information. Use Google Search grounding, distinguish published facts from uncertainty, and support the answer with the returned sources. Do not answer from memory if search is unavailable.';
+    context += '\nInstruction: Support the answer with the returned web sources. Do not answer from memory if search is unavailable.';
   }
 
   const chatHistory = conversationHistory.map((m) => ({
     role: m.role,
     text: m.text || '',
   }));
-  chatHistory.push({ role: 'user', text: userMessage });
+  chatHistory.push({ role: 'user', text: webLocation ? `${userMessage}\nSearch this area: ${webLocation.city}` : userMessage });
 
-  const responseText = await getChatResponse(chatHistory, context, { useSearch: needsWebSearch });
+  const responseText = await getChatResponse(chatHistory, context, { useSearch: needsWebSearch, signal });
 
   // Model unreachable → answer from verified data instead of a generic error.
   if (isAIUnavailable(responseText)) {
     if (needsWebSearch) {
       return {
-        text: `I can't verify a current web answer right now, so I won't guess. 🔎\n\nAdd a valid **Gemini API key** to enable Google Search grounding, or share an official URL and I can help read and explain it.`,
+        text: "I couldn't get a sourced web answer right now, so I won't guess. Try again or check the relevant official website.",
         cards: [],
         actions: [],
         status: 'unavailable',
       };
     }
-    logAction(userId, 'general_chat_fallback', { message: userMessage.slice(0, 50), city });
+    logAction(userId, 'general_chat_fallback', {});
     return buildFallbackReply({
       message: userMessage,
       location: { city, lat, lng },
-      history: conversationHistory,
       recipient,
       aqi: liveAqi,
       weather: liveWeather,
@@ -1514,21 +1329,9 @@ async function handleGeneralQuestion(userMessage, conversationHistory, location,
     });
   }
 
-  const cards = [];
-  const wantsCityOverview = hasExplicitCity && (
-    userMessage.trim().split(/\s+/).length <= 3 ||
-    /\b(detail|details|info|aqi|air|weather|climate|status)\b/i.test(userMessage)
-  );
-
-  if (liveAqi && wantsCityOverview) {
-    cards.push({ type: 'aqi', data: { ...liveAqi, insight: getAQIInsight(liveAqi) } });
-  }
-
-  logAction(userId, 'general_chat', { message: userMessage.slice(0, 50) });
-
   return {
     text: responseText,
-    cards,
+    cards: [],
     actions: [],
     status: 'success',
   };

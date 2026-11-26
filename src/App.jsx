@@ -2,7 +2,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { AppProvider } from './contexts/AppContext';
+import { AppProvider } from './contexts/AppProvider';
 import LandingPage from './pages/LandingPage';
 
 const ChatPage = lazy(() => import('./pages/ChatPage'));

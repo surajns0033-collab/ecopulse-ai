@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
 import { processMessage } from '../agent/agentOrchestrator';
-import { getUserCity, getLocationFromBrowser, DEFAULT_LOCATION } from '../services/environmentalData';
 import { tools } from '../services/agentTools';
 import Header from '../components/chat/Header';
 import MessageBubble from '../components/chat/MessageBubble';
@@ -17,7 +16,7 @@ function createWelcomeMessage(user) {
   return {
     id: 'welcome',
     role: 'ai',
-    text: `👋 Hi${name}! I'm **EcoPulse AI**, your everyday environment and civic-help companion. 🌱\n\nChoose a feature below to get started, or just type naturally about anything you need help with. You can change the city anytime by typing its name.`,
+    text: `👋 Hi${name}! I'm **EcoPulse AI**, your everyday environment and civic-help companion. 🌱\n\nChoose a feature or ask anything. Type a city name for a snapshot, or say **“Set my city to…”** to choose the city for local questions.`,
     cards: [],
     actions: [
       { label: '📍 Share My Location', action: 'REQUEST_LOCATION', variant: 'primary' },
@@ -36,12 +35,13 @@ function createWelcomeMessage(user) {
 export default function ChatPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { location, setLocation, conversation, addMessage, clearConversation, pendingAction, setPendingAction } = useApp();
+  const { location, setLocation, chosenLocation, setChosenLocation, conversation, addMessage, clearConversation, pendingAction, setPendingAction } = useApp();
 
   const [isTyping, setIsTyping] = useState(false);
   const [typingStatus, setTypingStatus] = useState('Thinking...');
   const scrollRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const requestRef = useRef(null);
 
   // Scroll to bottom
   const scrollToBottom = useCallback(() => {
@@ -50,59 +50,20 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [conversation, isTyping]);
+  }, [conversation, isTyping, scrollToBottom]);
 
-  // Add welcome message on first load & auto-detect location safely
+  // Device location is only requested after an explicit action.
   useEffect(() => {
     if (conversation.length === 0) {
       addMessage(createWelcomeMessage(user));
     }
-    if (!location) {
-      getLocationFromBrowser().then(async (coords) => {
-        const city = await getUserCity(coords.lat, coords.lng);
-        setLocation({ lat: coords.lat, lng: coords.lng, city });
-      }).catch(() => {
-        setLocation(DEFAULT_LOCATION);
-      });
-    }
-  }, []);
-
-  // Request location explicitly with Google Maps preview
-  async function requestLocation() {
-    setIsTyping(true);
-    setTypingStatus('Getting your location...');
-    try {
-      const coords = await getLocationFromBrowser();
-      const city = await getUserCity(coords.lat, coords.lng);
-      const finalLoc = { lat: coords.lat, lng: coords.lng, city };
-      setLocation(finalLoc);
-
-      addMessage({
-        role: 'ai',
-        text: `📍 Got your location! You're in **${city}**. Here is your area on Google Maps:`,
-        cards: [{ type: 'map', data: { lat: finalLoc.lat, lng: finalLoc.lng, city: finalLoc.city, label: `${finalLoc.city} — Your Location` } }],
-        actions: [{ label: '🌬️ Check Air Quality', action: 'QUICK_AQI', variant: 'primary' }],
-        timestamp: new Date().toISOString(),
-      });
-    } catch {
-      setLocation(DEFAULT_LOCATION);
-      addMessage({
-        role: 'ai',
-        text: `📍 Using default location **${DEFAULT_LOCATION.city}**. You can also type any city name in chat.`,
-        cards: [{ type: 'map', data: { ...DEFAULT_LOCATION, label: DEFAULT_LOCATION.city } }],
-        actions: [],
-        timestamp: new Date().toISOString(),
-      });
-    } finally {
-      setIsTyping(false);
-    }
-  }
+  }, [conversation.length, user, addMessage]);
 
   // Handle card/button actions
   async function handleAction(action, data) {
     switch (action) {
       case 'REQUEST_LOCATION':
-        await requestLocation();
+        await sendMessage('Use my location', null);
         break;
 
       case 'GOTO_MEETUPS':
@@ -114,11 +75,11 @@ export default function ChatPage() {
         break;
 
       case 'QUICK_AQI':
-        await sendMessage(`What is the air quality in ${location?.city || 'Navi Mumbai'} right now?`, null);
+        await sendMessage('What is the air quality right now?', null);
         break;
 
       case 'QUICK_WEATHER_PRECAUTIONS':
-        await sendMessage(`What is the live weather in ${location?.city || 'Navi Mumbai'} and what precautions should I take right now?`, null);
+        await sendMessage('What is the current weather and what precautions should I take?', null);
         break;
 
       case 'START_MAP_SEARCH':
@@ -184,41 +145,25 @@ export default function ChatPage() {
             ? 'Show me the local, state and emergency traffic-police contacts for this road obstruction, with verified email, helpline and complaint portal'
             : 'Show me the national, state and local authority contacts with emails',
           null,
+          { photoLocation: data?.data?.photoLocation },
         );
         break;
 
       case 'FILE_REPORT_FROM_ANALYSIS':
         await sendMessage(
           data?.data?.situation
-            ? `Help me file a report. Photo analysis: ${data.data.situation}`
+            ? `Help me file a report. Possible photo finding (needs review): ${data.data.situation}`
             : 'Help me file a report for this environmental issue',
           null,
+          { photoLocation: data?.data?.photoLocation },
         );
         break;
 
-      case 'DRAFT_EMAIL_FROM_ANALYSIS':
-        await sendMessage(
-          data?.data?.situation
-            ? `Draft a complaint email to authorities. Photo analysis: ${data.data.situation}`
-            : 'Draft a complaint email to authorities about this issue',
-          null,
-        );
-        break;
-
-      case 'IMAGE_ISSUE_GARBAGE':
-        await sendMessage('Draft a complaint email about garbage dumping in my area. I have a photo attached as evidence.', null);
-        break;
-
-      case 'IMAGE_ISSUE_BURNING':
-        await sendMessage('Draft a complaint email about open burning of garbage in my area. I have a photo attached as evidence.', null);
-        break;
-
-      case 'IMAGE_ISSUE_SEWAGE':
-        await sendMessage('Draft a complaint email about sewage overflow in my area. I have a photo attached as evidence.', null);
-        break;
-
-      case 'IMAGE_ISSUE_TREES':
-        await sendMessage('Draft a complaint email about tree cutting in my area. I have a photo attached as evidence.', null);
+      case 'PHOTO_ISSUE':
+        if (!data?.data?.issue) break;
+        await sendMessage(`Draft a complaint email. I observed ${data.data.issue.toLowerCase()} and have a photo.`, null, {
+          photoLocation: data.data.photoLocation ?? null,
+        });
         break;
 
       case 'CREATE_EVENT':
@@ -351,7 +296,7 @@ export default function ChatPage() {
         break;
       }
 
-      case 'SEND_EMAIL': {
+      case 'SAVE_EMAIL_DRAFT': {
         if (!user || !data) break;
         setIsTyping(true);
         setTypingStatus('Saving email draft...');
@@ -360,7 +305,7 @@ export default function ChatPage() {
             userId: user.uid,
             reportId: data.reportId || null,
             issue: data.subject,
-            location: location?.city || 'Navi Mumbai',
+            location: data.location || null,
             recipientType: 'municipal',
             recipientEmail: data.to,
             subject: data.subject,
@@ -373,7 +318,7 @@ export default function ChatPage() {
               type: 'confirmation',
               data: {
                 title: 'Email Draft Saved! 📧',
-                message: `Draft saved to your account. Send it from your email client to ${data.to}`,
+                message: 'Draft saved to your account. Nothing was sent.',
                 id: result.draftId,
               }
             }],
@@ -406,8 +351,10 @@ export default function ChatPage() {
   }
 
   // Main send handler
-  async function sendMessage(text, imageData) {
-    if (!text && !imageData) return;
+  async function sendMessage(text, imageData, { photoLocation } = {}) {
+    if (isTyping || requestRef.current || (!text && !imageData)) return;
+    const controller = new AbortController();
+    requestRef.current = controller;
 
     addMessage({
       role: 'user',
@@ -418,37 +365,35 @@ export default function ChatPage() {
     });
 
     setIsTyping(true);
-    setTypingStatus(imageData ? 'Analyzing image privately… First photo may download the vision model.' : 'Thinking...');
+    setTypingStatus(imageData ? 'Analyzing photo… The on-device fallback may download a vision model.' : 'Thinking...');
 
+    let timeout;
     try {
       const history = conversation.map((m) => ({ role: m.role, text: m.text }));
       const lower = (text || '').toLowerCase();
-      if (lower.includes('aqi') || lower.includes('air') || lower.includes('pollution')) setTypingStatus('Checking air quality...');
+      if (lower === 'use my location') setTypingStatus('Verifying your device location...');
+      else if (lower.includes('aqi') || lower.includes('air') || lower.includes('pollution')) setTypingStatus('Checking air quality...');
       else if (lower.includes('event') || lower.includes('meetup')) setTypingStatus('Finding events...');
       else if (lower.includes('report') || lower.includes('complaint')) setTypingStatus('Preparing report...');
       else if (lower.includes('map') || lower.includes('route') || lower.includes('location')) setTypingStatus('Loading Google Maps...');
 
-      const activeLoc = location || DEFAULT_LOCATION;
       const response = await Promise.race([
-        processMessage(text, history, user, activeLoc, imageData, pendingAction),
-        new Promise((_, reject) => setTimeout(
-          () => reject(new Error('Request timed out')),
-          imageData ? 180000 : 45000,
-        )),
+        processMessage(text, history, user, location, imageData, pendingAction, { chosenLocation, photoLocation, signal: controller.signal }),
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => {
+            reject(new Error('Request timed out'));
+            controller.abort();
+          }, imageData ? 180000 : 45000);
+        }),
       ]);
 
-      // Remember the city currently being discussed so quick actions use it
-      if (response.resolvedLocation) {
-        setLocation(response.resolvedLocation);
-      }
+      if (requestRef.current !== controller) return;
+      if (response.resolvedLocation) setLocation(response.resolvedLocation);
+      if (response.chosenLocation) setChosenLocation(response.chosenLocation);
 
-      // Keep the email-drafting flow alive across turns while the AI awaits details.
-      // Only the email handler sets `pending`, so other "needs info" replies don't trap the chat.
-      if (response.pending) {
-        setPendingAction({ type: response.pending, city: activeLoc.city });
-      } else if (response.status === 'preview' || response.status === 'success' || response.status === 'needs_info' || response.status === 'unavailable') {
-        setPendingAction(null);
-      }
+      setPendingAction(response.pending ? {
+        type: response.pending, location: response.resolvedLocation || location, ...response.pendingData,
+      } : null);
 
       addMessage({
         role: 'ai',
@@ -458,22 +403,31 @@ export default function ChatPage() {
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
+      if (requestRef.current !== controller) return;
       addMessage({
         role: 'ai',
         text: err?.message === 'Request timed out'
-          ? `That took longer than expected ⏳ Please try once more.\n\nMeanwhile I can always tell you **which authority, email and helpline** to complain to for **${location?.city || 'your area'}** — just say "where do I complain about garbage?"`
-          : 'Something went wrong on my side. Please try again — and if it repeats, tell me your city and the exact issue and I\'ll give you the verified complaint contacts directly.',
+          ? 'That took longer than expected. Please try again.'
+          : 'Something went wrong on my side. Please try again.',
         cards: [], actions: [], timestamp: new Date().toISOString(),
       });
     } finally {
-      setIsTyping(false);
-      setTypingStatus('Thinking...');
+      clearTimeout(timeout);
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        setIsTyping(false);
+        setTypingStatus('Thinking...');
+      }
     }
   }
 
   function handleRefresh() {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    setIsTyping(false);
     clearConversation();
-    setTimeout(() => addMessage(createWelcomeMessage(user)), 50);
+    setPendingAction(null);
+    setLocation(chosenLocation);
   }
 
   return (

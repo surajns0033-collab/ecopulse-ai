@@ -1,9 +1,9 @@
-import { createContext, useContext, useState } from 'react';
-
-const AppContext = createContext(null);
+import { useState } from 'react';
+import { AppContext } from './AppContext';
 
 export function AppProvider({ children }) {
   const [location, setLocation] = useState(null); // { lat, lng, city }
+  const [chosenLocation, setChosenLocation] = useState(null); // user's explicit local city for Chat
   const [conversation, setConversation] = useState([]);
   const [pendingAction, setPendingAction] = useState(null); // current agent action being confirmed
 
@@ -30,6 +30,8 @@ export function AppProvider({ children }) {
     <AppContext.Provider value={{
       location,
       setLocation,
+      chosenLocation,
+      setChosenLocation,
       conversation,
       setConversation,
       addMessage,
@@ -41,8 +43,4 @@ export function AppProvider({ children }) {
       {children}
     </AppContext.Provider>
   );
-}
-
-export function useApp() {
-  return useContext(AppContext);
 }

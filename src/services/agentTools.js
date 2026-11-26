@@ -1,14 +1,14 @@
 // Agent Tools — all async tool implementations
 
 import {
-  collection, addDoc, getDocs, getDoc, doc, updateDoc, deleteDoc,
+  collection, addDoc, getDocs, doc, updateDoc, deleteDoc,
   query, where, orderBy, limit as fsLimit, Timestamp, increment, onSnapshot
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/config';
 import { COLLECTIONS, generateReportId, generateEventId } from '../firebase/collections';
-import { getAirQuality, getWeather, getLocationFromBrowser } from './environmentalData';
+import { getAirQuality, getWeather } from './environmentalData';
 import { analyzeEnvironmentalImage as geminiAnalyze } from './geminiService';
-import { getAuthorityBundle } from './authorityDirectory';
+import { getAuthorityBundle, isIndianPlace, matchesDirectoryCity } from './authorityDirectory';
 import { analyzeImageOnDevice } from './onDeviceVision';
 
 // Persistent localStorage fallback store for when Firebase isn't configured
@@ -63,9 +63,9 @@ export const tools = {
   },
 
   /**
-   * Get nearby meetups from Firestore
+   * Get published meetups from Firestore (the listing isn't geospatial).
    */
-  getNearbyMeetups: async ({ lat, lng, category, dateFilter, limit: lim = 10 }) => {
+  getNearbyMeetups: async ({ category, limit: lim = 10 }) => {
     return firestoreOrLocal(
       async () => {
         let q = query(
@@ -226,13 +226,6 @@ export const tools = {
     const cloudResult = await geminiAnalyze(base64, mimeType, contextHint || '');
     if (cloudResult) return { ...cloudResult, provider: cloudResult.provider || 'AI vision' };
     return analyzeImageOnDevice(base64, mimeType, contextHint || '');
-  },
-
-  /**
-   * Get user's current location
-   */
-  getUserLocation: async () => {
-    return getLocationFromBrowser();
   },
 
   /**
@@ -398,15 +391,24 @@ export const tools = {
    * Find verified municipal/environmental recipients + official portal & helpline
    */
   findVerifiedRecipient: async ({ issueCategory, city }) => {
-    const cityLower = (city || '').toLowerCase();
+    if (!isIndianPlace(city)) {
+      return {
+        email: null,
+        name: 'Relevant Local Authority',
+        organization: city ? `Local municipal or environmental authority for ${city}` : 'Local municipal or environmental authority',
+        portalUrl: null,
+        helpline: null,
+        jurisdiction: city ? 'outside-india' : 'unknown',
+        disclaimer: city ? 'No verified contact is stored for this jurisdiction. Check the official city or regional government website.'
+          : 'Provide the city and country to check for verified local contacts.',
+      };
+    }
+    const cityName = city.split(',')[0].trim().toLowerCase();
     const authorityBundle = getAuthorityBundle(city);
-    const placeParts = String(city || '').split(',').map((part) => part.trim()).filter(Boolean);
-    const hasExplicitCountry = placeParts.length >= 3;
-    const outsideIndia = hasExplicitCountry && !/\bindia\b/i.test(placeParts[placeParts.length - 1]);
 
     // Road obstruction belongs to traffic police, not the municipal environment
     // department. These Navi Mumbai details are published by Navi Mumbai Police.
-    if (issueCategory === 'road_obstruction' && cityLower.includes('navi mumbai')) {
+    if (issueCategory === 'road_obstruction' && cityName === 'navi mumbai' && matchesDirectoryCity(city)) {
       return {
         email: 'cp.navimumbai@mahapolice.gov.in',
         name: 'Commissioner of Police, Navi Mumbai',
@@ -429,17 +431,18 @@ export const tools = {
         },
         nationalAuthority: [],
         civicDomain: 'traffic',
+        jurisdiction: 'india',
         disclaimer: 'Publicly listed official police contacts — verify on the official portal before sending.',
       };
     }
 
     if (issueCategory === 'road_obstruction') {
       return {
-        email: 'Use the official traffic-police complaint portal',
+        email: null,
         name: 'Local Traffic Police',
         organization: city ? `Traffic Police for ${city}` : 'Local Traffic Police',
-        portalUrl: outsideIndia ? null : 'https://digitalpolice.gov.in',
-        helpline: outsideIndia ? null : '112 (emergency only)',
+        portalUrl: 'https://digitalpolice.gov.in',
+        helpline: '112 (emergency only)',
         whatsapp: null,
         nationalPortal: null,
         forestEmail: null,
@@ -447,26 +450,19 @@ export const tools = {
         stateAuthority: null,
         nationalAuthority: [],
         civicDomain: 'traffic',
-        jurisdiction: outsideIndia ? 'outside-india' : 'india',
-        disclaimer: outsideIndia
-          ? 'No verified contact is stored for this country. Use the city or national police authority’s official website; do not rely on an unverified number.'
-          : 'No verified local email is stored for this city. Use the official traffic-police portal; call 112 only for immediate danger.',
+        jurisdiction: 'india',
+        localUnavailable: true,
+        disclaimer: 'No verified local email is stored for this city. Check the state police website; call 112 only for immediate danger.',
       };
     }
 
     const knownContacts = {
       'navi mumbai': {
-        default: 'commissioner@nmmc.gov.in',
-        garbage: 'dmc_swm@nmmc.gov.in',
-        water: 'commissioner@nmmc.gov.in',
-        sewage: 'commissioner@nmmc.gov.in',
-        trees: 'commissioner@nmmc.gov.in',
-        air: 'commissioner@nmmc.gov.in',
-        construction: 'commissioner@nmmc.gov.in',
+        default: 'commissioner@nmmconline.com',
         name: 'NMMC Commissioner',
         organization: 'Navi Mumbai Municipal Corporation (NMMC)',
-        portalUrl: 'https://www.nmmc.gov.in',
-        helpline: '1800-222-309 / 1800-222-310',
+        portalUrl: 'https://www.nmmc.gov.in/register-grievance',
+        sourceUrl: 'https://thane.nic.in/en/telephone-directory/',
         forestEmail: 'ccfmangraove@mahaforest.gov.in',
         forestHelpline: '1926 (24/7 Toll-Free)',
       },
@@ -675,7 +671,7 @@ export const tools = {
       },
     };
 
-    const matchKey = Object.keys(knownContacts).find(k => cityLower.includes(k));
+    const matchKey = matchesDirectoryCity(city) && Object.hasOwn(knownContacts, cityName) ? cityName : null;
     const isMaharashtra = ['navi mumbai', 'mumbai', 'pune', 'thane', 'nagpur'].includes(matchKey);
     if (matchKey) {
       const c = knownContacts[matchKey];
@@ -688,35 +684,21 @@ export const tools = {
         name: c.name,
         organization: c.organization,
         portalUrl: c.portalUrl,
-        helpline: c.helpline,
+        sourceUrl: c.sourceUrl || null,
+        helpline: c.helpline || null,
         whatsapp: c.whatsapp || null,
         nationalPortal: 'https://pgportal.gov.in',
         forestEmail: c.forestEmail || (isMaharashtra ? 'ccfmangraove@mahaforest.gov.in' : null),
         forestHelpline: c.forestHelpline || null,
         stateAuthority: authorityBundle.state,
         nationalAuthority: authorityBundle.national,
+        jurisdiction: 'india',
         disclaimer: 'Publicly listed official contacts — please verify on the official portal before sending.',
       };
     }
 
-    if (outsideIndia) {
-      return {
-        email: 'Check the official city or regional government website',
-        name: 'Relevant Local Authority',
-        organization: `Local municipal / environmental authority for ${city}`,
-        portalUrl: null,
-        helpline: null,
-        nationalPortal: null,
-        forestHelpline: null,
-        stateAuthority: null,
-        nationalAuthority: [],
-        jurisdiction: 'outside-india',
-        disclaimer: 'EcoPulse has no verified contact stored for this country. Use the official city/regional government website; no email or number has been guessed.',
-      };
-    }
-
     return {
-      email: 'Check local municipal / district portal',
+      email: null,
       name: 'Local Municipal / Environmental Authority',
       organization: city ? `Municipal Corporation / District Administration for ${city}` : 'Local Municipal / Environmental Authority',
       portalUrl: 'https://pgportal.gov.in',
@@ -725,6 +707,8 @@ export const tools = {
       forestHelpline: null,
       stateAuthority: authorityBundle.state,
       nationalAuthority: authorityBundle.national,
+      jurisdiction: 'india',
+      localUnavailable: true,
       disclaimer: `For ${city || 'your area'}, file an official grievance with automatic tracking at CPGRAMS (pgportal.gov.in) and verify the correct local department on the city or district portal.`,
     };
   },
@@ -732,12 +716,11 @@ export const tools = {
   /**
    * Get a personalized daily action plan
    */
-  getDailyActionPlan: async ({ userId, lat, lng }) => {
-    const aqiData = lat && lng ? await getAirQuality(lat, lng).catch(() => null) : null;
-    const aqi = aqiData?.aqi || 0;
+  getDailyActionPlan: async ({ lat, lng }) => {
+    const aqiData = await getAirQuality(lat, lng);
 
     const basePlan = [
-      { icon: '🌱', action: 'Take a 5-minute green walk in a nearby park or garden today.' },
+      { icon: '🌱', action: 'Check local AQI before planning outdoor activity.' },
       { icon: '♻️', action: 'Segregate your household waste into wet, dry, and hazardous categories.' },
       { icon: '💧', action: 'Carry a reusable water bottle and refuse single-use plastic today.' },
       { icon: '🤝', action: 'Share one environmental tip with a friend or family member.' },
@@ -746,13 +729,13 @@ export const tools = {
 
     const highAQIPlan = [
       { icon: '😷', action: 'AQI is elevated — wear an N95 mask if going outdoors for extended periods.' },
-      { icon: '🏠', action: 'Keep windows closed during peak traffic hours (8-10 AM, 6-8 PM) to reduce indoor pollution.' },
-      { icon: '🌿', action: 'Water indoor plants — they help purify indoor air.' },
-      { icon: '🚶', action: 'Walk instead of using a vehicle for short trips to reduce your contribution to pollution.' },
+      { icon: '🏠', action: 'Keep windows closed while outdoor pollution is elevated, and ventilate when it improves.' },
+      { icon: '🌿', action: 'Run a HEPA filter if you have one and avoid burning candles or incense indoors.' },
+      { icon: '🚶', action: 'Combine errands or take transit to reduce repeat vehicle trips.' },
       { icon: '📋', action: 'Report any visible pollution sources (burning, construction dust) to authorities via EcoPulse.' },
     ];
 
-    return aqi > 100 ? highAQIPlan : basePlan;
+    return aqiData?.aqi > 100 ? highAQIPlan : basePlan;
   },
 
   /**

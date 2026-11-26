@@ -1,12 +1,12 @@
 // InlineCards — renders all card types inline in chat, matching reference UI + Google Maps
 import { useState } from 'react';
 import { MapPin, Calendar, Users, CheckCircle, AlertCircle, Zap, Droplets, ExternalLink, Navigation } from 'lucide-react';
-import { getAQICategory, getGoogleMapsUrl, getGoogleMapStaticImage } from '../../services/environmentalData';
+import { getAQICategory, getGoogleMapsUrl } from '../../services/environmentalData';
 import { MEETUP_CATEGORIES, REPORT_CATEGORIES } from '../../firebase/collections';
 import { format } from 'date-fns';
 
 // ===== AQI GAUGE — multi-color gradient arc matching reference screenshot =====
-function AQIGauge({ aqi, categoryLabel, categoryColor, categoryBg }) {
+function AQIGauge({ aqi, scale, categoryLabel, categoryColor, categoryBg }) {
   const radius = 52;
   const circumference = Math.PI * radius;
   const pct = Math.min(1, Math.max(0.05, (aqi || 0) / 300));
@@ -42,7 +42,7 @@ function AQIGauge({ aqi, categoryLabel, categoryColor, categoryBg }) {
           style={{ transition: 'stroke-dasharray 0.8s ease' }}
         />
         <text x="68" y="48" textAnchor="middle" style={{ fontSize: 11, fontWeight: 600, fill: '#6b7280' }}>
-          AQI
+          {scale || 'AQI'}
         </text>
         <text x="68" y="72" textAnchor="middle" style={{ fontSize: 28, fontWeight: 800, fill: '#1a1a2e' }}>
           {aqi ?? '--'}
@@ -59,7 +59,7 @@ function AQIGauge({ aqi, categoryLabel, categoryColor, categoryBg }) {
 }
 
 export function AQICard({ data }) {
-  const { aqi, pm25, pm10, no2, o3, co, so2, city, timestamp, source, insight } = data;
+  const { aqi, scale, pm25, pm10, no2, o3, city, timestamp, source, sourceUrl, station, insight } = data;
   const cat = getAQICategory(aqi);
 
   const pollutants = [
@@ -78,6 +78,7 @@ export function AQICard({ data }) {
       <div className="aqi-card-layout">
         <AQIGauge
           aqi={aqi}
+          scale={scale}
           categoryLabel={cat.label}
           categoryColor={cat.color}
           categoryBg={cat.bg}
@@ -110,8 +111,8 @@ export function AQICard({ data }) {
       )}
 
       <div className="aqi-source-row">
-        <span>{city ? `📍 ${city} • ` : ''}Source: {source || 'WAQI'}</span>
-        <span>{timeStr}</span>
+        <span>{city ? `📍 ${city} • ` : ''}Source: {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noopener noreferrer">{source}</a> : source || 'Unavailable'}{station && station !== city ? ` (${station})` : ''}</span>
+        {timeStr && <span>{timeStr} (your time)</span>}
       </div>
     </div>
   );
@@ -119,10 +120,10 @@ export function AQICard({ data }) {
 
 // ===== GOOGLE MAP LOCATION CARD =====
 export function MapLocationCard({ data }) {
-  const { lat, lng, city, label, query } = data;
-  const mapsUrl = getGoogleMapsUrl(lat, lng, query || city);
-  const embedQuery = lat && lng ? `${lat},${lng}` : encodeURIComponent(query || city || 'Navi Mumbai');
-  const staticImg = lat && lng ? getGoogleMapStaticImage(lat, lng) : null;
+  const { lat, lng, city, label } = data;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const mapsUrl = getGoogleMapsUrl(lat, lng);
+  const embedQuery = encodeURIComponent(`${lat},${lng}`);
 
   return (
     <div className="inline-card">
@@ -139,11 +140,9 @@ export function MapLocationCard({ data }) {
             allowFullScreen
           />
         </div>
-        {lat && lng && (
-          <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>
-            Coordinates: {lat.toFixed(4)}, {lng.toFixed(4)}
-          </div>
-        )}
+        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>
+          Coordinates: {lat.toFixed(4)}, {lng.toFixed(4)}
+        </div>
         <a
           href={mapsUrl}
           target="_blank"
@@ -269,13 +268,16 @@ export function ReportPreviewCard({ data, onSubmit, onEdit, onCancel }) {
 }
 
 // ===== EMAIL PREVIEW =====
-export function EmailPreviewCard({ data, onSend, onEdit, onCancel, onChangeRecipient }) {
+export function EmailPreviewCard({ data, onSave, onCancel }) {
   const [askGmailPerm, setAskGmailPerm] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => ({ subject: data.subject || '', body: data.body || '' }));
+  const complete = Boolean(draft.subject.trim() && draft.body.trim());
 
   const toEmail = data.to && data.to.includes('@') ? data.to : '';
   const ccParam = data.cc && data.cc.includes('@') ? `&cc=${encodeURIComponent(data.cc)}` : '';
-  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail)}${ccParam}&su=${encodeURIComponent(data.subject || '')}&body=${encodeURIComponent(data.body || '')}`;
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail)}${ccParam}&su=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
 
   function handleConfirmOpenGmail() {
     setAskGmailPerm(false);
@@ -284,7 +286,7 @@ export function EmailPreviewCard({ data, onSend, onEdit, onCancel, onChangeRecip
 
   function handleCopyDraft() {
     const ccLine = data.cc ? `CC: ${data.cc}\n` : '';
-    const text = `${toEmail ? `To: ${toEmail}\n` : ''}${ccLine}Subject: ${data.subject || ''}\n\n${data.body || ''}`;
+    const text = `${toEmail ? `To: ${toEmail}\n` : ''}${ccLine}Subject: ${draft.subject}\n\n${draft.body}`;
     navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -300,7 +302,7 @@ export function EmailPreviewCard({ data, onSend, onEdit, onCancel, onChangeRecip
       <div className="email-preview-body">
         <div className="email-field">
           <div className="email-field-label">To</div>
-          <div className="email-field-value">{data.recipientName} — {data.to}</div>
+          <div className="email-field-value">{toEmail ? `${data.recipientName} — ${toEmail}` : 'No verified email address'}</div>
         </div>
         {data.cc && (
           <div className="email-field">
@@ -328,6 +330,11 @@ export function EmailPreviewCard({ data, onSend, onEdit, onCancel, onChangeRecip
             </a>
           </div>
         )}
+        {data.sourceUrl && (
+          <div className="email-field">
+            <a href={data.sourceUrl} target="_blank" rel="noopener noreferrer">Official contact listing <ExternalLink size={11} /></a>
+          </div>
+        )}
         {data.helpline && (
           <div className="email-field">
             <div className="email-field-label">Helpline</div>
@@ -336,11 +343,13 @@ export function EmailPreviewCard({ data, onSend, onEdit, onCancel, onChangeRecip
         )}
         <div className="email-field">
           <div className="email-field-label">Subject</div>
-          <div className="email-field-value">{data.subject}</div>
+          {editing ? <input className="email-draft-edit" aria-label="Draft subject" value={draft.subject} onChange={(event) => setDraft({ ...draft, subject: event.target.value })} />
+            : <div className="email-field-value">{draft.subject}</div>}
         </div>
         <div className="email-field">
           <div className="email-field-label">Body Preview</div>
-          <div className="email-body-preview">{data.body}</div>
+          {editing ? <textarea className="email-draft-edit" aria-label="Draft body" rows={8} value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} />
+            : <div className="email-body-preview">{draft.body}</div>}
         </div>
         {data.disclaimer && (
           <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6, fontStyle: 'italic' }}>
@@ -369,19 +378,12 @@ export function EmailPreviewCard({ data, onSend, onEdit, onCancel, onChangeRecip
       )}
 
       <div className="report-actions">
-        <button className="btn-primary" onClick={() => onSend && onSend(data)}>📧 Save Draft</button>
-        <button
-          className="btn-secondary"
-          onClick={() => setAskGmailPerm(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          ✉️ Open in Gmail
-        </button>
-        <button className="btn-secondary" onClick={handleCopyDraft}>
+        <button className="btn-primary" disabled={!complete || editing} onClick={() => onSave?.({ ...data, ...draft })}>📧 Save Draft</button>
+        {toEmail && <button className="btn-secondary" disabled={!complete || editing} onClick={() => setAskGmailPerm(true)}>✉️ Open in Gmail</button>}
+        <button className="btn-secondary" disabled={!complete || editing} onClick={handleCopyDraft}>
           {copied ? '✅ Copied' : '📋 Copy'}
         </button>
-        <button className="btn-secondary" onClick={() => onEdit && onEdit(data)}>✏️ Edit</button>
-        {onChangeRecipient && <button className="btn-secondary" onClick={() => onChangeRecipient(data)}>🔄 Change</button>}
+        <button className="btn-secondary" onClick={() => { setAskGmailPerm(false); setEditing(!editing); }}>{editing ? 'Done editing' : '✏️ Edit'}</button>
         <button className="btn-danger" onClick={() => onCancel && onCancel()}>✕ Cancel</button>
       </div>
     </div>
@@ -505,10 +507,9 @@ export function DailyPlanCard({ data }) {
 export function WaterQualityCard({ data }) {
   const items = [
     { icon: '👃', text: 'Unusual smell or colour? Report it immediately — it may indicate contamination.' },
-    { icon: '🧪', text: 'Free water testing is available at NMMC ward offices for residents.' },
-    { icon: '💧', text: 'Always boil water if you have doubts, especially after heavy rains.' },
+    { icon: '🧪', text: 'Ask your local water utility where to get drinking water tested.' },
+    { icon: '💧', text: 'If contamination is suspected, use a known safe supply and follow local advisories. Boiling does not remove chemicals.' },
     { icon: '🚫', text: 'Never dump chemicals, oil, or paints into storm drains or water bodies.' },
-    { icon: '📞', text: 'NMMC Water Emergency: 1800-22-6873 (toll-free, 24x7)' },
   ];
 
   return (
@@ -618,8 +619,7 @@ export default function InlineCards({ cards, onAction }) {
               <EmailPreviewCard
                 key={i}
                 data={card.data}
-                onSend={(d) => onAction && onAction('SEND_EMAIL', d)}
-                onEdit={(d) => onAction && onAction('EDIT_EMAIL', d)}
+                onSave={(d) => onAction && onAction('SAVE_EMAIL_DRAFT', d)}
                 onCancel={() => onAction && onAction('CANCEL', null)}
               />
             );

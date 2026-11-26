@@ -1,217 +1,214 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, RotateCcw, AudioWaveform } from 'lucide-react';
+import { Send, RotateCcw, AudioWaveform, ExternalLink } from 'lucide-react';
 import Header from '../components/chat/Header';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../contexts/AuthContext';
-import { useApp } from '../contexts/AppContext';
 import { processMessage } from '../agent/agentOrchestrator';
-import { DEFAULT_LOCATION } from '../services/environmentalData';
+import { emptyTalkContext, resolveTalkTurn } from '../agent/talkContext';
+import { shortSpeech, talkStatus, talkWebReference, toolSpeech } from '../agent/talkReply';
+import { playBrowserVoice, playNeuralVoice, speechLanguage } from '../services/talkAudio';
 import { getVoiceResponse, isAIUnavailable } from '../services/geminiService';
 
-function cardSpeech(cards = [], existingText = '') {
-  if (/\bAQI\b/i.test(existingText)) return '';
-  const aqi = cards.find((card) => card.type === 'aqi')?.data;
-  if (aqi?.aqi != null) return ` Current AQI is ${aqi.aqi}. PM 2.5 is ${aqi.pm25 ?? 'unavailable'} micrograms per cubic metre.`;
-  const weather = cards.find((card) => card.type === 'weather')?.data;
-  if (weather?.temp != null) return ` Current temperature is ${weather.temp} degrees Celsius.`;
-  return '';
+const fallbackLanguage = () => navigator.language?.startsWith('en') ? navigator.language : 'en-IN';
+
+function externalReference(label, value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? { label, href: url.href } : null;
+  } catch { return null; }
 }
 
 export default function TalkPage() {
   const { user } = useAuth();
-  const { location, setLocation } = useApp();
   const [mode, setMode] = useState('idle'); // idle | listening | thinking | speaking
-  const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [error, setError] = useState('');
-  const [speechPulse, setSpeechPulse] = useState(false);
+  const [deviceVoice, setDeviceVoice] = useState(false);
+  const [reference, setReference] = useState(null);
+  const visualRef = useRef(null);
+  const audioRef = useRef(null);
+  const turnRef = useRef(null);
   const recognitionRef = useRef(null);
-  const pendingActionRef = useRef(null);
-  const voiceListRef = useRef([]);
-  const speechLanguageRef = useRef(
-    typeof navigator !== 'undefined' && /^(?:hi|mr|en)-/i.test(navigator.language)
-      ? navigator.language
-      : 'en-IN'
-  );
-  const messagesRef = useRef([]);
+  const talkContext = useRef(emptyTalkContext());
+  const pending = useRef(null);
+  const historyRef = useRef([]);
+  const replyLocaleRef = useRef(fallbackLanguage());
 
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => () => {
-    recognitionRef.current?.abort?.();
-    window.speechSynthesis?.cancel();
+    window.speechSynthesis?.getVoices();
+    return () => {
+      const recognition = recognitionRef.current;
+      recognitionRef.current = null;
+      recognition?.abort();
+      turnRef.current?.abort();
+      turnRef.current = null;
+      if (audioRef.current) void audioRef.current.close().catch(() => {});
+      audioRef.current = null;
+    };
   }, []);
 
-  useEffect(() => {
-    if (!window.speechSynthesis) return undefined;
-    const loadVoices = () => {
-      const available = window.speechSynthesis.getVoices();
-      if (available.length) voiceListRef.current = available;
-    };
-    loadVoices();
-    window.speechSynthesis.addEventListener?.('voiceschanged', loadVoices);
-    return () => window.speechSynthesis.removeEventListener?.('voiceschanged', loadVoices);
-  }, []);
-
-  function cleanSpeech(textValue) {
-    return String(textValue || '')
-      .replace(/https?:\/\/\S+/g, '')
-      .replace(/[*#_`•]/g, ' ')
-      .replace(/\p{Extended_Pictographic}/gu, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+  function unlockAudio() {
+    // Resume from a user gesture; the reply arrives asynchronously later.
+    const Audio = window.AudioContext || window.webkitAudioContext;
+    if (!Audio) return;
+    try {
+      if (!audioRef.current) audioRef.current = new Audio();
+      const context = audioRef.current;
+      if (context.state !== 'running') void context.resume().catch(() => {});
+    } catch { /* the browser voice can still be used */ }
   }
 
-  function shortFallback(textValue) {
-    const clean = cleanSpeech(textValue);
-    const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [clean];
-    return sentences.slice(0, 2).join(' ').trim();
+  function setWaveLevel(level) {
+    visualRef.current?.style.setProperty('--speech-level', (.55 + level * .8).toFixed(2));
   }
 
-  function spokenReply(rawAnswer, response) {
-    const clean = cleanSpeech(rawAnswer);
-    const sentenceCount = (clean.match(/[.!?]+/g) || []).length;
-    if (clean.length <= 260 && sentenceCount <= 2 && !/\bDirect impact:/i.test(rawAnswer)) return clean;
-    if (response?.pending === 'SMOG_PLAN_AWAITING_PROFILE') {
-      return 'Tell me your usual commute, daily routine, cooking setup, air cleaning, and whether children, older adults, or anyone with heart or lung sensitivity is at home.';
-    }
-    const aqi = response?.cards?.find((card) => card.type === 'aqi')?.data;
-    if (aqi?.aqi != null) {
-      const priority = clean.match(/Top priority:?\s*([^.!?]+[.!?]?)/i)?.[1];
-      return `Your current AQI is ${aqi.aqi}. ${priority ? `Your top priority is ${priority}` : shortFallback(clean)}`;
-    }
-    return shortFallback(clean);
+  async function speak(answer, language, signal) {
+    const options = { signal, onStart: () => setMode('speaking'), onLevel: setWaveLevel };
+    const cloud = await playNeuralVoice(audioRef.current, answer, options);
+    if (cloud || signal.aborted) return;
+    const local = await playBrowserVoice(answer, speechLanguage(answer, language), {
+      ...options, onStart: () => { setDeviceVoice(true); options.onStart(); },
+    });
+    if (!local && !signal.aborted) setError('Speech couldn’t play. Try again, or use Chat for a written reply.');
   }
 
-  function speak(answer) {
-    if (!window.speechSynthesis || !answer) {
-      setMode('idle');
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(answer.replace(/[*#_`]/g, ''));
-    utterance.lang = /[\u0900-\u097F]/.test(answer) ? speechLanguageRef.current : 'en-IN';
-    const voices = voiceListRef.current.length ? voiceListRef.current : window.speechSynthesis.getVoices();
-    const languageRoot = utterance.lang.slice(0, 2).toLowerCase();
-    const scored = voices
-      .filter((voice) => voice.lang.toLowerCase().startsWith(languageRoot))
-      .map((voice) => {
-        let score = 0;
-        const name = voice.name.toLowerCase();
-        if (voice.lang.toLowerCase() === utterance.lang.toLowerCase()) score += 30;
-        if (/natural|neural/.test(name)) score += 120;
-        if (/google/.test(name)) score += 85;
-        if (/google uk english female/.test(name)) score += 35;
-        if (/google हिन्दी/.test(voice.name)) score += 35;
-        if (/female|zira|heera|kalpana/.test(name)) score += 8;
-        if (/microsoft david/.test(name)) score -= 30;
-        return { voice, score };
-      })
-      .sort((a, b) => b.score - a.score);
-    const preferred = scored[0]?.voice;
-    if (preferred) utterance.voice = preferred;
-    utterance.rate = 0.96;
-    utterance.pitch = 1.02;
-    utterance.volume = 1;
-    utterance.onstart = () => setMode('speaking');
-    utterance.onboundary = (event) => {
-      if (event.name === 'word' || event.charLength > 0) {
-        setSpeechPulse((current) => !current);
-      }
-    };
-    utterance.onend = () => { setSpeechPulse(false); setMode('idle'); };
-    utterance.onerror = () => { setSpeechPulse(false); setMode('idle'); };
-    window.speechSynthesis.speak(utterance);
+  function stopTurn() {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    recognition?.abort();
+    turnRef.current?.abort();
+    turnRef.current = null;
+    setWaveLevel(0);
+    setMode('idle');
   }
 
-  async function askAssistant(userText) {
+  async function askAssistant(userText, { confidence, fromMic } = {}) {
     const cleaned = String(userText || '').trim();
-    if (!cleaned || mode === 'thinking') return;
+    if (!cleaned || !/[\p{L}\p{N}]/u.test(cleaned) || turnRef.current) return;
+    const turnController = new AbortController();
+    const { signal } = turnController;
+    turnRef.current = turnController;
     setError('');
-    window.speechSynthesis?.cancel();
-    const userMessage = { role: 'user', text: cleaned };
-    const next = [...messagesRef.current, userMessage];
-    setMessages(next);
+    setDeviceVoice(false);
+    setReference(null);
     setText('');
     setMode('thinking');
+    const detectedLanguage = speechLanguage(cleaned, '');
+    const language = detectedLanguage || replyLocaleRef.current;
+    let timer;
     try {
-      const history = messagesRef.current.map((message) => ({ role: message.role, text: message.text }));
-      const needsTools = Boolean(pendingActionRef.current) || /\b(aqi|air quality|weather|smog|pollution|pm2\.5|pm10|map|location|complaint|report|authority|garbage|dumping|burning|sewage|naala|tree cutting|parking|latest|search the web)\b/i.test(cleaned);
-      let response;
-      if (needsTools) {
-        response = await Promise.race([
-          processMessage(cleaned, history, user, location || DEFAULT_LOCATION, null, pendingActionRef.current),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Talk request timed out')), 40000)),
-        ]);
-      } else {
-        const voiceText = await Promise.race([
-          getVoiceResponse([...history, userMessage], { timeoutMs: 18000, maxTokens: 500 }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Talk request timed out')), 25000)),
-        ]);
-        response = isAIUnavailable(voiceText)
-          ? await processMessage(cleaned, history, user, location || DEFAULT_LOCATION, null, pendingActionRef.current)
-          : { text: voiceText, cards: [], status: 'success' };
-      }
-      if (response.resolvedLocation) setLocation(response.resolvedLocation);
-      if (response.pending) {
-        pendingActionRef.current = { type: response.pending, city: (location || DEFAULT_LOCATION).city };
-      } else if (['success', 'preview', 'info', 'unavailable'].includes(response.status)) {
-        pendingActionRef.current = null;
-      }
-      const responseText = response.text || 'I’m listening.';
-      const factualAnswer = `${responseText}${cardSpeech(response.cards, responseText)}`.trim();
-      const answer = spokenReply(factualAnswer, response);
-      const aiMessage = { role: 'ai', text: answer };
-      setMessages((current) => [...current, aiMessage]);
-      speak(answer);
+      const history = historyRef.current;
+      const answer = await Promise.race([
+        (async () => {
+          const turn = await resolveTalkTurn(cleaned, talkContext.current, { confidence, fromMic, language: language.split('-')[0], history, pending: pending.current, signal });
+          signal.throwIfAborted();
+          if (!(confidence > 0 && confidence < .55)) replyLocaleRef.current = language;
+          talkContext.current = turn.context;
+          if (turn.kind === 'reply') return turn.text;
+          if (turn.kind === 'map') {
+            const { city, lat, lng } = turn.location;
+            setReference(externalReference('Open map', `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`));
+            if (language.startsWith('hi')) return `${city} मिल गया। नीचे नक्शा खोल सकते हैं।`;
+            if (language.startsWith('mr')) return `${city} सापडलं. खाली नकाशा उघडू शकता.`;
+            return `I found ${city}. You can open the map below.`;
+          }
+          if (turn.kind === 'tool') {
+            const result = await processMessage(turn.message, history, user, turn.location, null, turn.pending, { voiceIntent: turn.intent, signal });
+            signal.throwIfAborted();
+            if (result.pending) pending.current = { action: { type: result.pending }, intent: turn.intent, location: turn.location };
+            else if (turn.pending || pending.current?.intent === turn.intent) pending.current = null;
+            const contact = result.speechData?.contact;
+            if (contact?.portal) setReference(externalReference(contact.national ? 'Official national portal' : 'Official contact', contact.source || contact.portal));
+            else {
+              const reading = result.speechData?.weather || result.cards?.find(({ type }) => type === 'aqi')?.data;
+              if (reading?.sourceUrl) setReference(externalReference(reading.source, reading.sourceUrl));
+            }
+            return toolSpeech(result, turn, language);
+          }
+
+          // Normal conversation has no inferred location or previous tool results.
+          const useSearch = turn.kind === 'web';
+          const query = turn.location ? `${turn.message}\nSearch this area: ${turn.location.city}` : turn.message;
+          const userMessage = { role: 'user', text: query };
+          const reply = await getVoiceResponse([...(useSearch ? [] : history), userMessage], { signal, useSearch, language: detectedLanguage });
+          signal.throwIfAborted();
+          if (!reply || isAIUnavailable(reply.text)) {
+            return talkStatus(useSearch ? 'unverified' : 'unavailable', language);
+          }
+          if (useSearch) {
+            const source = talkWebReference(turn.message, reply.sources);
+            if (!source) return talkStatus('unverified', language);
+            setReference(externalReference('Open web source', source.url));
+            if (source.linkOnly) return talkStatus('source', language);
+            // Tavily does not use the conversation-language instruction. Expose
+            // the source rather than reading an unrelated-language snippet aloud.
+            const replyLanguage = speechLanguage(reply.text, '');
+            if (replyLanguage && detectedLanguage && replyLanguage.split('-')[0] !== detectedLanguage.split('-')[0]) {
+              return talkStatus('source', language);
+            }
+          }
+          const spoken = shortSpeech(reply.text, language);
+          if (!useSearch && spoken) historyRef.current = [...history, userMessage, { role: 'ai', text: spoken }].slice(-8);
+          return spoken;
+        })(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timed out')), 18000); }),
+      ]);
+      clearTimeout(timer);
+      if (!signal.aborted) await speak(shortSpeech(answer, language) || talkStatus('unavailable', language), language, signal);
     } catch (err) {
-      setMode('idle');
-      setError(err?.message === 'Talk request timed out' ? 'That took too long. Please try again.' : 'I could not answer that just now. Please try once more.');
+      if (!signal.aborted) {
+        setError(err.message === 'timed out' ? 'That took too long. Please try again.' : 'I couldn’t answer just now. Please try again.');
+        turnController.abort();
+      }
+    } finally {
+      clearTimeout(timer);
+      if (turnRef.current === turnController) {
+        turnRef.current = null;
+        setWaveLevel(0);
+        setMode('idle');
+      }
     }
   }
 
   function startListening() {
+    if (recognitionRef.current || turnRef.current) return;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setError('Voice recognition is not supported in this browser. You can still type below.');
       return;
     }
     setError('');
-    window.speechSynthesis?.cancel();
-    let finalText = '';
+    setDeviceVoice(false);
+    setReference(null);
+    unlockAudio();
+    let final = null;
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
-    recognition.lang = speechLanguageRef.current;
-    recognition.interimResults = true;
+    recognition.lang = navigator.language || 'en-IN';
+    recognition.interimResults = false;
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
-    recognition.onstart = () => setMode('listening');
     recognition.onresult = (event) => {
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const transcript = event.results[index][0].transcript;
-        if (event.results[index].isFinal) finalText += transcript;
+        if (event.results[index].isFinal) final = event.results[index][0];
       }
-      // Deliberately no transcript is rendered in voice mode.
     };
     recognition.onerror = (event) => {
+      if (recognitionRef.current !== recognition) return;
+      recognitionRef.current = null;
       setMode('idle');
       setError(event.error === 'not-allowed' ? 'Microphone permission was denied. Allow it in browser settings or type below.' : 'I could not hear that clearly. Please try again.');
     };
     recognition.onend = () => {
+      if (recognitionRef.current !== recognition) return;
       recognitionRef.current = null;
-      if (finalText.trim()) {
-        if (/[\u0900-\u097F]/.test(finalText)) {
-          speechLanguageRef.current = /\b(?:आहे|नाही|मला|तुम्ही|काय|आणि)\b/.test(finalText) ? 'mr-IN' : 'hi-IN';
-        } else {
-          speechLanguageRef.current = 'en-IN';
-        }
-        askAssistant(finalText);
+      if (final?.transcript && /[\p{L}\p{N}]/u.test(final.transcript)) {
+        void askAssistant(final.transcript, { confidence: final.confidence, fromMic: true });
       }
       else setMode('idle');
     };
-    recognition.start();
+    try { recognition.start(); setMode('listening'); }
+    catch { stopTurn(); setError('I couldn’t start the mic. Please try again.'); }
   }
 
   function stopListening() {
@@ -219,18 +216,23 @@ export default function TalkPage() {
   }
 
   function clearTalk() {
-    recognitionRef.current?.abort?.();
-    window.speechSynthesis?.cancel();
-    setMessages([]);
-    pendingActionRef.current = null;
-    setSpeechPulse(false);
+    stopTurn();
+    historyRef.current = [];
+    talkContext.current = emptyTalkContext();
+    pending.current = null;
+    replyLocaleRef.current = fallbackLanguage();
+    setText('');
     setError('');
-    setMode('idle');
+    setDeviceVoice(false);
+    setReference(null);
   }
 
   function handleSubmit(event) {
     event.preventDefault();
-    askAssistant(text);
+    if (recognitionRef.current) return;
+    if (mode === 'speaking') stopTurn();
+    unlockAudio();
+    void askAssistant(text);
   }
 
   const statusText = {
@@ -239,6 +241,8 @@ export default function TalkPage() {
     thinking: 'Thinking with context…',
     speaking: 'Speaking…',
   }[mode];
+  const visualLabel = { idle: 'Start AI Talk', listening: 'Stop listening', thinking: 'Cancel reply', speaking: 'Stop speaking' }[mode];
+  const inputDisabled = mode === 'listening' || mode === 'thinking';
 
   return (
     <div className="app-shell talk-shell">
@@ -253,13 +257,13 @@ export default function TalkPage() {
 
         <section className="talk-visual-section">
           <button
-            className={`air-visual ${mode}${speechPulse ? ' pulse' : ''}`}
-            onClick={mode === 'listening' ? stopListening : mode === 'idle' ? startListening : undefined}
-            disabled={mode === 'thinking' || mode === 'speaking'}
-            aria-label={mode === 'listening' ? 'Stop listening' : 'Start AI Talk'}
+            ref={visualRef}
+            className={`air-visual ${mode}`}
+            onClick={mode === 'listening' ? stopListening : mode === 'idle' ? startListening : stopTurn}
+            aria-label={visualLabel}
           >
             <span className="air-vortex" />
-            <span className={`air-wave${speechPulse ? ' pulse' : ''}`}>
+            <span className="air-wave">
               <i /><i /><i /><i /><i /><i /><i />
             </span>
             <span className="air-particle p1" />
@@ -272,17 +276,18 @@ export default function TalkPage() {
             <span className="air-ring r2" />
           </button>
           <strong>{statusText}</strong>
-          <span className="talk-privacy">Speak naturally. EcoPulse follows the language in your words and does not save audio recordings.</span>
+          <span className="talk-privacy">{deviceVoice ? (mode === 'speaking' ? 'Using your browser’s voice because the natural voice is unavailable.' : 'The last reply used your browser’s voice.') : 'Speak naturally. EcoPulse doesn’t save microphone recordings.'}</span>
         </section>
 
         <div className="talk-voice-space" aria-live="polite">
           <span>{mode === 'idle' ? 'Ask anything naturally. Detailed text conversations remain available in Chat.' : statusText}</span>
+          {reference && <a className="talk-reference" href={reference.href} target="_blank" rel="noopener noreferrer">{reference.label} <ExternalLink size={13} /></a>}
         </div>
 
         {error && <div className="talk-error">{error}</div>}
         <form className="talk-text-form" onSubmit={handleSubmit}>
-          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Or type and continue the same conversation…" disabled={mode === 'thinking'} aria-label="AI Talk message" />
-          <button type="submit" disabled={!text.trim() || mode === 'thinking'} aria-label="Send Talk message"><Send size={17} /></button>
+          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Or type and continue the same conversation…" disabled={inputDisabled} aria-label="AI Talk message" />
+          <button type="submit" disabled={!text.trim() || inputDisabled} aria-label="Send Talk message"><Send size={17} /></button>
         </form>
       </div>
       <BottomNav />

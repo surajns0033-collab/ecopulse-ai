@@ -37,7 +37,7 @@ How you write:
 Hard rules:
 - NEVER invent AQI numbers, weather, event details, emails, phone numbers, URLs, or complaint statuses.
 - For general factual questions, be accurate and clearly say when you are uncertain. For current/latest facts, use grounded sources or say live verification is unavailable.
-- Only give an email/phone/portal that appears in "Current context". 112 is the national emergency number; 1926 is state-specific and must NEVER be called a national helpline. If you are not sure, say so and point to the official portal.
+- Only give a civic email, phone number, or portal when "Current context" lists it for the correct jurisdiction. If no verified contact is listed, say so. Never assume the country or emergency number.
 - NEVER use a made-up @gmail.com address for a government body.
 - If the user is reporting something happening right now (burning, dumping, sewage overflow), lead with the immediate action: call the local helpline/flying squad now, then the written complaint.
 - If a needed detail is missing (area, when, what exactly), ask 1–2 focused questions instead of assuming.
@@ -78,9 +78,10 @@ export async function getChatResponse(messages, systemContext = '', options = {}
     maxTokens: options.maxTokens ?? 700,
     timeoutMs: options.timeoutMs ?? 30000,
     useSearch: options.useSearch ?? false,
+    signal: options.signal,
   });
 
-  if (!result?.text) return AI_UNAVAILABLE_TEXT;
+  if (!result?.text || (options.useSearch && !result.sources?.length)) return AI_UNAVAILABLE_TEXT;
   const text = result.text.trim();
   if (!result.sources?.length) return text;
   const sources = result.sources
@@ -92,16 +93,18 @@ export async function getChatResponse(messages, systemContext = '', options = {}
 /** Low-latency response path for voice conversations. */
 export async function getVoiceResponse(messages, options = {}) {
   const history = toHistory(messages, 8);
-  if (!history.length) return AI_UNAVAILABLE_TEXT;
+  if (!history.length) return null;
+  const language = { en: 'English', hi: 'Hindi in Devanagari', mr: 'Marathi in Devanagari' }[options.language?.split('-')[0]];
   const result = await requestAI({
-    system: 'You are EcoPulse AI in a voice conversation. Reply naturally in the user\'s language in one or two short spoken sentences. Never use headings, bullets, markdown, URLs, feature lists, or canned advertising. Ask one brief follow-up when useful. Do not invent current facts.',
+    system: `You are EcoPulse AI, a general conversation partner. Reply naturally in one or two short spoken sentences, without formatting. ${language ? `Use ${language}, even if earlier turns used another language.` : 'Match the latest message’s language; write Hindi or Marathi in Devanagari.'} Treat greetings like “what’s going on?” as small talk, not a request for news. Don’t advertise features or bring up locations in small talk. Only ask which city if the user's request actually needs one. Do not assume their location or guess live facts or contacts.`,
     messages: history,
-    temperature: options.temperature ?? 0.55,
-    maxTokens: options.maxTokens ?? 500,
-    timeoutMs: options.timeoutMs ?? 18000,
-    model: options.model ?? 'gemini-3.1-flash-lite',
+    timeoutMs: 12000,
+    useSearch: options.useSearch ?? false,
+    mode: 'talk',
+    signal: options.signal,
   });
-  return result?.text?.trim() || AI_UNAVAILABLE_TEXT;
+  if (!result?.text?.trim() || (options.useSearch && !result.sources?.length)) return null;
+  return { text: result.text.trim(), sources: result.sources || [] };
 }
 
 /**
@@ -138,7 +141,7 @@ export async function getJsonResponse(prompt, systemContext = '', options = {}) 
  */
 export async function analyzeEnvironmentalImage(base64, mimeType, contextHint = '') {
   const result = await requestAI({
-    system: `You are an environmental inspection assistant. Describe ONLY what is visible in the photo. If something is unclear, lower the confidence instead of guessing. ${contextHint ? `User note: ${contextHint}` : ''}`,
+    system: `You are an environmental inspection assistant. Describe ONLY what is visible in the photo. Do not identify the location, suggest a specific agency, give contact details, or make legal conclusions from the photo. If something is unclear, lower the confidence instead of guessing. ${contextHint ? `Unverified user note: ${contextHint}` : ''}`,
     messages: [{
       role: 'user',
       text: 'Analyze this photo for an environmental or civic complaint. Return JSON with keys: issue (short label), severity (mild|moderate|severe), category (garbage|plastic|burning|air|construction|water|sewage|trees|greenspace|industrial|road_obstruction|other), description (2 factual sentences safe for an official complaint), actions (array of up to 3 immediate practical steps), confidence (0-1), visibleText (array containing ONLY clearly legible text copied exactly from signs/boards/vehicles; otherwise []).',

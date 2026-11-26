@@ -786,6 +786,17 @@ html, body {
 .email-field-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
 .email-field-value { font-size: 13px; color: var(--text); line-height: 1.45; }
 
+.email-draft-edit {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  resize: vertical;
+}
+
 .email-body-preview {
   font-size: 12px;
   color: #555;
@@ -1675,8 +1686,7 @@ html, body {
 .talk-visual-section { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 5px 0 2px; }
 .talk-visual-section > strong { color: #0c4a6e; font-size: 13px; }
 .talk-privacy { max-width: 330px; text-align: center; color: #64748b; font-size: 9.5px; line-height: 1.35; }
-.air-visual { --wave-dot: #0ea5e9; --wave-dot-2: #22c55e; position: relative; width: 184px; height: 184px; border: none; cursor: pointer; background: transparent; isolation: isolate; animation: airFloat 4s ease-in-out infinite; }
-.air-visual:disabled { cursor: default; }
+.air-visual { --wave-dot: #0ea5e9; --wave-dot-2: #22c55e; --speech-level: .55; position: relative; width: 184px; height: 184px; border: none; cursor: pointer; background: transparent; isolation: isolate; animation: airFloat 4s ease-in-out infinite; }
 .air-visual.listening { --wave-dot: #06b6d4; --wave-dot-2: #16a34a; }
 .air-visual.thinking { --wave-dot: #8b5cf6; --wave-dot-2: #38bdf8; }
 .air-visual.speaking { --wave-dot: #22c55e; --wave-dot-2: #0ea5e9; }
@@ -1689,14 +1699,13 @@ html, body {
 .air-wave i:nth-child(3), .air-wave i:nth-child(5) { height: 82%; }
 .air-wave i:nth-child(4) { height: 100%; }
 .air-visual.listening .air-wave i { animation: waveListen .75s ease-in-out infinite alternate; }
-.air-visual.listening .air-wave i:nth-child(2n), .air-visual.speaking .air-wave i:nth-child(2n) { animation-delay: -.35s; }
+.air-visual.listening .air-wave i:nth-child(2n) { animation-delay: -.35s; }
 .air-visual.thinking .air-wave { animation: thinkingBreath 1.4s ease-in-out infinite; }
-.air-visual.speaking .air-wave i { animation: waveSpeak .32s ease-in-out infinite alternate; }
-.air-wave.pulse i:nth-child(odd) { height: 96%; transform: scaleX(1.16); }
-.air-ring { position: absolute; inset: 3px -4px -4px; border: 1px dotted color-mix(in srgb, var(--leaf-dot-2) 42%, transparent); border-radius: 48%; pointer-events: none; z-index: -1; }
+.air-visual.speaking .air-wave i { transform: scaleY(var(--speech-level)); }
+.air-ring { position: absolute; inset: 3px -4px -4px; border: 1px dotted color-mix(in srgb, var(--wave-dot-2) 42%, transparent); border-radius: 48%; pointer-events: none; z-index: -1; }
 .air-ring.r1 { animation: ringPulse 3s ease-out infinite; }
 .air-ring.r2 { inset: -10px -17px -16px; animation: ringPulse 3s 1.2s ease-out infinite; }
-.air-particle { position: absolute; z-index: 1; width: 5px; height: 5px; border-radius: 50%; background: var(--leaf-dot-2); box-shadow: 0 0 9px color-mix(in srgb, var(--leaf-dot-2) 70%, white); animation: airParticle 4.8s ease-in-out infinite; }
+.air-particle { position: absolute; z-index: 1; width: 5px; height: 5px; border-radius: 50%; background: var(--wave-dot-2); box-shadow: 0 0 9px color-mix(in srgb, var(--wave-dot-2) 70%, white); animation: airParticle 4.8s ease-in-out infinite; }
 .air-particle.p1 { left: 5%; top: 27%; animation-delay: -.4s; }
 .air-particle.p2 { right: 4%; top: 35%; width: 3px; height: 3px; animation-delay: -1.2s; }
 .air-particle.p3 { left: 18%; bottom: 18%; animation-delay: -2.1s; }
@@ -1706,12 +1715,12 @@ html, body {
 @keyframes airFloat { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-6px) rotate(1deg); } }
 @keyframes vortexSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes waveListen { from { transform: scaleY(.66); opacity: .65; } to { transform: scaleY(1.08); opacity: 1; } }
-@keyframes waveSpeak { from { transform: scaleY(.48); opacity: .62; } to { transform: scaleY(1.16); opacity: 1; } }
 @keyframes thinkingBreath { 0%,100% { transform: scale(.88); opacity: .6; } 50% { transform: scale(1.04); opacity: 1; } }
 @keyframes ringPulse { 0% { opacity: .7; transform: scale(.92); } 100% { opacity: 0; transform: scale(1.12); } }
 @keyframes airParticle { 0%,100% { opacity: .2; transform: translate(0,5px) scale(.7); } 45% { opacity: 1; transform: translate(4px,-10px) scale(1.15); } }
 .talk-interim { max-width: 90%; padding: 7px 11px; border-radius: 12px; background: rgba(255,255,255,.8); color: #0f766e; font-size: 12px; }
 .talk-voice-space { flex: 1; min-height: 70px; display: grid; place-items: center; text-align: center; color: #64748b; font-size: 11px; padding: 8px 24px; }
+.talk-reference { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; color: #075985; font-weight: 700; }
 .talk-transcript { flex: 1; min-height: 110px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; padding: 5px 2px; scrollbar-width: thin; }
 .talk-empty { margin: auto; max-width: 330px; text-align: center; color: #64748b; font-size: 12px; line-height: 1.5; }
 .talk-message { max-width: 86%; padding: 9px 12px; border-radius: 14px; font-size: 12px; line-height: 1.48; white-space: pre-wrap; }
@@ -1724,5 +1733,9 @@ html, body {
 .talk-text-form button { width: 39px; height: 39px; border: none; border-radius: 50%; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg,#0ea5e9,#16a34a); cursor: pointer; }
 .talk-text-form button:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-height: 690px) { .air-visual { scale: .78; margin: -20px 0; } .talk-visual-section { gap: 4px; } }
+@media (prefers-reduced-motion: reduce) {
+  .air-visual, .air-visual * { animation: none !important; transition: none !important; }
+  .air-visual.speaking .air-wave i { transform: none; }
+}
 
 
