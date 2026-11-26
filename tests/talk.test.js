@@ -4,7 +4,7 @@ import { INTENTS } from '../src/agent/intentEngine.js';
 import { emptyTalkContext, resolveTalkTurn, routeTalkRequest } from '../src/agent/talkContext.js';
 import { parseSmogProfile } from '../src/agent/smogProfile.js';
 import { shortSpeech, talkStatus, talkWebReference, toolSpeech } from '../src/agent/talkReply.js';
-import { speechLanguage } from '../src/services/talkAudio.js';
+import { detectTalkLanguage, talkInputLanguage } from '../src/services/talkLanguage.js';
 import { getTalkDeviceLocation, lookupTalkPlace } from '../src/services/talkPlaces.js';
 
 const Mumbai = { name: 'Mumbai', city: 'Mumbai, Maharashtra, India', lat: 19.08, lng: 72.88 };
@@ -135,15 +135,15 @@ test('spoken Hindi and Marathi city phrasing routes without inferring location',
   assert.equal(routeTalkRequest('पुण्यात हवामान कसं आहे?').place, 'पुण्यात');
   assert.equal(routeTalkRequest('आज हवामान कसं आहे?').place, '');
   assert.equal(routeTalkRequest('मुंबई में स्मॉग प्लान').intent, INTENTS.GET_SMOG_PLAN);
-  assert.equal(speechLanguage('मला हवामान सांगाल का?'), 'mr-IN');
-  assert.equal(speechLanguage('किस शहर का मौसम जानना है?'), 'hi-IN');
-  assert.equal(speechLanguage('What is the weather in local area?', 'hi-IN'), 'en-IN');
-  assert.equal(speechLanguage('Whats going on?', 'hi-IN'), 'en-IN');
-  assert.equal(speechLanguage('Mumbai ka mausam', 'en-US'), 'hi-IN');
-  assert.equal(speechLanguage('Pune', 'mr-IN'), 'mr-IN');
-  assert.equal(speechLanguage('पुणे', 'mr-IN'), 'mr-IN');
-  assert.equal(speechLanguage('पुण्यात कसं हवामान आहे?', ''), 'mr-IN');
-  assert.equal(speechLanguage(talkStatus('unverified', 'hi-IN'), ''), 'hi-IN');
+  assert.equal(detectTalkLanguage('मला हवामान सांगाल का?'), 'mr-IN');
+  assert.equal(detectTalkLanguage('किस शहर का मौसम जानना है?'), 'hi-IN');
+  assert.equal(talkInputLanguage('What is the weather in local area?', 'hi-IN'), 'en-IN');
+  assert.equal(talkInputLanguage('Whats going on?', 'hi-IN'), 'en-IN');
+  assert.equal(talkInputLanguage('Mumbai ka mausam', 'en-US'), 'hi-IN');
+  assert.equal(talkInputLanguage('Pune', 'mr-IN', true), 'mr-IN');
+  assert.equal(talkInputLanguage('पुणे', 'mr-IN', true), 'mr-IN');
+  assert.equal(detectTalkLanguage('पुण्यात कसं हवामान आहे?'), 'mr-IN');
+  assert.equal(detectTalkLanguage(talkStatus('unverified', 'hi-IN')), 'hi-IN');
 });
 
 test('search requiring a city waits for one; unrelated global searches do not', async () => {

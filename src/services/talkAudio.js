@@ -2,30 +2,6 @@ const SAMPLE_RATE = 24000;
 const BUFFER_BYTES = 7680; // 160ms of audio before scheduling another buffer
 let retryNeuralAfter = 0;
 
-export function speechLanguage(text, fallback = 'en-IN') {
-  if (/\p{Script=Devanagari}/u.test(text)) {
-    if (/(?:^|\s)(?:आहे|नाही|मला|तुम्ही|आणि|पाहू|सांगाल|हवामान|मध्ये|माझ्या|इथे|कसा|कशी|काय|कुठे|सध्या|पाऊस|बरोबर)(?=\s|[.।?!,]|$)/u.test(text)) return 'mr-IN';
-    if (/(?:^|\s)(?:है|हैं|का|की|क्या|कैसा|कैसी|मौसम|में|मैं|मुझे|नमस्ते|हाँ|हां|नहीं)(?=\s|[.।?!,]|$)/u.test(text)) return 'hi-IN';
-    return /^(?:hi|mr)(?:-|$)/.test(fallback) ? fallback : (fallback ? 'hi-IN' : '');
-  }
-  const scripts = [
-    [/\p{Script=Arabic}/u, 'ar'], [/\p{Script=Bengali}/u, 'bn-IN'], [/\p{Script=Gujarati}/u, 'gu-IN'],
-    [/\p{Script=Tamil}/u, 'ta-IN'], [/\p{Script=Telugu}/u, 'te-IN'], [/\p{Script=Kannada}/u, 'kn-IN'],
-    [/\p{Script=Malayalam}/u, 'ml-IN'], [/\p{Script=Cyrillic}/u, 'ru'], [/\p{Script=Hangul}/u, 'ko'],
-    [/[\p{Script=Hiragana}\p{Script=Katakana}]/u, 'ja'], [/\p{Script=Han}/u, 'zh'],
-  ];
-  const scriptLanguage = scripts.find(([script]) => script.test(text))?.[1];
-  if (scriptLanguage) return scriptLanguage;
-  if (/\b(?:havaman|madhye|madhe|aahe|sanga|majhya|aajcha)\b/i.test(text)) return 'mr-IN';
-  if (/\b(?:mausam|baarish|batao|bataiye|kya|kaise|kaisa|mein|mujhe|namaste)\b|\b(?:ka|ki)\s+(?:aqi|hawa|weather)\b/i.test(text)) return 'hi-IN';
-  // A browser locale is for recognition, not proof of the reply language. Keep
-  // context only for terse follow-ups such as a bare place name or “yes”.
-  if (/\b(?:whats?|which|when|where|why|how|is|the|can|could|please|should|hello|thanks|help|show|tell|check|use|set|weather|temperature|forecast|news|smog plan|map|near me)\b|\baqi\s+(?:in|for|here|today)\b|^(?:hi|hey|good morning|good evening)[.!?]*$/i.test(text.trim())) {
-    return fallback.startsWith('en') ? fallback : 'en-IN';
-  }
-  return fallback;
-}
-
 function whenEnded(source, signal) {
   if (!source || signal.aborted) return Promise.resolve();
   return new Promise((resolve) => {
@@ -144,13 +120,17 @@ export function playBrowserVoice(text, language, { signal, onStart, onLevel }) {
   const synth = window.speechSynthesis;
   if (!synth || !window.SpeechSynthesisUtterance || signal.aborted) return Promise.resolve(false);
   const lang = language.toLowerCase();
-  const voices = synth.getVoices().filter((voice) => voice.lang.toLowerCase().split('-')[0] === lang.split('-')[0]);
+  const available = synth.getVoices();
+  const voices = available.filter((voice) => voice.lang.toLowerCase().split('-')[0] === lang.split('-')[0]);
+  // Don't silently use an installed default voice from another language.
+  // Some browsers expose no voice list but honor the utterance's language.
+  if (available.length && !voices.length) return Promise.resolve(false);
   const score = (voice) => 20 * (voice.lang.toLowerCase() === lang) +
     100 * /natural|neural|premium|enhanced/i.test(voice.name) + 45 * /google/i.test(voice.name) + 8 * voice.default;
   voices.sort((a, b) => score(b) - score(a));
 
   return new Promise((resolve) => {
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new window.SpeechSynthesisUtterance(text);
     const preferred = voices[0];
     if (preferred) utterance.voice = preferred;
     utterance.lang = preferred?.lang || language;

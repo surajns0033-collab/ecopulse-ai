@@ -4,7 +4,9 @@
 // sentinel. It never fabricates data; callers are expected to answer from
 // live APIs and verified contacts when the sentinel comes back.
 
-import { requestAI } from './aiClient';
+import { requestAI } from './aiClient.js';
+import { canonicalTalkLocale } from './talkLanguage.js';
+import { TALK_HISTORY_LIMIT } from './talkSession.js';
 
 /** Returned when no AI provider could be reached. */
 export const AI_UNAVAILABLE_TEXT =
@@ -92,19 +94,27 @@ export async function getChatResponse(messages, systemContext = '', options = {}
 
 /** Low-latency response path for voice conversations. */
 export async function getVoiceResponse(messages, options = {}) {
-  const history = toHistory(messages, 8);
+  const useSearch = options.useSearch ?? false;
+  const history = toHistory(useSearch ? messages.slice(-1) : messages, TALK_HISTORY_LIMIT + 1);
   if (!history.length) return null;
-  const language = { en: 'English', hi: 'Hindi in Devanagari', mr: 'Marathi in Devanagari' }[options.language?.split('-')[0]];
+  const locale = canonicalTalkLocale(options.language);
+  const language = locale && new Intl.DisplayNames(['en'], { type: 'language' }).of(locale);
   const result = await requestAI({
-    system: `You are EcoPulse AI, a general conversation partner. Reply naturally in one or two short spoken sentences, without formatting. ${language ? `Use ${language}, even if earlier turns used another language.` : 'Match the latest message’s language; write Hindi or Marathi in Devanagari.'} Treat greetings like “what’s going on?” as small talk, not a request for news. Don’t advertise features or bring up locations in small talk. Only ask which city if the user's request actually needs one. Do not assume their location or guess live facts or contacts.`,
+    system: useSearch ? '' : `You are EcoPulse AI, a general conversation partner. Respond with a JSON object containing "text" (one or two short sentences to speak, no formatting) and "locale" (the BCP 47 language tag for that text). ${language ? `Reply in ${language}, even if earlier turns used another language.` : 'Match the latest user message’s language, not the language of earlier replies. Use English if the latest message has no identifiable language.'} Write Hindi or Marathi in Devanagari, even for Romanized input. Build on the earlier exchanges for follow-up questions without making the user repeat details. Treat “what’s going on?” and similar greetings as small talk. Only ask for a city if the request needs one. Never treat a previous reading as current, assume the user's location, or guess live facts or contacts.`,
     messages: history,
     timeoutMs: 12000,
-    useSearch: options.useSearch ?? false,
+    useSearch,
     mode: 'talk',
     signal: options.signal,
   });
-  if (!result?.text?.trim() || (options.useSearch && !result.sources?.length)) return null;
-  return { text: result.text.trim(), sources: result.sources || [] };
+  if (!result?.text?.trim()) return null;
+  if (useSearch) return result.sources?.length ? { text: result.text.trim(), sources: result.sources } : null;
+  try {
+    const reply = JSON.parse(result.text.trim().replace(/^```(?:json)?\s*|\s*```$/gi, ''));
+    const spokenLocale = canonicalTalkLocale(reply?.locale);
+    if (spokenLocale && typeof reply.text === 'string' && reply.text.trim()) return { text: reply.text.trim(), locale: spokenLocale };
+  } catch { /* Never play protocol text as a reply. */ }
+  return null;
 }
 
 /**

@@ -4,15 +4,15 @@ import Header from '../components/chat/Header';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../contexts/AuthContext';
 import { processMessage } from '../agent/agentOrchestrator';
-import { emptyTalkContext, resolveTalkTurn } from '../agent/talkContext';
+import { emptyTalkContext, resolveTalkTurn, unclearTalkInput } from '../agent/talkContext';
 import { shortSpeech, talkStatus, talkWebReference, toolSpeech } from '../agent/talkReply';
-import { playBrowserVoice, playNeuralVoice, speechLanguage } from '../services/talkAudio';
+import { playBrowserVoice, playNeuralVoice } from '../services/talkAudio';
 import { createTalkMic, isTalkStop } from '../services/talkMic';
 import { getVoiceResponse, isAIUnavailable } from '../services/geminiService';
+import { DEFAULT_TALK_LOCALE, detectTalkLanguage, languageCode, normalizeTalkTranscript, talkInputLanguage, talkMicLocale, talkReplyLocale } from '../services/talkLanguage';
+import { createTalkSession, TALK_MESSAGE_LIMIT } from '../services/talkSession';
 
-const fallbackLanguage = () => navigator.language?.startsWith('en') ? navigator.language : 'en-IN';
-const micLanguage = () => navigator.language || 'en-IN';
-const talkAnswer = (text, expectsReply = false) => ({ text, expectsReply });
+const talkAnswer = (text, expectsReply = false, locale = '', remember = true) => ({ text, expectsReply, locale, remember });
 
 function externalReference(label, value) {
   try {
@@ -33,10 +33,7 @@ export default function TalkPage() {
   const audioRef = useRef(null);
   const turnRef = useRef(null);
   const micRef = useRef(null);
-  const talkContext = useRef(emptyTalkContext());
-  const pending = useRef(null);
-  const historyRef = useRef([]);
-  const replyLocaleRef = useRef(fallbackLanguage());
+  const [session] = useState(() => createTalkSession(user.uid));
 
   useEffect(() => {
     const mic = createTalkMic(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -72,7 +69,7 @@ export default function TalkPage() {
     // still be interrupted. A typed turn never activates the mic on its own.
     const mic = micRef.current;
     if (fromMic && mic?.supported) mic.listen({
-      language: micLanguage(), playback: answer, onStop: stopTurn,
+      language: talkMicLocale(navigator.language, language), playback: answer, onStop: stopTurn,
       onStart: () => setVoiceStopReady(true), onEnd: () => setVoiceStopReady(false),
     });
     const options = {
@@ -82,7 +79,7 @@ export default function TalkPage() {
     };
     const cloud = await playNeuralVoice(audioRef.current, answer, options);
     if (cloud || signal.aborted) return cloud;
-    const local = await playBrowserVoice(answer, speechLanguage(answer, language), {
+    const local = await playBrowserVoice(answer, language, {
       ...options, onStart: () => { setDeviceVoice(true); options.onStart(); },
     });
     if (!local && !signal.aborted) setError('Speech couldn’t play. Try again, or use Chat for a written reply.');
@@ -100,7 +97,7 @@ export default function TalkPage() {
   }
 
   async function askAssistant(userText, { confidence, fromMic = false } = {}) {
-    const cleaned = String(userText || '').trim();
+    const cleaned = String(userText || '').trim().slice(0, TALK_MESSAGE_LIMIT);
     if (!cleaned || !/[\p{L}\p{N}]/u.test(cleaned) || turnRef.current) return;
     const turnController = new AbortController();
     const { signal } = turnController;
@@ -110,21 +107,32 @@ export default function TalkPage() {
     setReference(null);
     setText('');
     setMode('thinking');
-    const detectedLanguage = speechLanguage(cleaned, '');
-    const language = detectedLanguage || replyLocaleRef.current;
+    const previous = session.current;
+    const understood = !unclearTalkInput(confidence);
+    const requested = understood
+      ? talkInputLanguage(cleaned, previous.questionLocale, Boolean(previous.context?.waiting))
+      : detectTalkLanguage(cleaned) || previous.questionLocale;
+    const language = requested || DEFAULT_TALK_LOCALE;
+    const history = previous.history;
+    const next = { context: previous.context || emptyTalkContext(), pending: previous.pending };
+    let verifiedReference = null;
+    if (understood) {
+      // A well-heard utterance can guide the next mic session without forcing
+      // future reply text into that language.
+      const voiceLocale = fromMic && detectTalkLanguage(cleaned);
+      session.remember('user', cleaned, voiceLocale ? { voiceLocale } : undefined);
+    }
     let timer, continueByVoice;
     try {
-      const history = historyRef.current;
-      const { text: replyText, expectsReply } = await Promise.race([
+      const answer = await Promise.race([
         (async () => {
-          const turn = await resolveTalkTurn(cleaned, talkContext.current, { confidence, fromMic, language: language.split('-')[0], history, pending: pending.current, signal });
+          const turn = await resolveTalkTurn(cleaned, next.context, { confidence, fromMic, language: languageCode(language), history, pending: next.pending, signal });
           signal.throwIfAborted();
-          if (!(confidence > 0 && confidence < .55)) replyLocaleRef.current = language;
-          talkContext.current = turn.context;
+          next.context = turn.context;
           if (turn.kind === 'reply') return talkAnswer(turn.text, turn.expectsReply);
           if (turn.kind === 'map') {
             const { city, lat, lng } = turn.location;
-            setReference(externalReference('Open map', `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`));
+            verifiedReference = externalReference('Open map', `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`);
             if (language.startsWith('hi')) return talkAnswer(`${city} मिल गया। नीचे नक्शा खोल सकते हैं।`);
             if (language.startsWith('mr')) return talkAnswer(`${city} सापडलं. खाली नकाशा उघडू शकता.`);
             return talkAnswer(`I found ${city}. You can open the map below.`);
@@ -132,50 +140,58 @@ export default function TalkPage() {
           if (turn.kind === 'tool') {
             const result = await processMessage(turn.message, history, user, turn.location, null, turn.pending, { voiceIntent: turn.intent, signal });
             signal.throwIfAborted();
-            if (result.pending) pending.current = { action: { type: result.pending }, intent: turn.intent, location: turn.location };
-            else if (turn.pending || pending.current?.intent === turn.intent) pending.current = null;
+            if (result.pending) next.pending = { action: { type: result.pending }, intent: turn.intent, location: turn.location };
+            else if (turn.pending || next.pending?.intent === turn.intent) next.pending = null;
             const contact = result.speechData?.contact;
-            if (contact?.portal) setReference(externalReference(contact.national ? 'Official national portal' : 'Official contact', contact.source || contact.portal));
+            if (contact?.portal) verifiedReference = externalReference(contact.national ? 'Official national portal' : 'Official contact', contact.source || contact.portal);
             else {
               const reading = result.speechData?.weather || result.cards?.find(({ type }) => type === 'aqi')?.data;
-              if (reading?.sourceUrl) setReference(externalReference(reading.source, reading.sourceUrl));
+              if (reading?.sourceUrl) verifiedReference = externalReference(reading.source, reading.sourceUrl);
             }
             return talkAnswer(toolSpeech(result, turn, language), Boolean(result.pending));
           }
 
-          // Normal conversation has no inferred location or previous tool results.
+          // Only a web query uses the verified search area. Search receives no
+          // prior conversations, even when assistant turns are available.
           const useSearch = turn.kind === 'web';
-          const query = turn.location ? `${turn.message}\nSearch this area: ${turn.location.city}` : turn.message;
-          const userMessage = { role: 'user', text: query };
-          const reply = await getVoiceResponse([...(useSearch ? [] : history), userMessage], { signal, useSearch, language: detectedLanguage });
+          const query = useSearch && turn.location ? `${turn.message}\nSearch this area: ${turn.location.city}` : turn.message;
+          const reply = await getVoiceResponse([...(useSearch ? [] : history), { role: 'user', text: query }], { signal, useSearch, language: requested });
           signal.throwIfAborted();
           if (!reply || isAIUnavailable(reply.text)) {
-            return talkAnswer(talkStatus(useSearch ? 'unverified' : 'unavailable', language));
+            return talkAnswer(talkStatus(useSearch ? 'unverified' : 'unavailable', language), false, '', false);
           }
           if (useSearch) {
             const source = talkWebReference(turn.message, reply.sources);
             if (!source) return talkAnswer(talkStatus('unverified', language));
-            setReference(externalReference('Open web source', source.url));
+            verifiedReference = externalReference('Open web source', source.url);
             if (source.linkOnly) return talkAnswer(talkStatus('source', language));
             // Tavily does not use the conversation-language instruction. Expose
             // the source rather than reading an unrelated-language snippet aloud.
-            const replyLanguage = speechLanguage(reply.text, '');
-            if (replyLanguage && detectedLanguage && replyLanguage.split('-')[0] !== detectedLanguage.split('-')[0]) {
+            if (!talkReplyLocale(reply.text, language) || (requested && languageCode(detectTalkLanguage(reply.text)) !== languageCode(requested))) {
               return talkAnswer(talkStatus('source', language));
             }
           }
-          const spoken = shortSpeech(reply.text, language);
-          if (!useSearch && spoken) historyRef.current = [...history, userMessage, { role: 'ai', text: spoken }].slice(-8);
-          return talkAnswer(spoken, !useSearch && /[?？؟][”’"')]*$/u.test(spoken));
+          const spoken = shortSpeech(reply.text, reply.locale || language);
+          return talkAnswer(spoken, !useSearch && /[?？؟][”’"')]*$/u.test(spoken), reply.locale);
         })(),
         new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timed out')), 18000); }),
       ]);
       clearTimeout(timer);
-      if (!signal.aborted) {
-        const spoken = shortSpeech(replyText, language);
-        const played = await speak(spoken || talkStatus('unavailable', language), language, signal, fromMic);
-        continueByVoice = fromMic && expectsReply && Boolean(spoken) && played;
+      signal.throwIfAborted();
+      setReference(verifiedReference);
+      const spoken = shortSpeech(answer.text, answer.locale || language) || talkStatus('unavailable', language);
+      const locale = talkReplyLocale(spoken, requested, answer.locale);
+      if (!locale) {
+        setError('I couldn’t get a reply in the right language. Try again, or use Chat for a written reply.');
+        return;
       }
+      const update = { ...next, questionLocale: answer.expectsReply ? locale : '' };
+      if (understood && answer.remember) session.remember('ai', spoken, update);
+      else session.update(update);
+      // Remember the question before playing it, so tapping the wave can
+      // interrupt playback and answer it without losing the original turn.
+      const played = await speak(spoken, locale, signal, fromMic);
+      continueByVoice = fromMic && answer.expectsReply && played;
     } catch (err) {
       if (!signal.aborted) {
         setError(err.message === 'timed out' ? 'That took too long. Please try again.' : 'I couldn’t answer just now. Please try again.');
@@ -206,11 +222,12 @@ export default function TalkPage() {
     unlockAudio();
     setMode('opening');
     mic.listen({
-      language: micLanguage(), followUp,
+      language: talkMicLocale(navigator.language, session.current.questionLocale || session.current.voiceLocale), followUp,
       onStart: () => setMode('listening'),
       onEnd: ({ result, error: micError }) => {
-        const transcript = result?.transcript;
-        if (!micError && /[\p{L}\p{N}]/u.test(transcript || '') && !isTalkStop(transcript)) {
+        const transcript = normalizeTalkTranscript(result?.transcript);
+        if (!micError && isTalkStop(transcript)) { setMode('idle'); return; }
+        if (!micError && /[\p{L}\p{N}]/u.test(transcript)) {
           void askAssistant(transcript, { confidence: result.confidence, fromMic: true });
           return;
         }
@@ -219,6 +236,8 @@ export default function TalkPage() {
           setError('The browser blocked voice recognition. Check microphone permissions or type below.');
         } else if (micError && micError !== 'no-speech') {
           setError('I couldn’t use the mic just now. Tap to try again or type below.');
+        } else if (!followUp) {
+          setError('I didn’t hear a message. Tap the wave and speak when it says Listening, or type below.');
         }
       },
     });
@@ -235,10 +254,7 @@ export default function TalkPage() {
 
   function clearTalk() {
     stopTurn();
-    historyRef.current = [];
-    talkContext.current = emptyTalkContext();
-    pending.current = null;
-    replyLocaleRef.current = fallbackLanguage();
+    session.clear();
     setText('');
     setError('');
     setDeviceVoice(false);
@@ -313,7 +329,7 @@ export default function TalkPage() {
 
         {error && <div className="talk-error">{error}</div>}
         <form className="talk-text-form" onSubmit={handleSubmit}>
-          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Or type and continue the same conversation…" disabled={inputDisabled} aria-label="AI Talk message" />
+          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Or type and continue the same conversation…" maxLength={TALK_MESSAGE_LIMIT} disabled={inputDisabled} aria-label="AI Talk message" />
           <button type="submit" disabled={!text.trim() || inputDisabled} aria-label="Send Talk message"><Send size={17} /></button>
         </form>
       </div>

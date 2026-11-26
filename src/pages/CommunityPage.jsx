@@ -1,7 +1,8 @@
 // CommunityPage — Public Community Chat Channel across all locations + Upcoming Events
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { tools } from '../services/agentTools';
+import { communityMessageKey, orderCommunityMessages } from '../services/communityMessages';
 import { useAuth } from '../contexts/AuthContext';
 import Header from '../components/chat/Header';
 import BottomNav from '../components/BottomNav';
@@ -73,16 +74,6 @@ function PostCard({ post, canDelete, onDelete }) {
   );
 }
 
-function uniquePosts(items) {
-  const seen = new Set();
-  return (items || []).filter((post) => {
-    const key = post.id || `${post.userId || ''}:${post.createdAt?.seconds || post.createdAt || ''}:${post.text || ''}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 export default function CommunityPage() {
   const navigate = useNavigate();
   const {
@@ -101,6 +92,8 @@ export default function CommunityPage() {
   const [postCity, setPostCity] = useState('Global');
   const [sending, setSending] = useState(false);
   const sendLockRef = useRef(false);
+  const messagesRef = useRef(null);
+  const followLatest = useRef(true);
   const [nameInput, setNameInput] = useState(communityName || '');
   const [nameError, setNameError] = useState('');
 
@@ -110,29 +103,35 @@ export default function CommunityPage() {
 
   const canPost = Boolean(user && !user.isAnonymous && communityNameConfirmed);
 
-  async function loadData() {
-    setLoading(true);
-    try {
-      const [postsData, eventsData] = await Promise.all([
-        tools.getCommunityFeed({ limit: 50 }),
-        tools.getNearbyMeetups({ limit: 3 }),
-      ]);
-      setPosts(uniquePosts(postsData));
-      setEvents(eventsData);
-    } catch (err) {
-      console.error('Community load failed:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    loadData();
+    let mounted = true;
+    let receivedLivePosts = false;
+    Promise.all([tools.getCommunityFeed({ limit: 50 }), tools.getNearbyMeetups({ limit: 3 })])
+      .then(([postsData, eventsData]) => {
+        if (!mounted) return;
+        if (!receivedLivePosts) setPosts(orderCommunityMessages(postsData));
+        setEvents(eventsData);
+      })
+      .catch((err) => console.error('Community load failed:', err))
+      .finally(() => { if (mounted) setLoading(false); });
     const unsubscribe = tools.subscribeCommunityFeed({ limit: 50 }, (latestPosts) => {
-      setPosts(uniquePosts(latestPosts));
+      if (!mounted) return;
+      receivedLivePosts = true;
+      setPosts(orderCommunityMessages(latestPosts));
     });
-    return () => unsubscribe?.();
+    return () => { mounted = false; unsubscribe?.(); };
   }, []);
+
+  const needsName = Boolean(user && !user.isAnonymous && !communityNameConfirmed);
+  useLayoutEffect(() => {
+    const panel = messagesRef.current;
+    if (panel && !loading && !needsName && followLatest.current) panel.scrollTop = panel.scrollHeight;
+  }, [loading, needsName, posts, locationFilter]);
+
+  function selectLocation(location) {
+    followLatest.current = true;
+    setLocationFilter(location);
+  }
 
   async function handleSendPost(e) {
     e.preventDefault();
@@ -147,9 +146,8 @@ export default function CommunityPage() {
         text,
         location: postCity.trim() || 'Global',
       });
-      setPosts((prev) => prev.some((post) => post.id === created.id)
-        ? prev
-        : uniquePosts([created, ...prev]));
+      followLatest.current = true;
+      setPosts((prev) => orderCommunityMessages([...prev, created]).slice(-50));
       setMsgText('');
     } catch (err) {
       console.error('Failed to post:', err);
@@ -164,6 +162,7 @@ export default function CommunityPage() {
     setNameError('');
     try {
       saveCommunityName(nameInput);
+      if (needsName) followLatest.current = true;
     } catch (err) {
       setNameError(err?.message || 'Choose another public name.');
     }
@@ -214,7 +213,7 @@ export default function CommunityPage() {
         <div className="filter-bar">
           <button
             className={`filter-chip${locationFilter === 'all' ? ' active' : ''}`}
-            onClick={() => setLocationFilter('all')}
+            onClick={() => selectLocation('all')}
           >
             🌍 All Locations
           </button>
@@ -222,7 +221,7 @@ export default function CommunityPage() {
             <button
               key={loc}
               className={`filter-chip${locationFilter === loc ? ' active' : ''}`}
-              onClick={() => setLocationFilter(loc)}
+              onClick={() => selectLocation(loc)}
             >
               📍 {loc}
             </button>
@@ -230,7 +229,9 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      <div className="page-content" style={{ paddingBottom: 12 }}>
+      <div className="page-content" ref={messagesRef} style={{ paddingBottom: 12 }} onScroll={({ currentTarget: panel }) => {
+        followLatest.current = panel.scrollHeight - panel.clientHeight - panel.scrollTop < 64;
+      }}>
         {user && !user.isAnonymous && (
           <form onSubmit={handleSaveName} className="community-name-panel">
             <div>
@@ -292,9 +293,9 @@ export default function CommunityPage() {
                 <div style={{ fontSize: 12, marginTop: 4 }}>Share an eco-update, local alert, or invite people from your city below.</div>
               </div>
             ) : (
-              visiblePosts.map((post, i) => (
+              visiblePosts.map((post) => (
                 <PostCard
-                  key={post.id || i}
+                  key={communityMessageKey(post)}
                   post={post}
                   canDelete={Boolean(user && post.userId === user.uid)}
                   onDelete={handleDeletePost}

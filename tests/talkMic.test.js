@@ -12,8 +12,10 @@ function micFixture() {
       sessions.push(this);
       this.onstart();
     }
-    say(transcript, isFinal = true) {
-      this.onresult({ resultIndex: 0, results: [Object.assign([{ transcript, confidence: .91 }], { isFinal })] });
+    say(transcript, isFinal = true, { index = 0, confidence = .91 } = {}) {
+      const results = [];
+      results[index] = Object.assign([{ transcript, confidence }], { isFinal });
+      this.onresult({ resultIndex: index, results });
     }
     end() {
       if (recording === this) recording = null;
@@ -26,7 +28,7 @@ function micFixture() {
 }
 
 test('voice stop accepts explicit commands without treating ordinary speech or playback as commands', () => {
-  for (const text of ['Stop!', 'EcoPulse, stop speaking.', 'Please stop.', 'That’s enough.', 'बस करो।', 'थांबा.']) {
+  for (const text of ['Stop!', 'EcoPulse, stop speaking.', 'Please stop.', 'That’s enough.', 'बस करो।', 'थांबा.', 'स्टॉप स्पीकिंग', 'बोलणं थांबवा.']) {
     assert.equal(isTalkStop(text), true, text);
   }
   for (const text of ['How do I stop smoking?', 'Stop using gas', 'Stop by later', 'Yes, that’s right', '']) {
@@ -71,7 +73,7 @@ test('interrupting playback waits for mic release and delivers the new answer ex
   monitor.say('Stop');
   monitor.end();
   const input = sessions[1];
-  assert.equal(input.continuous, false);
+  assert.equal(input.continuous, true);
   assert.equal(input.lang, 'en-IN');
   monitor.end();
   input.say('Yes, that’s right.', false);
@@ -82,6 +84,39 @@ test('interrupting playback waits for mic release and delivers the new answer ex
   input.end();
   input.end();
   assert.deepEqual(answers, [{ result: { transcript: 'Yes, that’s right.', confidence: .91 }, error: undefined }]);
+});
+
+test('dictation waits through a pause, combines final segments, and ignores interim guesses', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { mic, sessions } = micFixture();
+  const answers = [];
+  mic.listen({ onEnd: (outcome) => answers.push(outcome) });
+  const [input] = sessions;
+  input.say('I take the bus');
+  t.mock.timers.tick(700);
+  input.say('and work indoors', false, { index: 1 });
+  t.mock.timers.tick(500);
+  assert.equal(input.stopped, undefined);
+  input.say('and work outdoors', true, { index: 1, confidence: .66 });
+  t.mock.timers.tick(1000);
+  assert.equal(input.stopped, true);
+  input.end();
+  assert.deepEqual(answers, [{ result: { transcript: 'I take the bus and work outdoors', confidence: .66 }, error: undefined }]);
+});
+
+test('finishing dictation allows a late final result and does not send partial guesses', () => {
+  const { mic, sessions } = micFixture();
+  const answers = [];
+  mic.listen({ onEnd: (outcome) => answers.push(outcome) });
+  sessions[0].say('weather in Pennsylvania', false);
+  mic.finishInput();
+  sessions[0].say('weather in Panvel');
+  sessions[0].end();
+  assert.equal(answers[0].result.transcript, 'weather in Panvel');
+  mic.listen({ onEnd: (outcome) => answers.push(outcome) });
+  sessions[1].say('weather in Pennsylvania', false);
+  sessions[1].end();
+  assert.equal(answers[1].result, undefined);
 });
 
 test('Stop clears a queued follow-up before an asynchronous mic release', () => {
@@ -99,6 +134,8 @@ test('an unanswered follow-up closes its mic even when the browser does not send
   const ended = [];
   mic.listen({ followUp: true, onEnd: (outcome) => ended.push(outcome) });
   t.mock.timers.tick(12000);
+  assert.equal(sessions[0].stopped, true);
+  t.mock.timers.tick(1200);
   assert.equal(sessions[0].aborted, true);
   t.mock.timers.tick(750);
   assert.deepEqual(ended, [{ result: undefined, error: undefined }]);

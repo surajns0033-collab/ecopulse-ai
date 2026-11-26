@@ -150,6 +150,10 @@ export function emptyTalkContext() {
   return { location: null, chosenLocation: null, waiting: null };
 }
 
+export function unclearTalkInput(confidence) {
+  return confidence > 0 && confidence < .55;
+}
+
 export async function resolveTalkTurn(text, context, {
   confidence, fromMic = confidence !== undefined, language = 'en', history, pending, signal,
   lookup = lookupTalkPlace, locateDevice = getTalkDeviceLocation, route,
@@ -157,7 +161,7 @@ export async function resolveTalkTurn(text, context, {
   const copy = replies[language] || replies.en;
   const say = (reply, update = context) => ({ kind: 'reply', text: reply, context: update });
   const ask = (reply, update) => ({ ...say(reply, update), expectsReply: true });
-  if (!/[\p{L}\p{N}]/u.test(text) || (confidence > 0 && confidence < .55)) return ask(copy.unclear);
+  if (!/[\p{L}\p{N}]/u.test(text) || unclearTalkInput(confidence)) return ask(copy.unclear);
 
   let turn = { ...(route || routeTalkRequest(text, history)), message: text };
   const explicitlyChooseCity = turn.kind === 'city';

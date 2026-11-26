@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import {
   signInAnonymously,
   signInWithRedirect,
@@ -11,6 +11,7 @@ import {
   signInWithEmailLink,
 } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../firebase/config';
+import { clearTalkSession } from '../services/talkSession';
 
 const AuthContext = createContext(null);
 
@@ -23,6 +24,13 @@ export function AuthProvider({ children }) {
   const [communityNameConfirmed, setCommunityNameConfirmed] = useState(false);
 
   const firebaseReady = isFirebaseConfigured;
+  const resetUser = useCallback(() => {
+    clearTalkSession();
+    setUser(null);
+    setAuthMode(null);
+    setCommunityName('');
+    setCommunityNameConfirmed(false);
+  }, []);
 
   useEffect(() => {
     if (!firebaseReady) {
@@ -43,13 +51,14 @@ export function AuthProvider({ children }) {
         setCommunityNameConfirmed(Boolean(savedName));
         setLoading(false);
       } else {
-        // No user yet — show landing page (don't auto sign-in)
+        // Also clear this tab when Firebase signs out in another tab.
+        resetUser();
         setLoading(false);
       }
     });
 
     return () => unsubscribe();
-  }, [firebaseReady]);
+  }, [firebaseReady, resetUser]);
 
   useEffect(() => {
     if (!firebaseReady) return;
@@ -139,10 +148,7 @@ export function AuthProvider({ children }) {
     if (firebaseReady) {
       try { await firebaseSignOut(auth); } catch {}
     }
-    setUser(null);
-    setAuthMode(null);
-    setCommunityName('');
-    setCommunityNameConfirmed(false);
+    resetUser();
   }
 
   function saveCommunityName(value) {

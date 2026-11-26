@@ -44,7 +44,7 @@ function AppInner() {
         <Route path="/meetups" element={<MeetupsPage />} />
         <Route path="/community" element={<CommunityPage />} />
         <Route path="/report/:id" element={<ReportDetailPage />} />
-        <Route path="/talk" element={<TalkPage />} />
+        <Route path="/talk" element={<TalkPage key={user.uid} />} />
       </Routes>
     </Suspense>
   );
