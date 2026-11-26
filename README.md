@@ -122,7 +122,7 @@ ecopulse-ai/
 │       ├── chat.js                  # Vercel serverless AI & Tavily proxy
 │       └── health.js                # Provider health check endpoint
 ├── public/
-│   └── favicon.svg                  # App icon & brand mark
+│   └── bot-logo.svg                 # EcoPulse logo and browser tab icon
 ├── src/
 │   ├── agent/
 │   │   ├── agentOrchestrator.js     # Central intent execution, city extraction & context injection
