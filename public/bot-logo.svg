@@ -4,16 +4,16 @@
       <stop offset="0%" stop-color="#34d058" />
       <stop offset="100%" stop-color="#22a84f" />
     </linearGradient>
-    <filter id="softShadow" x="6" y="10" width="104" height="104" filterUnits="userSpaceOnUse">
-      <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#22c55e" flood-opacity="0.32" />
-    </filter>
   </defs>
 
+  <!-- Subtle outer glow ring (no SVG filter for 100% GitHub compatibility) -->
+  <circle cx="56" cy="64" r="45" fill="#22c55e" fill-opacity="0.18" />
+
   <!-- Main green circle matching .header-logo -->
-  <circle cx="56" cy="62" r="42" fill="url(#ecoGrad)" filter="url(#softShadow)" />
+  <circle cx="56" cy="62" r="42" fill="url(#ecoGrad)" />
 
   <!-- White Lucide Bot icon centered inside -->
-  <g transform="translate(29, 35) scale(2.25)" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+  <g transform="translate(29, 35) scale(2.25)" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 8V4H8" />
     <rect width="16" height="12" x="4" y="8" rx="2" />
     <path d="M2 14h2" />
