@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="public/favicon.svg" alt="EcoPulse AI Logo" width="88" />
+  <img src="public/bot-logo.svg" alt="EcoPulse AI robot-and-leaf logo" width="96" />
   <h1>EcoPulse AI</h1>
   <p>
     <strong>Conversational intelligence for live environmental telemetry, civic grievance routing, and privacy-first community action.</strong>
@@ -26,6 +26,8 @@
   <p>
     <a href="https://ecopulse-ai-ruby.vercel.app">Live App</a>
     &nbsp;·&nbsp;
+    <a href="#interface-preview">UI Preview</a>
+    &nbsp;·&nbsp;
     <a href="#-key-capabilities">Capabilities</a>
     &nbsp;·&nbsp;
     <a href="#-architecture">Architecture</a>
@@ -45,6 +47,15 @@
 **EcoPulse AI** is a mobile-first Progressive Web App and civic-environmental assistant built with React, Vite, Firebase, and a multi-provider AI proxy. It combines natural-language reasoning with real-time environmental telemetry, verified municipal/forest authority routing, on-device vision & OCR fallbacks, and a privacy-minimized community channel.
 
 Instead of leaving users with generic chatbot replies or unverified contact details, EcoPulse AI routes queries through an intent engine to live APIs, verified official `.gov.in` / municipal directories, and server-side grounded search—while keeping all API secrets off the client bundle.
+
+---
+
+## Interface Preview
+
+<div align="center">
+  <img src="public/ui-preview.png" alt="EcoPulse AI Chat with air quality, weather, and smog plan shortcuts above the Chat, Community, and Events tabs" width="430" />
+  <p>EcoPulse Chat home screen</p>
+</div>
 
 ---
 
