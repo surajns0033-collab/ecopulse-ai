@@ -17,6 +17,8 @@ const PLACE_COMMAND = /^(?:i live in|i (?:am|come) from|i['’]m from|(?:set|cha
 const PLACE_FOLLOWUP = /^(?:i (?:am|live)|i['’]m) in\s+(.+)$/i;
 const STATED_CITY = /^(?:(?:i am|i['’]m) (?:currently |now )?in|my (?:current )?city is)\s+(.+)$/i;
 const CITY_ANSWER = /^(?:city\s*:\s*|(?:(?:the|my) )?city is\s+|it(?:['’]s| is)\s+|(?:please )?(?:check|use)(?: in)?\s+|(?:yes|no)[, ]+|(?:शहर(?: का नाम)?(?: है)?|शहराचं नाव)\s+)/iu;
+const EN_CITY_CORRECTION = /^(?:(?:no|actually|sorry)[,\s]+)?(?:(?:i (?:meant|said)|(?:the|my) city is)\s+)?(.+?)(?:[,;–—]\s*|\s+)not\s+(.+?)[.?!]*$/iu;
+const LOCAL_CITY_CORRECTION = /^(.+?)(?:\s*[,;–—]\s*|\s+)(?:नहीं|नाही|nahi|naahi)[,\s]+(.+?)[.?!।]*$/iu;
 const REPEATED_CITY = /^(?:i (?:already |just )?(?:said|told you) (?:it|(?:my|the) (?:city|location))(?: (?:already|earlier|before))?|i (?:said|told you) (?:earlier|before))[.!?]*$/i;
 const CITY_PROMPT_ECHO = /^(?:which|what) city(?: and state or country)? should i (?:check|use)[.!?]*$/i;
 const NEW_TOPIC = /^(?:(?:new|different) (?:topic|subject)\b|(?:let['’]s )?(?:switch|change) (?:the )?(?:topics?|subjects?)\b|नया विषय|दूसरी बात|नवीन विषय|विषय बदलूया)(?:[.!?।,:;–—\s]+|$)/iu;
@@ -99,6 +101,19 @@ function talkCityAnswer(text) {
   return place;
 }
 
+function correctedCity(text) {
+  const localContrast = text.match(LOCAL_CITY_CORRECTION);
+  const contrast = localContrast || text.match(EN_CITY_CORRECTION);
+  if (contrast) {
+    const first = talkCityAnswer(contrast[1]);
+    const second = talkCityAnswer(contrast[2]);
+    if (first && second) return localContrast ? second : first;
+    return '';
+  }
+  const explicit = text.match(/^(?:(?:no|actually|sorry)[,:\s]+)?(i (?:meant|said)\s+.+)$/iu);
+  return explicit ? talkCityAnswer(explicit[1]) : '';
+}
+
 function resumeSubject(text) {
   if (RESUME_LAST.test(text) || /(?:पिछल[ेा]\s+(?:सवाल|प्रश्न).{0,30}वापस|मागच्या\s+प्रश्न.{0,30}परत)/u.test(text)) return 'where we left off';
   return text.match(RESUME_TOPIC)?.[1].trim() || (/(?:वापस|फिर से|परत)/u.test(text) ? text : '');
@@ -119,7 +134,7 @@ function currentTalkRoute(text, history) {
   // A standalone city statement sets a preference; a request mentioning a
   // city still goes through the normal grounded lookup.
   if (reported && !/[?？]\s*$/u.test(text) && !/\b(?:can|could|should|what|why|tell|give|check|show)\b/i.test(reported)) {
-    const city = talkCityAnswer(reported);
+    const city = correctedCity(reported) || talkCityAnswer(reported);
     if (city) return { kind: 'city', needsPlace: true, place: city };
   }
   return routeTalkRequest(text, history, { strictEmail: true });
@@ -130,7 +145,7 @@ export function routeTalkRequest(text, history = [], { strictEmail = false } = {
   const relative = HERE.test(clean) || /\b(?:air|weather|temperature) outside\b/i.test(clean);
   if (DEVICE_LOCATION.test(clean)) return { kind: 'device' };
   const command = clean.match(PLACE_COMMAND);
-  const settingCity = talkPlaceName(command?.[1]);
+  const settingCity = command && (correctedCity(command[1]) || talkPlaceName(command[1]));
   if (settingCity) return { kind: 'city', needsPlace: true, place: settingCity };
 
   const mapRequest = clean.replace(/[.?!।]+$/u, '');
@@ -200,7 +215,7 @@ const replies = {
     retryConfirm: 'Say “yes” to confirm the city I suggested, or type the city and its state or country.',
     retryDevice: 'I wasn’t sure you asked to use device location. Type “Use my location” or tell me the city instead.',
     switched: 'Sure, let’s talk about something else.',
-    receivedVoice: 'I heard your question. Go ahead.',
+    receivedVoice: 'Yes, I can hear you.',
     receivedText: 'I received your typed message. Tap the wave to try voice input.',
     unclear: 'I didn’t catch that clearly. Could you say it again?',
     noDevice: 'I couldn’t verify your device location. Which city should I check?',
@@ -215,7 +230,7 @@ const replies = {
     retryConfirm: 'अगर सुझाया गया शहर सही है, तो “हाँ” कहें। वरना शहर के साथ राज्य या देश लिखें।',
     retryDevice: 'पता नहीं चला कि आपने डिवाइस की लोकेशन माँगी थी या नहीं। “Use my location” या शहर का नाम लिखें।',
     switched: 'ज़रूर, किसी और विषय पर बात करते हैं।',
-    receivedVoice: 'आपका सवाल सुन लिया। आगे बोलिए।',
+    receivedVoice: 'हाँ, आपकी आवाज़ सुनाई दे रही है।',
     receivedText: 'आपका लिखा हुआ संदेश मिल गया है। आवाज़ से पूछने के लिए वेव पर टैप करें।',
     unclear: 'मुझे साफ़ सुनाई नहीं दिया। क्या आप फिर से बोल सकते हैं?',
     noDevice: 'मैं आपके डिवाइस की जगह की पुष्टि नहीं कर सकी। किस शहर की जानकारी चाहिए?',
@@ -230,7 +245,7 @@ const replies = {
     retryConfirm: 'सुचवलेलं शहर बरोबर असेल तर “हो” म्हणा. नाहीतर शहरासोबत राज्य किंवा देश लिहा.',
     retryDevice: 'तुम्ही डिव्हाइसचं ठिकाण वापरायला सांगितलं का, याची खात्री नाही. “Use my location” किंवा शहराचं नाव लिहा.',
     switched: 'नक्की, आपण दुसऱ्या विषयावर बोलूया.',
-    receivedVoice: 'मला तुमचा प्रश्न ऐकू आला. पुढे बोला.',
+    receivedVoice: 'हो, मला तुमचा आवाज ऐकू येतोय.',
     receivedText: 'तुम्ही लिहिलेला संदेश मिळाला आहे. आवाज वापरण्यासाठी वेव्हवर टॅप करा.',
     unclear: 'मला नीट ऐकू आलं नाही. पुन्हा सांगाल का?',
     noDevice: 'मला तुमच्या डिव्हाइसचे ठिकाण खात्रीने मिळाले नाही. कोणते शहर पाहू?',
@@ -261,15 +276,18 @@ export async function resolveTalkTurn(text, context, {
   const ask = (reply, update) => ({ ...say(reply, update), expectsReply: true });
   const hint = (reply, update = context) => ({ ...say(reply, update), silent: true });
   if (!/[\p{L}\p{N}]/u.test(text) || unclearTalkInput(confidence)) return inTalk ? hint(copy.unclear) : ask(copy.unclear);
-  if (inTalk && MIC_CHECK.test(text.trim())) return say(fromMic ? copy.receivedVoice : copy.receivedText);
+  const doubtfulSpeech = inTalk && fromMic && (uncertain ?? (confidence > 0 && confidence < .78));
+  if (inTalk && MIC_CHECK.test(text.trim())) return doubtfulSpeech ? hint(copy.unclear) : say(fromMic ? copy.receivedVoice : copy.receivedText);
 
   let input = text.trim();
   const switching = inTalk ? input.match(NEW_TOPIC) : null;
+  if (doubtfulSpeech && switching) return hint(copy.unclear);
   if (switching) input = input.slice(switching[0].length).trim();
   const deferredLookup = context.waiting;
   const parked = inTalk && deferredLookup ? { ...deferredLookup, paused: true } : null;
   if (switching && !input) return say(copy.switched, { ...context, waiting: parked });
   if (deferredLookup && !switching && CANCEL_LOOKUP.test(input)) {
+    if (doubtfulSpeech) return hint(copy.unclear);
     return { kind: 'general', message: input, context: { ...context, waiting: null } };
   }
   const subject = inTalk && !switching ? resumeSubject(input) : '';
@@ -313,17 +331,22 @@ export async function resolveTalkTurn(text, context, {
       answeringLocation = true;
       confirmed = waiting.candidate;
     } else if (no || (yes && !waiting.candidate)) {
+      if (no && doubtfulSpeech) return hint(copy.retryConfirm);
       const next = { ...context, waiting: { ...waiting, candidate: null } };
       return inTalk ? hint(copy.retryCity, next) : ask(copy.region, next);
     } else if (turn.kind === 'city' || (turn.kind === 'general' && !profileReply)) {
       const followUp = input.match(PLACE_FOLLOWUP);
-      const place = turn.place || (inTalk ? talkCityAnswer(input) : talkPlaceName(followUp?.[1] || input.replace(/^city:\s*/i, '')));
+      const place = correctedCity(input) || turn.place || (inTalk ? talkCityAnswer(input) : talkPlaceName(followUp?.[1] || input.replace(/^city:\s*/i, '')));
       if (place) {
         turn = { ...waiting.turn, place };
         answeringLocation = true;
       }
     }
   }
+
+  // An uncertain city name can be checked and confirmed. An uncertain new
+  // question must not be sent to the assistant or to web search as if heard.
+  if (doubtfulSpeech && !answeringLocation && !resuming && !turn.place) return hint(copy.unclear);
 
   if (!switching && !answeringLocation && pending && turn.kind === 'general' &&
       (pending.intent !== INTENTS.GET_SMOG_PLAN || profileReply)) {

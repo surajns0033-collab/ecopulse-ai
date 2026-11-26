@@ -17,6 +17,8 @@ export function isAIUnavailable(text) {
   return text === AI_UNAVAILABLE_TEXT || text.includes('trouble connecting to the AI') || text.includes("trouble reaching the AI");
 }
 
+const CORRECTION_GUIDANCE = 'Use the most recent explicit correction the user gives about their own details or preferences. When it conflicts with older conversation text or an earlier assistant assumption, use the corrected detail rather than repeating the mistake or asking for it again. Do not treat conversation history or user corrections as verification of live facts, public contacts, or location. Clarify when the correction is ambiguous.';
+
 const SYSTEM_PROMPT = `You are EcoPulse AI, a warm, capable general-purpose daily companion for people in India and anywhere else. You have special expertise in environmental and civic help, but you must also answer ordinary questions naturally.
 
 Your default role is an open-ended conversational assistant: everyday questions, explanations, writing, planning, study, technology, decisions, brainstorming and supportive conversation.
@@ -35,6 +37,7 @@ How you write:
 - For a greeting, reply naturally in 1–2 sentences and ask how the person is doing or what they would like to talk about.
 - Use **bold** for the important line (helpline, portal, next action) and short bullets for steps.
 - Never pad with generic filler or repeat the question back.
+- ${CORRECTION_GUIDANCE}
 
 Hard rules:
 - NEVER invent AQI numbers, weather, event details, emails, phone numbers, URLs, or complaint statuses.
@@ -66,7 +69,10 @@ function toHistory(messages, maxTurns = 14) {
  * Returns AI_UNAVAILABLE_TEXT when every provider fails.
  */
 export async function getChatResponse(messages, systemContext = '', options = {}) {
-  const history = toHistory(messages);
+  const useSearch = options.useSearch ?? false;
+  // Search gets only the current question, not private conversation context.
+  if (useSearch && messages?.at(-1)?.role !== 'user') return AI_UNAVAILABLE_TEXT;
+  const history = toHistory(useSearch ? messages?.slice(-1) : messages);
   if (!history.length) return AI_UNAVAILABLE_TEXT;
   // Gemini expects the history to end with the user's turn.
   if (history[history.length - 1].role !== 'user') {
@@ -74,16 +80,16 @@ export async function getChatResponse(messages, systemContext = '', options = {}
   }
 
   const result = await requestAI({
-    system: buildSystem(systemContext),
+    system: buildSystem(useSearch ? '' : systemContext),
     messages: history,
     temperature: options.temperature ?? 0.7,
     maxTokens: options.maxTokens ?? 700,
     timeoutMs: options.timeoutMs ?? 30000,
-    useSearch: options.useSearch ?? false,
+    useSearch,
     signal: options.signal,
   });
 
-  if (!result?.text || (options.useSearch && !result.sources?.length)) return AI_UNAVAILABLE_TEXT;
+  if (!result?.text || (useSearch && !result.sources?.length)) return AI_UNAVAILABLE_TEXT;
   const text = result.text.trim();
   if (!result.sources?.length) return text;
   const sources = result.sources
@@ -100,7 +106,7 @@ export async function getVoiceResponse(messages, options = {}) {
   const locale = canonicalTalkLocale(options.language);
   const language = locale && new Intl.DisplayNames(['en'], { type: 'language' }).of(locale);
   const result = await requestAI({
-    system: useSearch ? '' : `You are EcoPulse AI, a general conversation partner. Respond with a JSON object containing "text" (one or two short sentences to speak, no formatting) and "locale" (the BCP 47 language tag for that text). ${language ? `Reply in ${language}, even if earlier turns used another language.` : 'Match the latest user message’s language, not the language of earlier replies. Use English if the latest message has no identifiable language.'} Write Hindi or Marathi in Devanagari, even for Romanized input. Build on the earlier exchanges for follow-up questions without making the user repeat details. Treat “what’s going on?” and similar greetings as small talk. Only ask for a city if the request needs one. Never treat a previous reading as current, assume the user's location, or guess live facts or contacts.`,
+    system: useSearch ? '' : `You are EcoPulse AI, a general conversation partner. Respond with a JSON object containing "text" (one or two short, natural sentences to speak, no formatting) and "locale" (the BCP 47 language tag for that text). ${language ? `Reply in ${language}, even if earlier turns used another language.` : 'Match the latest user message’s language, not the language of earlier replies. Use English if the latest message has no identifiable language.'} Write Hindi or Marathi in Devanagari, even for Romanized input. Answer what the user asked in plain language. If the request is unclear, ask a short follow-up instead of inventing a request. Build on the earlier exchanges for follow-up questions without making the user repeat details. ${CORRECTION_GUIDANCE} Treat “what’s going on?” and similar greetings as small talk. Only ask for a city if the request needs one. Never treat a previous reading as current, assume the user's location, or guess live facts or contacts.`,
     messages: history,
     timeoutMs: 12000,
     useSearch,

@@ -38,15 +38,17 @@ function AppInner() {
   }
 
   return (
-    <Suspense fallback={<AppLoader />}>
-      <Routes>
-        <Route path="/" element={<ChatPage />} />
-        <Route path="/meetups" element={<MeetupsPage />} />
-        <Route path="/community" element={<CommunityPage />} />
-        <Route path="/report/:id" element={<ReportDetailPage />} />
-        <Route path="/talk" element={<TalkPage key={user.uid} />} />
-      </Routes>
-    </Suspense>
+    <AppProvider key={user.uid}>
+      <Suspense fallback={<AppLoader />}>
+        <Routes>
+          <Route path="/" element={<ChatPage />} />
+          <Route path="/meetups" element={<MeetupsPage />} />
+          <Route path="/community" element={<CommunityPage />} />
+          <Route path="/report/:id" element={<ReportDetailPage />} />
+          <Route path="/talk" element={<TalkPage />} />
+        </Routes>
+      </Suspense>
+    </AppProvider>
   );
 }
 
@@ -54,9 +56,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppProvider>
-          <AppInner />
-        </AppProvider>
+        <AppInner />
       </AuthProvider>
     </BrowserRouter>
   );

@@ -56,6 +56,6 @@ test('browser fallback chooses a voice for the reply, never an unrelated install
   globalThis.window = { speechSynthesis: synth, SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } } };
   t.after(() => { delete globalThis.window; });
   const options = { signal: new AbortController().signal, onStart() {}, onLevel() {} };
-  assert.equal(await playBrowserVoice('Good morning!', 'en-IN', options), true);
-  assert.equal(await playBrowserVoice('नमस्ते।', 'hi-IN', options), false);
+  assert.equal(await playBrowserVoice('Good morning!', 'en-IN', options), 'played');
+  assert.equal(await playBrowserVoice('नमस्ते।', 'hi-IN', options), 'no-voice');
 });

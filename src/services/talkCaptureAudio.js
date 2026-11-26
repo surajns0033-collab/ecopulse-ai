@@ -33,6 +33,7 @@ function resample(frames, length, sampleRate) {
     }
     audio[i] = sum / ratio;
   }
+  pcm.fill(0);
   return audio;
 }
 
@@ -77,6 +78,10 @@ export function createTalkAudioWindow(sampleRate) {
       if (!hasVoice) return null;
       const end = Math.min(length, lastVoice + Math.round(sampleRate * .35));
       return resample(frames, end, sampleRate);
+    },
+    clear() {
+      for (const frame of frames) frame.fill(0);
+      frames.length = 0;
     },
   };
 }

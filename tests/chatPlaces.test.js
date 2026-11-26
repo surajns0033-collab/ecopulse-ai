@@ -10,6 +10,20 @@ const Paris = { city: 'Paris, Île-de-France, France', name: 'Paris', lat: 48.86
 const draft = { type: AWAITING_DRAFT_DETAILS, location: NaviMumbai, draftIssue: 'burning' };
 const forbidLookup = () => assert.fail('Incident detail was sent to the geocoder');
 
+test('Chat applies a verified city correction to the pending lookup', async () => {
+  const request = 'Weather near me';
+  const first = await resolveChatPlace(request, [], NaviMumbai, null, { lookup: forbidLookup });
+  assert.equal(first.context.waiting.turn.message, request);
+  const pending = { type: AWAITING_CHAT_PLACE, waiting: first.context.waiting };
+  const corrected = await resolveChatPlace('No, I meant Paris, not Navi Mumbai.', [], NaviMumbai, pending, {
+    lookup: async (query) => { assert.equal(query, 'Paris'); return { location: Paris }; },
+  });
+  assert.equal(corrected.message, request);
+  assert.equal(corrected.location, Paris);
+  assert.equal(corrected.context.chosenLocation, Paris);
+  assert.equal(corrected.context.waiting, null);
+});
+
 test('pending civic draft treats times and landmarks as incident details, not different cities', async () => {
   for (const note of [
     'I saw waste burning beside the Vashi bus depot at 7 pm yesterday.',

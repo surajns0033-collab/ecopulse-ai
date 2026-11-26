@@ -1,4 +1,4 @@
-import { AutoProcessor, AutoTokenizer, env, softmax, Tensor, WhisperForConditionalGeneration } from '@huggingface/transformers';
+import { AutoProcessor, env, softmax, Tensor, WhisperForConditionalGeneration } from '@huggingface/transformers';
 import { boostQuietTalkAudio, TALK_SAMPLE_RATE, TALK_CAPTURE_SECONDS } from './talkCaptureAudio.js';
 
 const MODEL = 'Xenova/whisper-base';
@@ -10,11 +10,11 @@ export function unclearTalkDecode(score, noSpeech, language) {
   return !score || (noSpeech > .55 && score < .55) || (noSpeech > .30 && language < .40 && score < .45);
 }
 
-export async function loadTalkRecognizer(device = 'wasm') {
+export async function loadTalkRecognizer(device = 'wasm', progressCallback) {
   env.allowLocalModels = false;
   if (device === 'wasm') {
     const { wasm } = env.backends.onnx;
-    wasm.numThreads = globalThis.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
+    wasm.numThreads = globalThis.crossOriginIsolated ? Math.min(4, globalThis.navigator?.hardwareConcurrency || 1) : 1;
     wasm.proxy = false;
     // This worker only uses CPU inference. Skip the heavier WebGPU-capable
     // Asyncify runtime; keep the exact runtime version selected by the library.
@@ -25,12 +25,11 @@ export async function loadTalkRecognizer(device = 'wasm') {
       };
     }
   }
-  const revision = REVISION;
-  const [model, processor, tokenizer] = await Promise.all([
-    WhisperForConditionalGeneration.from_pretrained(MODEL, { revision, dtype: 'q8', device }),
-    AutoProcessor.from_pretrained(MODEL, { revision }),
-    AutoTokenizer.from_pretrained(MODEL, { revision }),
+  const [model, processor] = await Promise.all([
+    WhisperForConditionalGeneration.from_pretrained(MODEL, { revision: REVISION, dtype: 'q8', device, progress_callback: progressCallback }),
+    AutoProcessor.from_pretrained(MODEL, { revision: REVISION }),
   ]);
+  const { tokenizer } = processor;
   const config = model.generation_config;
   const languages = Object.entries(config.lang_to_id);
   const eos = config.eos_token_id;

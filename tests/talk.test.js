@@ -62,6 +62,21 @@ test('a city answer finishes the original question rather than starting an unrel
   assert.equal(followUp.context.chosenLocation, Mumbai);
 });
 
+test('a correction replaces the rejected city, but a new spoken match still needs verification', async () => {
+  const first = await resolveTalkTurn('Weather near me', emptyTalkContext(), { lookup: forbidLookup });
+  const proposed = await resolveTalkTurn('Panvel', first.context, { fromMic: true, uncertain: true, lookup: async () => ({ location: Panvel }) });
+  for (const [text, expected] of [['No, I meant Mumbai, not Panvel.', 'Mumbai'], ['My city is Mumbai, not Panvel.', 'Mumbai'], ['पनवेल नहीं, मुंबई।', 'मुंबई'], ['पनवेल नाही, मुंबई.', 'मुंबई']]) {
+    const corrected = await resolveTalkTurn(text, proposed.context, {
+      fromMic: true, uncertain: true, lookup: async (query) => { assert.equal(query, expected); return { location: Mumbai }; },
+    });
+    assert.equal(corrected.context.chosenLocation, null);
+    assert.equal(corrected.context.waiting.candidate, Mumbai);
+    const confirmed = await resolveTalkTurn('Yes', corrected.context, { lookup: forbidLookup });
+    assert.equal(confirmed.message, 'Weather near me');
+    assert.equal(confirmed.context.chosenLocation, Mumbai);
+  }
+});
+
 test('a discussed city is offered for a local lookup, but never assumed', async () => {
   const topic = await resolveTalkTurn('Weather in Panvel', emptyTalkContext(), { lookup: async () => ({ location: Panvel }) });
   const plain = await resolveTalkTurn('And the AQI?', topic.context, { lookup: forbidLookup });
@@ -135,7 +150,7 @@ test('failed or repeatedly uncertain city answers offer a retry without inventin
 test('a mic check or general request does not become a city lookup', async () => {
   const waiting = await resolveTalkTurn('AQI here', emptyTalkContext(), { lookup: forbidLookup });
   const voice = await resolveTalkTurn('Can you hear me here now?', waiting.context, { fromMic: true, confidence: .91, lookup: forbidLookup });
-  assert.match(voice.text, /heard your question/);
+  assert.equal(voice.text, 'Yes, I can hear you.');
   assert.equal(voice.context.waiting, waiting.context.waiting);
   assert.ok(!voice.expectsReply);
   const typed = await resolveTalkTurn('Can you hear me?', waiting.context, { lookup: forbidLookup });
@@ -147,6 +162,23 @@ test('a mic check or general request does not become a city lookup', async () =>
   assert.equal(weather.location, Mumbai);
 });
 
+test('uncertain speech does not invent a new request or alter an unfinished lookup', async () => {
+  const first = await resolveTalkTurn('Weather near me', emptyTalkContext(), { lookup: forbidLookup });
+  for (const text of ['Explain how clouds form.', 'Search the web for train delays.', 'New topic. Explain how clouds form.', 'Never mind.']) {
+    const result = await resolveTalkTurn(text, first.context, { fromMic: true, uncertain: true, lookup: forbidLookup });
+    assert.equal(result.silent, true, text);
+    assert.match(result.text, /didn’t catch/);
+    assert.equal(result.context, first.context);
+  }
+  const typed = await resolveTalkTurn('Explain how clouds form.', first.context, { lookup: forbidLookup });
+  assert.equal(typed.kind, 'general');
+  assert.equal(typed.context.waiting.paused, true);
+  const chosen = { ...emptyTalkContext(), chosenLocation: Mumbai };
+  const wrongLookup = await resolveTalkTurn('What is the AQI near me?', chosen, { fromMic: true, uncertain: true, lookup: forbidLookup });
+  assert.equal(wrongLookup.silent, true);
+  assert.equal(wrongLookup.context, chosen);
+});
+
 test('a different topic parks a pending city lookup; returning restores the original request', async () => {
   const input = 'What is the weather near me tomorrow?';
   const options = { fromMic: true, uncertain: false, lookup: forbidLookup };
@@ -155,7 +187,7 @@ test('a different topic parks a pending city lookup; returning restores the orig
   const switchOnly = await resolveTalkTurn('New topic.', first.context, options);
   assert.equal(switchOnly.context.waiting.paused, true);
   assert.ok(!switchOnly.expectsReply, 'a topic change alone must not reopen the mic');
-  for (const query of ['New topic. Help me plan a birthday party.', 'Tell me a joke about cats.', 'Birthday party ideas', 'Recommend a movie']) {
+  for (const query of ['New topic. Help me write a thank-you note.', 'Explain how clouds form.', 'Birthday party ideas', 'Recommend a movie']) {
     const changed = await resolveTalkTurn(query, first.context, options);
     assert.equal(changed.kind, 'general');
     assert.equal(awaitingTalkPlace(changed.context), false);

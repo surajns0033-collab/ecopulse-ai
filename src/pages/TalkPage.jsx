@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Send, RotateCcw, AudioWaveform, ExternalLink, Square } from 'lucide-react';
+import { Send, RotateCcw, AudioWaveform, ExternalLink, Square, Volume2 } from 'lucide-react';
 import Header from '../components/chat/Header';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../contexts/AuthContext';
-import { processMessage } from '../agent/agentOrchestrator';
 import { awaitingTalkPlace, emptyTalkContext, resolveTalkTurn, unclearTalkInput } from '../agent/talkContext';
 import { shortSpeech, talkStatus, talkWebReference, toolSpeech } from '../agent/talkReply';
-import { playBrowserVoice, playNeuralVoice } from '../services/talkAudio';
+import { playBrowserVoice, playNeuralVoice, setTalkAudioRoute } from '../services/talkAudio';
 import { createLocalTalkMic } from '../services/talkLocalMic';
 import { createTalkMic, isTalkStop } from '../services/talkMic';
 import { getVoiceResponse, isAIUnavailable } from '../services/geminiService';
@@ -17,16 +16,27 @@ const talkAnswer = (text, expectsReply = false, locale = '', remember = true) =>
 
 function micNotice(error, awaitingCity) {
   if (error === 'not-allowed' || error === 'service-not-allowed') return 'Microphone access was blocked. Allow it in your browser settings, or type below.';
+  if (error === 'no-microphone') return 'No microphone was found. Check your phone or computer’s audio settings, or type below.';
+  if (error === 'microphone-disconnected') return 'The microphone disconnected. Tap the wave to use the current mic, or type below.';
+  if (error === 'start-timeout') return 'The microphone didn’t start. Check browser permissions and your input device, or type below.';
   if (error === 'audio-capture') return 'The browser couldn’t access the microphone. Check your mic or type below.';
-  if (error === 'local-unavailable') return 'On-device recognition couldn’t load. Check your connection and tap to retry, or type below.';
-  if (error === 'decode-timeout') return 'Speech recognition took too long. Try saying a shorter phrase, or type below.';
-  if (error === 'decode-failed') return 'On-device recognition couldn’t process that audio. Tap the wave to retry, or type below.';
+  if (error === 'load-timeout') return 'Voice didn’t start. Check your connection and try again, or type below.';
+  if (error === 'local-unavailable') return 'Voice isn’t available right now. Try again, or type below.';
+  if (error === 'decode-timeout') return 'I couldn’t finish listening. Try a shorter phrase, or type below.';
+  if (error === 'decode-failed') return 'I couldn’t make out the audio. Try again, or type below.';
   if (error === 'network') return 'The browser’s on-device voice recognition stopped. Tap the wave to retry, or type below.';
   if (error === 'language-not-supported') return 'The browser couldn’t recognize speech in this language. You can still type below.';
   if (error && error !== 'no-speech' && error !== 'unrecognized-speech') return 'Voice recognition couldn’t start or stopped unexpectedly. Tap the wave to retry or type below.';
   if (awaitingCity) return 'I didn’t get a city from the mic. Tap the wave and say just the city name, or type it below.';
-  return error === 'unrecognized-speech' ? 'I didn’t catch the words clearly. Tap the wave to retry or type below.'
+  return error === 'unrecognized-speech' ? 'I didn’t catch that. Try again, or type below.'
     : 'I didn’t hear a message. Tap the wave and speak when it says Listening, or type below.';
+}
+
+function playbackNotice(result, awaitingCity, retried = false) {
+  if (awaitingCity) return 'The reply was silent or cut off. Tap Play reply, or say or type the city below.';
+  if (result === 'no-voice') return 'Your browser has no matching voice for this reply. Enable one in your device settings, or use Chat for a written reply.';
+  if (retried) return 'The reply still couldn’t play. Check your media volume and audio output, or use Chat for a written reply.';
+  return 'The reply was silent or cut off. Tap Play reply, or use Chat for a written reply.';
 }
 
 function externalReference(label, value) {
@@ -45,6 +55,7 @@ export default function TalkPage() {
   const [inputEngine, setInputEngine] = useState('');
   const [voiceStopReady, setVoiceStopReady] = useState(false);
   const [hasInput, setHasInput] = useState(false);
+  const [replay, setReplay] = useState(null);
   const [reference, setReference] = useState(null);
   const visualRef = useRef(null);
   const audioRef = useRef(null);
@@ -68,6 +79,7 @@ export default function TalkPage() {
       browserMicRef.current = localMicRef.current = listeningRef.current = null;
       turnRef.current?.abort();
       turnRef.current = null;
+      setTalkAudioRoute('auto');
       if (audioRef.current) void audioRef.current.close().catch(() => {});
       audioRef.current = null;
     };
@@ -88,7 +100,8 @@ export default function TalkPage() {
     visualRef.current?.style.setProperty('--speech-level', (.55 + level * .8).toFixed(2));
   }
 
-  async function speak(answer, language, signal, fromMic) {
+  async function speak(answer, language, signal, fromMic, fromGesture = false) {
+    setTalkAudioRoute('playback');
     // Never route an on-device conversation to an online recognizer just for
     // the spoken Stop command. Use an installed local pack if available.
     const mic = browserMicRef.current;
@@ -100,7 +113,8 @@ export default function TalkPage() {
         if (signal.aborted || turnRef.current?.signal !== signal) return;
         mic.listen({
           language: locale, localOnly: true, playback: answer, onStop: stopTurn,
-          onStart: () => { if (!signal.aborted) setVoiceStopReady(true); }, onEnd: () => setVoiceStopReady(false),
+          onStart: () => { if (!signal.aborted) setVoiceStopReady(true); },
+          onEnd: () => { if (!signal.aborted && turnRef.current?.signal === signal) setVoiceStopReady(false); },
         });
       });
     }
@@ -113,11 +127,26 @@ export default function TalkPage() {
         listenForStop();
       },
     };
-    const cloud = await playNeuralVoice(audioRef.current, answer, options);
-    if (cloud || signal.aborted) return cloud;
+    if (!fromGesture && await playNeuralVoice(audioRef.current, answer, options).catch(() => false)) return 'played';
+    if (signal.aborted) return 'cancelled';
     return playBrowserVoice(answer, language, {
-      ...options, onStart: () => { setDeviceVoice(true); options.onStart(); },
+      ...options, fromGesture, onStart: () => { setDeviceVoice(true); options.onStart(); },
     });
+  }
+
+  function finishReply(turn, followUp) {
+    if (turnRef.current !== turn) return;
+    turnRef.current = null;
+    const playback = playbackRef.current;
+    playbackRef.current = '';
+    setVoiceStopReady(false);
+    setWaveLevel(0);
+    if (followUp && !turn.signal.aborted) void startListening({ followUp: true, playback });
+    else {
+      browserMicRef.current?.abort();
+      setTalkAudioRoute('auto');
+      setMode('idle');
+    }
   }
 
   function cancelReply() {
@@ -134,6 +163,8 @@ export default function TalkPage() {
     localMicRef.current?.abort();
     listeningRef.current = null;
     cancelReply();
+    setReplay(null);
+    setTalkAudioRoute('auto');
     setHasInput(false);
     setMode('idle');
   }
@@ -146,6 +177,7 @@ export default function TalkPage() {
     turnRef.current = turnController;
     setError('');
     setDeviceVoice(false);
+    setReplay(null);
     setReference(null);
     setText('');
     setMode('thinking');
@@ -181,6 +213,8 @@ export default function TalkPage() {
             return talkAnswer(`I found ${city}. You can open the map below.`);
           }
           if (turn.kind === 'tool') {
+            const { processMessage } = await import('../agent/agentOrchestrator');
+            signal.throwIfAborted();
             const result = await processMessage(turn.message, history, user, turn.location, null, turn.pending, { voiceIntent: turn.intent, signal });
             signal.throwIfAborted();
             if (result.pending) next.pending = { action: { type: result.pending }, intent: turn.intent, location: turn.location };
@@ -240,11 +274,15 @@ export default function TalkPage() {
       // Remember the question before playing it, so tapping the wave can
       // interrupt playback and answer it without losing the original turn.
       playbackRef.current = spoken;
-      const played = await speak(spoken, locale, signal, fromMic);
-      continueByVoice = fromMic && answer.expectsReply && played;
-      if (!played && !signal.aborted) {
-        setError(awaitingTalkPlace(next.context) ? 'The voice reply couldn’t play. Tap the wave to say the city, or type it below.'
-          : 'The voice reply couldn’t play. Try again, or use Chat for a written reply.');
+      setMode('voicing');
+      const result = await speak(spoken, locale, signal, fromMic).catch(() => 'failed');
+      continueByVoice = fromMic && answer.expectsReply && result === 'played';
+      if (!signal.aborted) {
+        const failed = result !== 'played';
+        // A browser can report success even if the active output is muted.
+        // Keep a gesture-driven option for the current reply either way.
+        setReplay({ spoken, locale, fromMic, expectsReply: answer.expectsReply, failed });
+        if (failed) setError(playbackNotice(result, awaitingTalkPlace(next.context)));
       }
     } catch (err) {
       if (!signal.aborted) {
@@ -253,25 +291,30 @@ export default function TalkPage() {
       }
     } finally {
       clearTimeout(timer);
-      if (turnRef.current === turnController) {
-        turnRef.current = null;
-        const playback = playbackRef.current;
-        playbackRef.current = '';
-        setVoiceStopReady(false);
-        setWaveLevel(0);
-        if (continueByVoice && !signal.aborted) startListening({ followUp: true, playback });
-        else {
-          browserMicRef.current?.abort();
-          setMode('idle');
-        }
-      }
+      finishReply(turnController, continueByVoice);
     }
+  }
+
+  async function playSavedReply() {
+    if (!replay || turnRef.current || listeningRef.current) return;
+    const { spoken, locale, fromMic, expectsReply } = replay;
+    const turn = turnRef.current = new AbortController();
+    playbackRef.current = spoken;
+    setError('');
+    setMode('voicing');
+    unlockAudio();
+    const result = await speak(spoken, locale, turn.signal, fromMic, true).catch(() => 'failed');
+    if (turnRef.current !== turn) return;
+    setReplay({ ...replay, failed: result !== 'played' });
+    if (result !== 'played') setError(playbackNotice(result, awaitingTalkPlace(session.current.context), true));
+    finishReply(turn, fromMic && expectsReply && result === 'played');
   }
 
   async function startListening({ followUp = false, playback = '' } = {}) {
     if (turnRef.current || listeningRef.current) return;
     const local = localMicRef.current;
     const browser = browserMicRef.current;
+    if (!local || !browser) return;
     const canUseLocal = Boolean(local?.supported);
     setError('');
     setHasInput(false);
@@ -289,6 +332,7 @@ export default function TalkPage() {
       else if (!canUseLocal) {
         browser?.abort();
         listeningRef.current = null;
+        setTalkAudioRoute('auto');
         setError('On-device voice recognition isn’t available here. You can still type below.');
         setMode('idle');
         return;
@@ -299,21 +343,35 @@ export default function TalkPage() {
     listening.mic = mic;
     setInputEngine(useLocal ? 'local' : 'browser');
     if (useLocal) browser?.abort();
+    else setTalkAudioRoute('play-and-record');
     mic.listen({
       language, followUp, playback, localOnly: !useLocal,
+      onPrepare: () => {
+        if (listeningRef.current !== listening) return;
+        setTalkAudioRoute('auto');
+        setMode('preparing');
+      },
+      onOpening: () => {
+        if (listeningRef.current !== listening) return;
+        setTalkAudioRoute('play-and-record');
+        setWaveLevel(0);
+        setMode('opening');
+      },
       onStart: () => { if (listeningRef.current === listening) setMode('listening'); },
       onInput: () => { if (listeningRef.current === listening) setHasInput(true); },
       onLevel: setWaveLevel,
-      onDecode: (ready) => {
+      onDecode: () => {
         if (listeningRef.current !== listening) return;
+        setTalkAudioRoute('auto');
         setWaveLevel(0);
         setHasInput(false);
-        setMode(ready ? 'transcribing' : 'preparing');
+        setMode('transcribing');
       },
       onEnd: ({ result, error: micError }) => {
         if (listeningRef.current !== listening) return;
         listeningRef.current = null;
-        if (useLocal && /^(?:local-unavailable|decode-(?:failed|timeout))$/.test(micError)) tryInstalledMic.current = true;
+        setTalkAudioRoute('auto');
+        if (useLocal && /^(?:local-unavailable|load-timeout|decode-(?:failed|timeout))$/.test(micError)) tryInstalledMic.current = true;
         setWaveLevel(0);
         setHasInput(false);
         const transcript = normalizeTalkTranscript(result?.transcript);
@@ -345,6 +403,7 @@ export default function TalkPage() {
     setText('');
     setError('');
     setDeviceVoice(false);
+    setReplay(null);
     setReference(null);
   }
 
@@ -357,25 +416,25 @@ export default function TalkPage() {
   }
 
   const statusText = {
-    idle: 'Tap to talk',
-    opening: 'Opening microphone…',
+    idle: replay?.failed ? 'Reply ready' : 'Tap to talk',
     listening: 'Listening…',
-    preparing: 'Preparing voice recognition…',
     transcribing: 'Recognizing speech…',
-    thinking: 'Thinking with context…',
+    thinking: 'Thinking…',
+    voicing: 'Getting audio ready…',
     speaking: 'Speaking…',
   }[mode];
-  const visualLabel = { idle: 'Start AI Talk', opening: 'Opening microphone', listening: hasInput ? 'Finish listening' : 'Listening for speech', preparing: 'Preparing voice recognition', transcribing: 'Recognizing speech', thinking: 'Thinking with context', speaking: 'Interrupt and answer' }[mode];
+  const startingMic = mode === 'opening' || mode === 'preparing';
+  const visualLabel = { idle: 'Start AI Talk', listening: hasInput ? 'Finish listening' : 'Listening for speech', transcribing: 'Recognizing speech', thinking: 'Thinking', voicing: 'Getting audio ready', speaking: 'Interrupt and answer' }[mode] || 'AI Talk';
   const waveEnabled = mode === 'idle' || mode === 'speaking' || (mode === 'listening' && hasInput);
   const inputDisabled = mode === 'thinking';
+  const micStatus = mode === 'listening' ? 'Mic on · Audio stays on this device'
+    : mode === 'speaking' && voiceStopReady ? 'Mic on for spoken Stop · Audio stays on this device' : '';
   const candidate = awaitingTalkPlace(session.current.context) && session.current.context.waiting.candidate;
   const helpText = {
-    idle: 'Ask anything naturally. Detailed text conversations remain available in Chat.',
-    opening: statusText,
+    idle: replay ? '' : 'Use Chat for written replies.',
     listening: hasInput ? 'Keep speaking, or tap the wave when you’re done.' : 'Speak now, or type below.',
-    preparing: 'First use downloads the voice model (about 77 MB). Your mic is off while it loads.',
-    transcribing: 'Working on what you said. Your mic is off.',
-    thinking: voiceStopReady ? 'Getting your reply ready. You can tap Stop or say “stop speaking”.' : statusText,
+    transcribing: 'Working on what you said. You can type below instead.',
+    thinking: 'You can tap Stop to cancel.',
     speaking: voiceStopReady ? 'Tap the wave to answer, or say “stop speaking” to stop.' : 'Tap the wave to answer, or tap Stop.',
   }[mode];
 
@@ -397,6 +456,7 @@ export default function TalkPage() {
             className={`air-visual ${mode}${inputEngine === 'local' ? ' local-input' : ''}`}
             onClick={handleWaveClick}
             aria-label={visualLabel}
+            aria-busy={startingMic || undefined}
             aria-disabled={!waveEnabled}
           >
             <span className="air-vortex" />
@@ -412,13 +472,15 @@ export default function TalkPage() {
             <span className="air-ring r1" />
             <span className="air-ring r2" />
           </button>
-          <strong>{statusText}</strong>
-          <span className="talk-privacy">{deviceVoice && mode === 'speaking' ? 'Using your browser’s voice because the natural voice is unavailable.' : 'Microphone audio stays on this device.'}</span>
+          <strong role="status">{statusText}</strong>
+          {micStatus && <span className="talk-mic-status">{micStatus}</span>}
+          {deviceVoice && mode === 'speaking' && <span className="talk-mic-status">Using your browser’s voice.</span>}
         </section>
 
         <div className="talk-voice-space" aria-live="polite">
-          <span>{helpText}</span>
+          {helpText && <span>{helpText}</span>}
           {reference && <a className="talk-reference" href={reference.href} target="_blank" rel="noopener noreferrer">{reference.label} <ExternalLink size={13} /></a>}
+          {replay && mode === 'idle' && <button type="button" className="talk-play-reply" onClick={playSavedReply}><Volume2 size={15} aria-hidden="true" /> Play reply</button>}
           {candidate && !inputDisabled && <button type="button" className="talk-confirm-city" onClick={() => {
             stopTurn();
             unlockAudio();
@@ -428,7 +490,7 @@ export default function TalkPage() {
 
         {error && <div className="talk-error" role="status">{error}</div>}
         <form className="talk-text-form" onSubmit={handleSubmit}>
-          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Or type and continue the same conversation…" maxLength={TALK_MESSAGE_LIMIT} disabled={inputDisabled} aria-label="AI Talk message" />
+          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Or type a message…" maxLength={TALK_MESSAGE_LIMIT} disabled={inputDisabled} aria-label="AI Talk message" />
           <button type="submit" disabled={!text.trim() || inputDisabled} aria-label="Send Talk message"><Send size={17} /></button>
         </form>
       </div>

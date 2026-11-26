@@ -63,14 +63,16 @@ test('Stop releases a stream granted after cancellation and never starts recogni
   const mic = createLocalTalkMic({
     getContext: () => ({ audioWorklet: { addModule: assert.fail } }),
     media: { getUserMedia: () => new Promise((resolve) => { grant = resolve; }) },
-    WorkletNode: class {}, workerFactory: assert.fail,
+    WorkletNode: class {}, workerFactory: () => worker,
   });
+  const worker = { postMessage() {}, terminate() {} };
   mic.listen({ onStart: assert.fail, onInput: assert.fail, onEnd: assert.fail });
-  mic.finishInput();
+  worker.onmessage({ data: { type: 'ready' } });
   mic.abort();
   grant({ getTracks: () => [track] });
   await Promise.resolve();
   assert.equal(releases, 1);
+  mic.dispose();
 });
 
 function localMicFixture() {
@@ -83,8 +85,13 @@ function localMicFixture() {
   };
   const mic = createLocalTalkMic({
     getContext: () => context,
-    media: { async getUserMedia() {
-      const track = Object.assign(new EventTarget(), { readyState: 'live', stop() { this.readyState = 'ended'; } });
+    media: { async getUserMedia(constraints) {
+      assert.equal(constraints.audio.deviceId, undefined, 'follow the current default input');
+      assert.equal(constraints.audio.echoCancellation, true, 'speaker playback needs echo cancellation');
+      const track = Object.assign(new EventTarget(), {
+        readyState: 'live', stop() { this.readyState = 'ended'; },
+        unplug() { this.stop(); this.dispatchEvent(new Event('ended')); },
+      });
       tracks.push(track);
       return { getTracks: () => [track], getAudioTracks: () => [track] };
     } },
@@ -110,11 +117,19 @@ function localMicFixture() {
       return worker;
     },
   });
+  const begin = (options) => {
+    const opening = new Promise((resolve) => { connected = resolve; });
+    mic.listen(options);
+    return opening;
+  };
   return {
     mic, tracks, workers,
+    begin,
+    whenReconnected: () => new Promise((resolve) => { connected = resolve; }),
     open(options) {
-      const opening = new Promise((resolve) => { connected = resolve; });
-      mic.listen(options);
+      const opening = begin(options);
+      const worker = workers.at(-1);
+      worker.onmessage({ data: { type: 'ready' } });
       return opening;
     },
     feed(count, level = 0) {
@@ -136,6 +151,52 @@ test('the mic closes before decoding; Stop ignores any late worker result', asyn
   assert.equal(workers[0].stopped, true);
 });
 
+test('preparing the recognizer keeps the mic off until it is ready', async (t) => {
+  const { mic, tracks, workers, begin, feed } = localMicFixture();
+  t.after(() => mic.dispose());
+  const statuses = [];
+  const opening = begin({
+    onPrepare: () => statuses.push('preparing'),
+    onOpening: () => statuses.push('opening'),
+    onStart: () => statuses.push('listening'),
+    onEnd: assert.fail,
+  });
+  const [worker] = workers;
+  worker.onmessage({ data: { type: 'load-activity' } });
+  mic.finishInput();
+  assert.deepEqual(statuses, ['preparing']);
+  assert.equal(tracks.length, 0);
+  worker.onmessage({ data: { type: 'ready' } });
+  await opening;
+  feed(1);
+  assert.deepEqual(statuses, ['preparing', 'opening', 'listening']);
+});
+
+test('Stop while loading never opens the mic on a late ready message', (t) => {
+  const { mic, tracks, workers } = localMicFixture();
+  t.after(() => mic.dispose());
+  mic.listen({ onOpening: assert.fail, onEnd: assert.fail });
+  mic.abort();
+  workers[0].onmessage({ data: { type: 'ready' } });
+  assert.equal(tracks.length, 0);
+  assert.ok(workers[0].stopped);
+});
+
+test('active load progress extends the idle deadline, but a stall does not open the mic', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { mic, tracks, workers } = localMicFixture();
+  t.after(() => mic.dispose());
+  const ended = [];
+  mic.listen({ onEnd: (outcome) => ended.push(outcome) });
+  t.mock.timers.tick(45000);
+  workers[0].onmessage({ data: { type: 'load-activity' } });
+  t.mock.timers.tick(45000);
+  assert.deepEqual(ended, []);
+  t.mock.timers.tick(15000);
+  assert.deepEqual(ended, [{ error: 'load-timeout' }]);
+  assert.equal(tracks.length, 0);
+});
+
 test('a silent attempt sends no audio and leaves a warm model for the next explicit tap', async (t) => {
   const { mic, tracks, workers, open, feed } = localMicFixture();
   t.after(() => mic.dispose());
@@ -149,9 +210,7 @@ test('a silent attempt sends no audio and leaves a warm model for the next expli
   assert.equal(workers.length, 1);
   const [worker] = workers;
   assert.deepEqual(worker.messages.map(({ type }) => type), ['warmup']);
-  worker.onmessage({ data: { type: 'ready' } });
-
-  await open({ ...options, onDecode: (ready) => assert.equal(ready, true) });
+  await open(options);
   feed(6, .018);
   mic.finishInput();
   const { id } = worker.messages.at(-1);
@@ -169,7 +228,6 @@ test('a decode timeout stops the worker, not the next manual attempt', async (t)
   await open(options);
   feed(6, .018);
   const [worker] = workers;
-  worker.onmessage({ data: { type: 'ready' } });
   mic.finishInput();
   t.mock.timers.tick(55000);
   assert.deepEqual(ended, [{ error: 'decode-timeout' }]);
@@ -182,7 +240,23 @@ test('a decode timeout stops the worker, not the next manual attempt', async (t)
   worker.onmessage({ data: { type: 'failed' } });
   assert.equal(ended.length, 1, 'stale worker errors cannot stop a retry');
   const result = { transcript: 'Mumbai', locale: 'en', uncertain: true };
-  retry.onmessage({ data: { type: 'ready' } });
   retry.onmessage({ data: { type: 'result', id: retry.messages.at(-1).id, result } });
   assert.deepEqual(ended.at(-1), { result });
+});
+
+test('unplugging a headset before speech reopens the current mic once; it never submits clipped speech', async (t) => {
+  const { mic, tracks, workers, open, feed, whenReconnected } = localMicFixture();
+  t.after(() => mic.dispose());
+  const ended = [];
+  await open({ onEnd: (outcome) => ended.push(outcome) });
+  feed(1);
+  const reconnect = whenReconnected();
+  tracks[0].unplug();
+  await reconnect;
+  assert.equal(tracks.length, 2);
+  assert.equal(tracks[1].readyState, 'live');
+  feed(6, .018);
+  tracks[1].unplug();
+  assert.deepEqual(ended, [{ error: 'microphone-disconnected' }]);
+  assert.deepEqual(workers[0].messages.map(({ type }) => type), ['warmup']);
 });
