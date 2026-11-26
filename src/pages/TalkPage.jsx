@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { MicOff, Send, Volume2, VolumeX, RotateCcw, Wind, Sparkles, AudioWaveform } from 'lucide-react';
+import { Send, RotateCcw, AudioWaveform } from 'lucide-react';
 import Header from '../components/chat/Header';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
 import { processMessage } from '../agent/agentOrchestrator';
 import { DEFAULT_LOCATION } from '../services/environmentalData';
+import { getChatResponse, isAIUnavailable } from '../services/geminiService';
 
 function cardSpeech(cards = [], existingText = '') {
   if (/\bAQI\b/i.test(existingText)) return '';
@@ -20,11 +21,10 @@ export default function TalkPage() {
   const { user } = useAuth();
   const { location, setLocation } = useApp();
   const [mode, setMode] = useState('idle'); // idle | listening | thinking | speaking
-  const [interim, setInterim] = useState('');
   const [messages, setMessages] = useState([]);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [text, setText] = useState('');
   const [error, setError] = useState('');
+  const [mouthOpen, setMouthOpen] = useState(false);
   const recognitionRef = useRef(null);
   const pendingActionRef = useRef(null);
   const speechLanguageRef = useRef(
@@ -33,31 +33,66 @@ export default function TalkPage() {
       : 'en-IN'
   );
   const messagesRef = useRef([]);
-  const endRef = useRef(null);
 
   useEffect(() => {
     messagesRef.current = messages;
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, interim]);
+  }, [messages]);
 
   useEffect(() => () => {
     recognitionRef.current?.abort?.();
     window.speechSynthesis?.cancel();
   }, []);
 
+  function cleanSpeech(textValue) {
+    return String(textValue || '')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/[*#_`•]/g, ' ')
+      .replace(/\p{Extended_Pictographic}/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function shortFallback(textValue) {
+    const clean = cleanSpeech(textValue);
+    const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [clean];
+    return sentences.slice(0, 2).join(' ').trim();
+  }
+
+  async function spokenReply(rawAnswer, userText) {
+    const clean = cleanSpeech(rawAnswer);
+    const sentenceCount = (clean.match(/[.!?]+/g) || []).length;
+    if (clean.length <= 260 && sentenceCount <= 2 && !/\bDirect impact:/i.test(rawAnswer)) return clean;
+
+    const condensed = await getChatResponse(
+      [{ role: 'user', text: `User said: "${userText}"\nFactual assistant result: "${clean.slice(0, 5000)}"\nReply as a natural voice companion in at most two short sentences. Preserve the most useful live number or action. No list, heading, markdown, URL, feature advertisement, or disclaimer unless safety-critical.` }],
+      'Voice-only conversation. Keep supplied facts unchanged and sound natural rather than reading a report.',
+      { maxTokens: 700, timeoutMs: 20000, temperature: 0.45 },
+    );
+    return isAIUnavailable(condensed) ? shortFallback(clean) : cleanSpeech(condensed);
+  }
+
   function speak(answer) {
-    if (!voiceEnabled || !window.speechSynthesis || !answer) {
+    if (!window.speechSynthesis || !answer) {
       setMode('idle');
       return;
     }
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(answer.replace(/[*#_`]/g, ''));
     utterance.lang = /[\u0900-\u097F]/.test(answer) ? speechLanguageRef.current : 'en-IN';
-    utterance.rate = 1;
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find((voice) => voice.lang.toLowerCase().startsWith(utterance.lang.slice(0, 2).toLowerCase()) && /natural|neural|google|microsoft/i.test(voice.name))
+      || voices.find((voice) => voice.lang.toLowerCase().startsWith(utterance.lang.slice(0, 2).toLowerCase()));
+    if (preferred) utterance.voice = preferred;
+    utterance.rate = 1.03;
     utterance.pitch = 1;
     utterance.onstart = () => setMode('speaking');
-    utterance.onend = () => setMode('idle');
-    utterance.onerror = () => setMode('idle');
+    utterance.onboundary = (event) => {
+      if (event.name === 'word' || event.charLength > 0) {
+        setMouthOpen((current) => !current);
+      }
+    };
+    utterance.onend = () => { setMouthOpen(false); setMode('idle'); };
+    utterance.onerror = () => { setMouthOpen(false); setMode('idle'); };
     window.speechSynthesis.speak(utterance);
   }
 
@@ -69,7 +104,6 @@ export default function TalkPage() {
     const userMessage = { role: 'user', text: cleaned };
     const next = [...messagesRef.current, userMessage];
     setMessages(next);
-    setInterim('');
     setText('');
     setMode('thinking');
     try {
@@ -85,7 +119,8 @@ export default function TalkPage() {
         pendingActionRef.current = null;
       }
       const responseText = response.text || 'I’m listening.';
-      const answer = `${responseText}${cardSpeech(response.cards, responseText)}`.trim();
+      const factualAnswer = `${responseText}${cardSpeech(response.cards, responseText)}`.trim();
+      const answer = await spokenReply(factualAnswer, cleaned);
       const aiMessage = { role: 'ai', text: answer };
       setMessages((current) => [...current, aiMessage]);
       speak(answer);
@@ -112,13 +147,11 @@ export default function TalkPage() {
     recognition.maxAlternatives = 1;
     recognition.onstart = () => setMode('listening');
     recognition.onresult = (event) => {
-      let liveText = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const transcript = event.results[index][0].transcript;
         if (event.results[index].isFinal) finalText += transcript;
-        else liveText += transcript;
       }
-      setInterim(finalText || liveText);
+      // Deliberately no transcript is rendered in voice mode.
     };
     recognition.onerror = (event) => {
       setMode('idle');
@@ -148,7 +181,7 @@ export default function TalkPage() {
     window.speechSynthesis?.cancel();
     setMessages([]);
     pendingActionRef.current = null;
-    setInterim('');
+    setMouthOpen(false);
     setError('');
     setMode('idle');
   }
@@ -172,48 +205,37 @@ export default function TalkPage() {
         <div className="talk-topline">
           <div className="talk-tab-title"><AudioWaveform size={17} /> AI Talk</div>
           <div>
-            <button className="talk-icon-button" onClick={() => { setVoiceEnabled((current) => !current); window.speechSynthesis?.cancel(); }} aria-label={voiceEnabled ? 'Mute AI voice' : 'Enable AI voice'}>
-              {voiceEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />}
-            </button>
             <button className="talk-icon-button" onClick={clearTalk} aria-label="Clear talk conversation"><RotateCcw size={16} /></button>
           </div>
         </div>
 
-        <section className="talk-orb-section">
+        <section className="talk-visual-section">
           <button
             className={`air-visual ${mode}`}
             onClick={mode === 'listening' ? stopListening : mode === 'idle' ? startListening : undefined}
             disabled={mode === 'thinking' || mode === 'speaking'}
             aria-label={mode === 'listening' ? 'Stop listening' : 'Start AI Talk'}
           >
-            <span className="air-dot-field" />
-            <span className="air-flow one" />
-            <span className="air-flow two" />
-            <span className="air-flow three" />
+            <span className="air-tree-canopy" />
+            <span className="air-tree-stem" />
+            <span className="air-eye left"><i /></span>
+            <span className="air-eye right"><i /></span>
+            <span className={`air-mouth${mouthOpen ? ' open' : ''}`} />
             <span className="air-particle p1" />
             <span className="air-particle p2" />
             <span className="air-particle p3" />
             <span className="air-particle p4" />
             <span className="air-particle p5" />
             <span className="air-particle p6" />
-            <span className="air-visual-core">{mode === 'listening' ? <MicOff size={30} /> : mode === 'thinking' ? <Sparkles size={30} /> : <Wind size={32} />}</span>
             <span className="air-ring r1" />
             <span className="air-ring r2" />
           </button>
           <strong>{statusText}</strong>
           <span className="talk-privacy">Speak naturally. EcoPulse follows the language in your words and does not save audio recordings.</span>
-          {interim && <div className="talk-interim">“{interim}”</div>}
         </section>
 
-        <div className="talk-transcript" aria-live="polite">
-          {messages.length === 0 ? (
-            <div className="talk-empty">Ask anything—daily life, planning, smog precautions, AQI, complaints, or a general question.</div>
-          ) : messages.map((message, index) => (
-            <div className={`talk-message ${message.role}`} key={`${message.role}-${index}`}>
-              {message.text}
-            </div>
-          ))}
-          <div ref={endRef} />
+        <div className="talk-voice-space" aria-live="polite">
+          <span>{mode === 'idle' ? 'Ask anything naturally. Detailed text conversations remain available in Chat.' : statusText}</span>
         </div>
 
         {error && <div className="talk-error">{error}</div>}
