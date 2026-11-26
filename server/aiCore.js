@@ -369,8 +369,8 @@ export function makeAiHandler(env) {
       return
     }
 
-    // Don't forward an older Talk client's history to Chat's providers.
-    if (payload?.mode === 'talk') {
+    // Don't forward requests from retired voice clients to Chat's providers.
+    if (payload?.mode === 'talk' || payload?.mode === 'bot') {
       res.statusCode = 410
       res.setHeader('Content-Type', 'application/json')
       res.setHeader('Cache-Control', 'no-store')

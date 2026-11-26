@@ -1,7 +1,8 @@
 {
   "framework": "vite",
   "redirects": [
-    { "source": "/talk", "destination": "/", "permanent": false }
+    { "source": "/talk", "destination": "/", "permanent": false },
+    { "source": "/bot", "destination": "/", "permanent": false }
   ],
   "rewrites": [
     {

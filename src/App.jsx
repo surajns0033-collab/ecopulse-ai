@@ -26,9 +26,10 @@ function AppLoader({ label = 'Loading EcoPulse AI...' }) {
 function AppInner() {
   const { user, loading } = useAuth();
   const isOldTalkLink = useMatch('/talk');
+  const isOldBotLink = useMatch('/bot');
   const { search, hash } = useLocation();
 
-  if (isOldTalkLink) {
+  if (isOldTalkLink || isOldBotLink) {
     return <Navigate to={{ pathname: '/', search, hash }} replace />;
   }
 

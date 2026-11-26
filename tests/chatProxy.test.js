@@ -16,13 +16,15 @@ async function chat(body) {
   return { status: res.statusCode, headers, result };
 }
 
-test('a stale Talk client is rejected without forwarding its text to any provider', async (t) => {
+test('retired Talk and Bot clients cannot forward requests to any provider', async (t) => {
   const fetch = t.mock.method(globalThis, 'fetch', assert.fail);
-  for (const useSearch of [false, true]) {
-    const response = await chat({ mode: 'talk', useSearch, messages: [{ role: 'user', text: 'Earlier private text' }] });
-    assert.equal(response.status, 410);
-    assert.equal(response.headers['Cache-Control'], 'no-store');
-    assert.equal(response.result.text, undefined);
+  for (const mode of ['talk', 'bot']) {
+    for (const useSearch of [false, true]) {
+      const response = await chat({ mode, useSearch, question: 'Voice question', messages: [{ role: 'user', text: 'Earlier private text' }] });
+      assert.equal(response.status, 410);
+      assert.equal(response.headers['Cache-Control'], 'no-store');
+      assert.equal(response.result.text, undefined);
+    }
   }
   assert.equal(fetch.mock.callCount(), 0);
 });
