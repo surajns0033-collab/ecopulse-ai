@@ -16,6 +16,7 @@ test('an ask about the local area never geocodes filler words or uses a default'
     const turn = await resolveTalkTurn(text, emptyTalkContext(), { lookup: forbidLookup, locateDevice: forbidLookup });
     assert.equal(turn.kind, 'reply');
     assert.equal(turn.text, 'Which city should I check?');
+    assert.equal(turn.expectsReply, true);
     assert.equal(turn.context.location, null);
   }
 });
@@ -64,6 +65,7 @@ test('a city asked about earlier does not become the user’s physical location'
 
 test('a different city lookup does not overwrite the city that was explicitly chosen', async () => {
   const chosen = await resolveTalkTurn('Set my city to Mumbai', emptyTalkContext(), { lookup: async () => ({ location: Mumbai }) });
+  assert.ok(!chosen.expectsReply);
   const topic = await resolveTalkTurn('Weather in Panvel', chosen.context, { lookup: async () => ({ location: Panvel }) });
   assert.equal(topic.location, Panvel);
   const here = await resolveTalkTurn('AQI here', topic.context, { lookup: forbidLookup });
@@ -104,9 +106,12 @@ test('failed or ambiguous verification never reuses another city’s reading', a
 test('a suggestion is not applied until the user confirms it', async () => {
   const offered = await resolveTalkTurn('Weather in Panvell', emptyTalkContext(), { lookup: async () => ({ candidate: Panvel }) });
   assert.equal(offered.kind, 'reply');
+  assert.equal(offered.expectsReply, true);
   assert.equal(offered.context.location, null);
   assert.match(offered.text, /^Did you mean Panvel/);
-  const taken = await resolveTalkTurn('Yes', offered.context, { lookup: forbidLookup });
+  const taken = await resolveTalkTurn('Yes, that’s right.', offered.context, { lookup: forbidLookup, fromMic: true, confidence: .9 });
+  assert.equal(taken.intent, INTENTS.GET_WEATHER);
+  assert.equal(taken.message, 'Weather in Panvell');
   assert.equal(taken.location, Panvel);
   assert.equal(taken.context.chosenLocation, null);
 });

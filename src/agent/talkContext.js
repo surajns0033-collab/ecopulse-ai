@@ -156,7 +156,8 @@ export async function resolveTalkTurn(text, context, {
 } = {}) {
   const copy = replies[language] || replies.en;
   const say = (reply, update = context) => ({ kind: 'reply', text: reply, context: update });
-  if (!/[\p{L}\p{N}]/u.test(text) || (confidence > 0 && confidence < .55)) return say(copy.unclear);
+  const ask = (reply, update) => ({ ...say(reply, update), expectsReply: true });
+  if (!/[\p{L}\p{N}]/u.test(text) || (confidence > 0 && confidence < .55)) return ask(copy.unclear);
 
   let turn = { ...(route || routeTalkRequest(text, history)), message: text };
   const explicitlyChooseCity = turn.kind === 'city';
@@ -166,7 +167,7 @@ export async function resolveTalkTurn(text, context, {
   if (useDevice) {
     turn = waiting?.turn || { ...turn, kind: 'city', needsPlace: true };
     const location = await locateDevice({ signal });
-    if (!location) return say(copy.noDevice, { ...context, waiting: { turn, candidate: null, pinLocation: true } });
+    if (!location) return ask(copy.noDevice, { ...context, waiting: { turn, candidate: null, pinLocation: true } });
     const next = { location, chosenLocation: location, waiting: null };
     return turn.kind === 'city' ? { ...say(copy.set(location.city), next), selected: location } : { ...turn, location, context: next };
   }
@@ -176,14 +177,15 @@ export async function resolveTalkTurn(text, context, {
     if (/^(?:cancel|never mind|forget it)[.!?]*$/i.test(text.trim())) {
       return { kind: 'general', message: text, context: { ...context, waiting: null } };
     }
-    const yes = /^(?:yes|yeah|yep|correct|that['’]s right|haan|han|हाँ|हां|हो|बरोबर)[.!?।]*$/iu.test(text.trim());
-    const no = /^(?:no|nope|not that one|nahi|नहीं|नाही)[.!?।]*$/iu.test(text.trim());
+    const confirmation = text.trim().replace(/[.!?।]+$/u, '').replace(/[,\s]+/gu, ' ').trim();
+    const yes = /^(?:(?:yes|yeah|yep)(?: (?:please|correct|that['’]s (?:right|correct)))?|correct|that['’]s (?:right|correct)|haan|han|हाँ|हां|हो|बरोबर)$/iu.test(confirmation);
+    const no = /^(?:(?:no|nope)(?: not that one)?|not that one|nahi|नहीं|नाही)$/iu.test(confirmation);
     if (yes && waiting.candidate) {
       turn = waiting.turn;
       answeringLocation = true;
       confirmed = waiting.candidate;
     } else if (no || (yes && !waiting.candidate)) {
-      return say(copy.region, { ...context, waiting: { ...waiting, candidate: null } });
+      return ask(copy.region, { ...context, waiting: { ...waiting, candidate: null } });
     } else if (turn.kind === 'city' || (turn.kind === 'general' && !profileReply)) {
       const followUp = text.trim().match(PLACE_FOLLOWUP);
       const place = turn.place || talkPlaceName(followUp?.[1] || text.replace(/^city:\s*/i, ''));
@@ -201,7 +203,7 @@ export async function resolveTalkTurn(text, context, {
   if (!turn.needsPlace) return { ...turn, context: { ...context, waiting: null } };
 
   const pinLocation = explicitlyChooseCity || turn.kind === 'city' || Boolean(answeringLocation && waiting.pinLocation);
-  const defer = (reply, candidate = null) => say(reply, {
+  const defer = (reply, candidate = null) => ask(reply, {
     ...context, waiting: { turn, candidate, pinLocation: pinLocation || (turn.relative && !turn.place) },
   });
   let location = confirmed;
