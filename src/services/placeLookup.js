@@ -22,7 +22,6 @@ const regionKey = (value) => {
   return Object.hasOwn(regions, key) ? regions[key] : key;
 };
 const commonTypos = new Map(['sanfransico', 'sanfrancisco', 'sanfransisco', 'san fransico'].map((typo) => [typo, 'San Francisco']));
-const spokenTypos = new Map([['pun', 'Pune'], ['puna', 'Pune']]);
 
 function alias(value) {
   return aliases.get(value.toLowerCase()) || value;
@@ -103,10 +102,10 @@ async function readPlaces(url, signal, request) {
   }
 }
 
-export async function lookupTalkPlace(query, { map = false, speech = false, signal, request = fetch } = {}) {
+export async function lookupPlace(query, { map = false, signal, request = fetch } = {}) {
   const [rawName, ...qualifiers] = query.split(',').map((part) => alias(part.trim())).filter(Boolean);
   if (!rawName) return {};
-  // Resolve a common transcription/spelling error without relying on the
+  // Resolve a common spelling error without relying on the
   // availability of the fuzzy provider. The correction still needs consent.
   const normalized = normalize(rawName);
   const corrected = commonTypos.get(normalized);
@@ -128,13 +127,6 @@ export async function lookupTalkPlace(query, { map = false, speech = false, sign
   }
   if (exact?.location || exact?.candidate) return corrected && exact.location ? { candidate: exact.location } : exact;
 
-  // A recognizer can hear a short name as a different word. If its spelling
-  // doesn't identify a city or useful candidate, propose a verified alternate.
-  const alternate = speech && !qualifiers.length && spokenTypos.get(normalized);
-  if (alternate) {
-    const hit = await lookupTalkPlace(alternate, { map, signal, request });
-    if (hit.location || hit.candidate) return { candidate: hit.location || hit.candidate };
-  }
   if (exact) return exact;
 
   // Keep typo and landmark lookup, but never present a fuzzy hit as confirmed.
@@ -165,7 +157,7 @@ export async function lookupTalkPlace(query, { map = false, speech = false, sign
 
 // Only called after an explicit location request. Inaccurate fixes and reverse
 // geocoding failures must not turn into a default city or a full street address.
-export async function getTalkDeviceLocation({ signal, geolocation = globalThis.navigator?.geolocation, request = fetch } = {}) {
+export async function getDevicePlace({ signal, geolocation = globalThis.navigator?.geolocation, request = fetch } = {}) {
   if (!geolocation || signal?.aborted) return null;
   const coords = await new Promise((resolve) => {
     const timeout = setTimeout(() => finish(null), 5500);

@@ -126,7 +126,6 @@ export async function requestAI({
   maxTokens = 600,
   timeoutMs = 30000,
   useSearch = false,
-  mode,
   model = '',
   signal,
 } = {}) {
@@ -144,7 +143,6 @@ export async function requestAI({
     maxTokens,
     timeoutMs,
     useSearch,
-    mode,
     model,
   };
 
@@ -170,7 +168,7 @@ export async function requestAI({
   }
 
   // 2. Direct Gemini from the browser (only if a real key is present)
-  if (signal?.aborted || mode === 'talk') return null;
+  if (signal?.aborted) return null;
   try {
     const direct = await callGeminiDirect({ system, messages: cleanMessages, images, temperature, maxTokens, timeoutMs, useSearch, model, signal });
     state.lastProvider = direct.provider;

@@ -54,11 +54,10 @@ Instead of leaving users with generic chatbot replies or unverified contact deta
 | :--- | :--- | :--- |
 | **Conversational Assistant** | Natural-language chat in **English, Hindi, and Hinglish** with automatic language detection, daily-life civic guidance, and deterministic fallback responses. | Gemini AI, OpenRouter Free, `fallbackBrain.js` |
 | **Live AQI & Weather** | Real-time Air Quality Index (`PM2.5`, `PM10`, `NO₂`, `O₃`), weather conditions, and actionable health insights for any city worldwide. | Open-Meteo Air Quality & Forecast APIs |
-| **Personal Smog Action Plan** | Tailors a live-AQI plan to the city and the user's routine, with lower-emission choices and indoor-air steps. Chat adds a detailed breakdown and an AQI forecast window when available; AI Talk speaks the key actions. | Open-Meteo + deterministic exposure/action engine |
-| **AI Talk** | Short spoken replies in the user's language, a sound-responsive dotted waveform, and a typed input without a visible transcript. Recent conversation text lets Talk pick up where you left off in the same tab. | On-device Whisper recognition, Gemini Flash-Lite TTS, browser voice fallback |
+| **Personal Smog Action Plan** | Tailors a live-AQI plan to the city and the user's routine, with lower-emission choices, indoor-air steps, and an AQI forecast window when available. | Open-Meteo + deterministic exposure/action engine |
 | **Typo-Tolerant Global Maps** | Resolves misspelled or landmark-level locations (e.g., reserves, beaches, neighborhoods) into verified coordinates and Google Maps deep links. | Open-Meteo, Photon, Nominatim (OSM) |
 | **Civic Grievance & Email Routing** | Identifies the incident jurisdiction, links official contacts where available, and prepares an editable draft. Opening Gmail requires confirmation and never sends the draft. | `authorityDirectory.js`, `agentTools.js` |
-| **Grounded Web Research** | Answers current-events and policy questions with clickable sources. AI Talk asks for clarification on local searches and does not substitute an uncited answer if search fails. | Tavily Search API (`/api/ai/chat`) |
+| **Grounded Web Research** | Answers current-events and policy questions with clickable sources and asks for a city when a local search needs one. | Tavily Search API (`/api/ai/chat`) |
 | **Vision & Opt-In OCR** | Analyzes uploaded incident photos for severity and category, with private on-device classification and opt-in multilingual OCR (**English, Hindi, Marathi**). | Gemini Vision, Transformers.js (CLIP), Tesseract.js |
 | **Community & Eco-Meetups** | Public location-tagged channel with newest messages at the bottom, stable per-user identity colours, local eco-events, RSVP support, and guest read-only mode. | Firebase Auth, Cloud Firestore |
 
@@ -81,11 +80,11 @@ EcoPulse directly addresses the challenge with:
 
 ## 🏗 Architecture
 
-AI and web-search provider keys are configured server-side. Vite serves `/api/ai/chat` and `/api/ai/speech` locally; Vercel Functions serve them in production.
+AI and web-search provider keys are configured server-side. Vite serves `/api/ai/chat` locally; a Vercel Function serves it in production.
 
 ```mermaid
 flowchart TB
-    UI["React 19 PWA UI<br/>(AI Talk, Chat, Community, Events)"] --> IE["Intent Engine & Orchestrator<br/>(intentEngine.js / agentOrchestrator.js)"]
+    UI["React 19 PWA UI<br/>(Chat, Community, Events)"] --> IE["Intent Engine & Orchestrator<br/>(intentEngine.js / agentOrchestrator.js)"]
 
     IE -->|"AQI & Weather"| OM["Open-Meteo APIs"]
     IE -->|"Geocoding & Maps"| GEO["Open-Meteo + Photon + Nominatim"]
@@ -95,8 +94,6 @@ flowchart TB
     PROXY --> GEM["Google Gemini"]
     PROXY --> TAV["Tavily Grounded Search"]
     PROXY --> OR["OpenRouter Free Fallback"]
-    UI -->|"Mic audio stays on device"| ASR["Whisper in a browser worker"]
-    UI -->|"Short reply text only"| SPEECH["/api/ai/speech<br/>(Streamed Gemini TTS)"]
 
     UI -->|"Image Upload"| VIS["Vision & OCR Pipeline"]
     VIS -->|"Primary"| GEMV["Gemini Vision"]
@@ -112,8 +109,7 @@ flowchart TB
 | :--- | :--- | :--- |
 | **Chat** | Google Gemini | OpenRouter Free → Deterministic `fallbackBrain.js` |
 | **Civic complaint drafts** | User-provided details and verified directory, formatted locally | An unaddressed draft when no local email is verified |
-| **AI Talk** | Gemini Flash-Lite for conversation; Gemini Flash-Lite TTS for speech | Labeled browser voice when speech synthesis is unavailable |
-| **Grounded Web Search** | Tavily Basic Search | Gemini grounding in Chat only; Talk says when it can't verify |
+| **Grounded Web Search** | Tavily Basic Search | Gemini grounding |
 | **Image Classification** | Gemini Vision | On-device CLIP (`onDeviceVision.js`) → User confirmation |
 | **Document / Sign OCR** | Tesseract.js (opt-in) | Prompt user to clarify unclear text |
 | **AQI, Weather & Geo** | Open-Meteo | Photon / Nominatim (OSM) → Clear unavailable state |
@@ -130,8 +126,7 @@ ecopulse-ai/
 ├── api/
 │   └── ai/
 │       ├── chat.js                  # Vercel serverless AI & Tavily proxy
-│       ├── health.js                # Provider health check endpoint
-│       └── speech.js                # Streaming speech from short replies
+│       └── health.js                # Provider health check endpoint
 ├── public/
 │   └── favicon.svg                  # App icon & brand mark
 ├── src/
@@ -159,7 +154,6 @@ ecopulse-ai/
 │   ├── pages/
 │   │   ├── LandingPage.jsx          # Entry & onboarding view
 │   │   ├── ChatPage.jsx             # Main conversational assistant interface
-│   │   ├── TalkPage.jsx             # Voice and typed input without a transcript
 │   │   ├── CommunityPage.jsx        # Public location-tagged community feed
 │   │   ├── MeetupsPage.jsx          # Event discovery, creation & RSVP
 │   │   └── ReportDetailPage.jsx     # Individual environmental report view
@@ -237,9 +231,7 @@ See [`.env.example`](.env.example) for all optional keys (including OpenWeatherM
 ## 🔐 Privacy & Safety Model
 
 - **Minimal Public Footprint:** EcoPulse never copies user email addresses, phone numbers, Google display names, or precise GPS coordinates into public Firestore documents. Community posts store only the Firebase UID, chosen public alias, message text, timestamp, and an optional city/global label.
-- **AI Talk:** Microphone audio is processed on your device and isn't saved or uploaded. Voice setup only starts when you tap the wave. The first setup downloads about 77 MB of model files plus the runtime. Wait for **Listening** before speaking. Talk uses your current mic and audio output and releases the mic before recognition. Tap **Stop** to end the turn, or tap the wave during playback to interrupt and answer. Spoken “stop speaking” requires a matching on-device browser speech pack. If automatic playback fails, tap **Play reply** to use the browser voice without repeating the question. You can type in Talk without loading the recognizer.
-- **Talk history and privacy:** Talk keeps up to 12 recent text messages and any unfinished lookup in this browser tab's session storage, separate from Chat and Community. Use **Clear talk conversation** or sign out to remove it. Recent text helps with AI follow-ups, but isn't sent to web search or speech synthesis; synthesis receives only the short reply and does not store generated audio. If Talk uses your browser's voice, it labels that playback.
-- **Talk city follow-ups:** Say the city name or type it. Talk asks you to confirm an uncertain match. If it can't verify the city, it keeps your question open and offers a retry without repeating the question aloud. You can ask about something else and later say “Back to the weather question” to pick up the unfinished lookup. A city you chose and verified for local lookups is reused in the same tab; a city you only asked about isn't assumed to be local. To set a city, say “My city is …”. “Use my location” is the only kind of request that can ask for device permission and use rounded coordinates to verify a city.
+- **Chat location:** Chat verifies cities and asks you to confirm uncertain matches. Set a preferred city with “Set my city to …”, or explicitly share your device location to check rounded coordinates. Web search receives only the current query, not earlier conversation text.
 - **Guest Mode:** Anonymous users can browse the public community channel in read-only mode without creating an account, enforced by [`firestore.rules`](firestore.rules).
 - **Human-in-the-Loop Complaints:** Drafted complaint emails are **never** sent automatically. Users review, edit, copy, or open them in Gmail with explicit confirmation.
 - **Jurisdiction Checks:** When an Indian city has no verified local contact, EcoPulse links to the official national portal for the issue, such as [CPGRAMS](https://pgportal.gov.in). It does not reuse Indian contacts for a photo or request from another country.
@@ -257,7 +249,7 @@ npx firebase-tools deploy --only firestore:rules,firestore:indexes
 ```
 
 ### Vercel Deployment
-The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serverless endpoints (`api/ai/chat.js`, `api/ai/health.js`, `api/ai/speech.js`):
+The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serverless endpoints (`api/ai/chat.js`, `api/ai/health.js`):
 1. Add server-side keys (`GEMINI_API_KEY`, `TAVILY_API_KEY`, `OPENROUTER_API_KEY`) in **Vercel Project Settings → Environment Variables**.
 2. Add `VITE_FIREBASE_*` variables for the client build.
 3. Add your deployed Vercel domain under **Firebase Authentication → Settings → Authorized domains**.
@@ -272,7 +264,7 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run build` | Build optimized production bundle into `dist/` |
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run static checks with **Oxlint** |
-| `npm test` | Run location, voice-reply and speech-endpoint regression tests |
+| `npm test` | Run Chat, location verification, and Community regression tests |
 
 ---
 

@@ -1,4 +1,4 @@
-import { labeledCity, resolveTalkTurn, routeTalkRequest, talkPlaceName } from './talkContext.js';
+import { labeledCity, placeName, resolvePlaceTurn, routePlaceRequest } from './placeContext.js';
 import { INTENTS } from './intentEngine.js';
 
 export const AWAITING_CHAT_PLACE = 'CHAT_PLACE_AWAITING_INPUT';
@@ -15,7 +15,7 @@ export function incidentCity(text) {
   if (label) return label;
   const mentions = text.matchAll(/\bin\s+(?!(?:front\s+of|flames|progress)\b)([^?!.;\n]+?)(?=\s+(?:in|on|at|by|near|around|beside|since|after|before|last)\s+|[?!.;\n]|$)/gi);
   for (const [, candidate] of mentions) {
-    const place = talkPlaceName(candidate);
+    const place = placeName(candidate);
     if (place) return place;
   }
   return '';
@@ -28,10 +28,9 @@ const knownCities = new Set([
   'patna', 'bhubaneswar', 'guwahati', 'visakhapatnam', 'vadodara', 'ghaziabad', 'ludhiana', 'agra', 'nashik',
 ]);
 
-// Share location verification, but not Talk's session, or even its reply format.
 export async function resolveChatPlace(message, history, location, pending, { chosenLocation = null, draftDetails = false, fromPhoto = false, ...options } = {}) {
   const waiting = pending?.type === AWAITING_CHAT_PLACE ? pending.waiting : null;
-  let route = routeTalkRequest(message, history);
+  let route = routePlaceRequest(message, history);
   const continuingDraft = draftDetails && pending?.type === AWAITING_DRAFT_DETAILS && ['general', 'tool'].includes(route.kind);
   if (continuingDraft) {
     route = {
@@ -43,16 +42,16 @@ export async function resolveChatPlace(message, history, location, pending, { ch
   let possibleCityOnly = false;
   if (route.kind === 'general' && !waiting) {
     if (route.intent) return route;
-    const place = talkPlaceName(message);
+    const place = placeName(message);
     const known = knownCities.has(place.toLowerCase());
     possibleCityOnly = !known && /^(?:\p{Lu}[\p{L}'’.-]*)(?:\s+\p{Lu}[\p{L}'’.-]*){0,3}(?:,\s*[^,]+){0,2}$/u.test(place);
     if (!known && !possibleCityOnly) return null;
     route = { kind: 'tool', intent: INTENTS.ASK_QUESTION, needsPlace: true, place, snapshot: true };
   }
   if (route.kind === 'tool' && !route.needsPlace) return null;
-  const resolved = await resolveTalkTurn(message, {
+  const resolved = await resolvePlaceTurn(message, {
     location: continuingDraft ? pending.location : location, chosenLocation, waiting,
-  }, { ...options, history, route });
+  }, route, options);
   // A capitalized word like “Photosynthesis” isn't necessarily a city. If no
   // place matches and the user didn't ask for local data, leave it to Chat.
   if (possibleCityOnly && resolved.kind === 'reply' && !resolved.context.waiting?.candidate && !resolved.ambiguous) return null;

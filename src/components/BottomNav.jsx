@@ -1,9 +1,8 @@
 // BottomNav — persistent bottom navigation bar
 import { useNavigate, useLocation } from 'react-router-dom';
-import { MessageCircle, Users, CalendarDays, AudioWaveform } from 'lucide-react';
+import { MessageCircle, Users, CalendarDays } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { path: '/talk',      icon: AudioWaveform,  label: 'AI Talk' },
   { path: '/',          icon: MessageCircle, label: 'Chat' },
   { path: '/community', icon: Users,         label: 'Community' },
   { path: '/meetups',   icon: CalendarDays,  label: 'Events' },

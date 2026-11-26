@@ -1,5 +1,8 @@
 {
   "framework": "vite",
+  "redirects": [
+    { "source": "/talk", "destination": "/", "permanent": false }
+  ],
   "rewrites": [
     {
       "source": "/__/auth/:path*",

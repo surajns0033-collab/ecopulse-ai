@@ -7,7 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 export default function Header({ onRefresh }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const isSubPage = !['/', '/talk', '/community', '/meetups'].includes(location.pathname);
+  const isSubPage = !['/', '/community', '/meetups'].includes(location.pathname);
   const { user, signOut, authMode } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
 

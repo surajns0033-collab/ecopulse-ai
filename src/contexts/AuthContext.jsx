@@ -11,7 +11,6 @@ import {
   signInWithEmailLink,
 } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../firebase/config';
-import { clearTalkSession } from '../services/talkSession';
 
 const AuthContext = createContext(null);
 
@@ -25,7 +24,8 @@ export function AuthProvider({ children }) {
 
   const firebaseReady = isFirebaseConfigured;
   const resetUser = useCallback(() => {
-    clearTalkSession();
+    // Keep clearing any legacy Talk history on sign-out.
+    try { sessionStorage.removeItem('echopulse_talk_session_v1'); } catch { /* storage can be disabled */ }
     setUser(null);
     setAuthMode(null);
     setCommunityName('');

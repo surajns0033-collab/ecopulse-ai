@@ -1,5 +1,5 @@
 // App.jsx — root component with routing and providers
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useMatch } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AppProvider } from './contexts/AppProvider';
@@ -9,7 +9,6 @@ const ChatPage = lazy(() => import('./pages/ChatPage'));
 const MeetupsPage = lazy(() => import('./pages/MeetupsPage'));
 const CommunityPage = lazy(() => import('./pages/CommunityPage'));
 const ReportDetailPage = lazy(() => import('./pages/ReportDetailPage'));
-const TalkPage = lazy(() => import('./pages/TalkPage'));
 
 function AppLoader({ label = 'Loading EcoPulse AI...' }) {
   return (
@@ -26,6 +25,12 @@ function AppLoader({ label = 'Loading EcoPulse AI...' }) {
 
 function AppInner() {
   const { user, loading } = useAuth();
+  const isOldTalkLink = useMatch('/talk');
+  const { search, hash } = useLocation();
+
+  if (isOldTalkLink) {
+    return <Navigate to={{ pathname: '/', search, hash }} replace />;
+  }
 
   // Show nothing while checking auth state
   if (loading) {
@@ -45,7 +50,6 @@ function AppInner() {
           <Route path="/meetups" element={<MeetupsPage />} />
           <Route path="/community" element={<CommunityPage />} />
           <Route path="/report/:id" element={<ReportDetailPage />} />
-          <Route path="/talk" element={<TalkPage />} />
         </Routes>
       </Suspense>
     </AppProvider>

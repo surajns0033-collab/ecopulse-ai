@@ -3,12 +3,12 @@
 import { detectIntent, INTENTS } from './intentEngine';
 import { isSmogProfile, parseSmogProfile } from './smogProfile';
 import { AWAITING_CHAT_PLACE, AWAITING_DRAFT_DETAILS, incidentCity, isDraftDetailFragment, resolveChatPlace } from './chatPlaces';
-import { asksForForecast } from './talkContext';
+import { asksForForecast } from './placeContext';
 import { tools } from '../services/agentTools';
 import { getChatResponse, getJsonResponse, isAIUnavailable } from '../services/geminiService';
 import { buildFallbackReply, buildComplaintEmailTemplate, contactLines } from './fallbackBrain';
 import { getAQIInsight, getAQICategory, getAirQuality, getAirQualityForecast, getWeather } from '../services/environmentalData';
-import { lookupTalkPlace } from '../services/talkPlaces';
+import { lookupPlace } from '../services/placeLookup';
 import { getAuthorityBundle, isIndianPlace } from '../services/authorityDirectory';
 import { COLLECTIONS } from '../firebase/collections';
 import { db, isFirebaseConfigured } from '../firebase/config';
@@ -29,17 +29,16 @@ function resolveCity(city) {
   return null; // null = location unknown
 }
 
-export async function processMessage(userMessage, conversationHistory, user, location, imageData, pendingAction, { chosenLocation, photoLocation, voiceIntent, signal } = {}) {
+export async function processMessage(userMessage, conversationHistory, user, location, imageData, pendingAction, { chosenLocation, photoLocation, signal } = {}) {
   const userId = user?.uid || 'anonymous';
-  const logUserId = voiceIntent ? null : userId;
-  const followingSmog = pendingAction?.type === 'SMOG_PLAN_AWAITING_PROFILE' && (voiceIntent || isSmogProfile(userMessage));
+  const followingSmog = pendingAction?.type === 'SMOG_PLAN_AWAITING_PROFILE' && isSmogProfile(userMessage);
 
   try {
     if (imageData?.base64) {
       // The city in a different Chat turn needn't be where a photo was taken.
       // Keep the analysis useful, but don't prefill a recipient from that city.
       const candidate = incidentCity(userMessage || '');
-      const verifiedLocation = candidate ? (await lookupTalkPlace(candidate, { signal })).location : null;
+      const verifiedLocation = candidate ? (await lookupPlace(candidate, { signal })).location : null;
       return await handleImageAnalysis(imageData, userMessage, userId, verifiedLocation);
     }
 
@@ -48,7 +47,7 @@ export async function processMessage(userMessage, conversationHistory, user, loc
     const chatLocation = fromPhoto ? photoLocation : location;
     const draftDetails = !fromPhoto && pendingAction?.type === AWAITING_DRAFT_DETAILS &&
       (describesIssue(userMessage) || isDraftDetailFragment(userMessage));
-    const placeTurn = voiceIntent || followingSmog ? null :
+    const placeTurn = followingSmog ? null :
       await resolveChatPlace(userMessage, conversationHistory, chatLocation, fromPhoto ? null : pendingAction, {
         chosenLocation: fromPhoto ? null : chosenLocation, draftDetails, fromPhoto, signal,
       });
@@ -75,17 +74,17 @@ export async function processMessage(userMessage, conversationHistory, user, loc
     const city = resolveCity(active?.city);
     const message = placeTurn?.message || userMessage;
     const { intent: detectedIntent, confidence, entities } = detectIntent(message, conversationHistory);
-    const intent = voiceIntent || placeTurn?.intent || (placeTurn?.kind === 'web' ? INTENTS.ASK_QUESTION : detectedIntent);
-    logAction(logUserId, 'intent_detected', { intent, confidence });
+    const intent = placeTurn?.intent || (placeTurn?.kind === 'web' ? INTENTS.ASK_QUESTION : detectedIntent);
+    logAction(userId, 'intent_detected', { intent, confidence });
 
     let result;
 
     if (followingSmog) {
-      result = await handleSmogPlanProfile(message, { city, lat, lng }, Boolean(voiceIntent), signal);
+      result = await handleSmogPlanProfile(message, { city, lat, lng }, signal);
     } else {
       switch (intent) {
       case INTENTS.GET_AIR_QUALITY:
-        result = await handleAirQuality(lat, lng, city, logUserId, { signal, forecast: asksForForecast(message) });
+        result = await handleAirQuality(lat, lng, city, userId, { signal, forecast: asksForForecast(message) });
         break;
 
       case INTENTS.GET_WATER_QUALITY:
@@ -93,11 +92,11 @@ export async function processMessage(userMessage, conversationHistory, user, loc
         break;
 
       case INTENTS.GET_WEATHER:
-        result = await handleWeather(lat, lng, city, logUserId, { signal, forecast: asksForForecast(message) });
+        result = await handleWeather(lat, lng, city, userId, { signal, forecast: asksForForecast(message) });
         break;
 
       case INTENTS.FIND_EVENTS:
-        result = await handleFindEvents(city, entities?.category, logUserId);
+        result = await handleFindEvents(city, entities?.category, userId);
         break;
 
       case INTENTS.JOIN_EVENT:
@@ -109,11 +108,11 @@ export async function processMessage(userMessage, conversationHistory, user, loc
         break;
 
       case INTENTS.CREATE_REPORT:
-        result = voiceIntent ? await handleAuthorityContacts(message, { city }) : await handleCreateReport(message, userId, { lat, lng, city });
+        result = await handleCreateReport(message, userId, { lat, lng, city });
         break;
 
       case INTENTS.CREATE_EMAIL:
-        result = voiceIntent ? await handleAuthorityContacts(message, { city }) : await handleCreateEmail(message, conversationHistory, city, placeTurn);
+        result = await handleCreateEmail(message, conversationHistory, city, placeTurn);
         break;
 
       case INTENTS.GET_AUTHORITY_CONTACTS:
@@ -129,7 +128,7 @@ export async function processMessage(userMessage, conversationHistory, user, loc
         break;
 
       case INTENTS.GET_HEALTH_TIPS:
-        result = voiceIntent ? await handleAirQuality(lat, lng, city, null, { signal }) : await handleHealthTips(lat, lng, city);
+        result = await handleHealthTips(lat, lng, city);
         break;
 
       case INTENTS.GET_ROUTES:
@@ -161,7 +160,7 @@ export async function processMessage(userMessage, conversationHistory, user, loc
   } catch (err) {
     signal?.throwIfAborted();
     console.error('Orchestrator error:', err);
-    logAction(logUserId, 'error', { error: err.message });
+    logAction(userId, 'error', { error: err.message });
     return {
       text: "I encountered an issue processing that request. Please try again.",
       cards: [], actions: [], status: 'error',
@@ -207,7 +206,7 @@ function lowestAqiWindow(forecast) {
   };
 }
 
-async function handleSmogPlanProfile(userMessage, location, voice, signal) {
+async function handleSmogPlanProfile(userMessage, location, signal) {
   const targetCity = location?.city || 'your area';
   const lat = location?.lat;
   const lng = location?.lng;
@@ -223,13 +222,10 @@ async function handleSmogPlanProfile(userMessage, location, voice, signal) {
   const profile = parseSmogProfile(userMessage);
   const [aqi, weather, forecast] = await Promise.all([
     getAirQuality(lat, lng, targetCity, { signal }),
-    voice ? null : getWeather(lat, lng, { signal }),
-    voice ? null : getAirQualityForecast(lat, lng, { signal }),
+    getWeather(lat, lng, { signal }),
+    getAirQualityForecast(lat, lng, { signal }),
   ]);
   const hasAqi = aqi?.aqi != null && Number.isFinite(Number(aqi.aqi));
-  if (voice) {
-    return { speechData: { profile }, cards: hasAqi ? [{ type: 'aqi', data: aqi }] : [], status: hasAqi ? 'success' : 'unavailable' };
-  }
   const category = getAQICategory(aqi?.aqi);
   const severe = hasAqi && aqi.aqi >= 151;
   const sensitive = hasAqi && aqi.aqi >= 101;
@@ -391,7 +387,6 @@ async function handleWeather(lat, lng, city, userId, { signal, forecast } = {}) 
 
   return {
     text: `${forecast ? "I couldn't verify a forecast for the time you asked about. " : ''}Here's the current weather in **${displayCity}**. 🌤️\n\n🌡️ Temperature: **${weather.temp}°C**${Number.isFinite(weather.feelsLike) ? ` (feels like ${weather.feelsLike}°C)` : ''}\n💧 Humidity: ${Number.isFinite(weather.humidity) ? `${weather.humidity}%` : 'unavailable'}\n💨 Wind: ${Number.isFinite(weather.windSpeed) ? `${weather.windSpeed} m/s` : 'unavailable'}\n☁️ Conditions: ${weather.description}\n\n🛡️ **Precautions based on the current reading**\n${precautions.map((tip) => `• ${tip}`).join('\n')}\n\nSource: [${weather.source}](${weather.sourceUrl}). These are current-condition precautions, not a severe-weather warning or medical advice.`,
-    speechData: { weather },
     cards: [],
     actions: [
       { label: '🌬️ Check AQI', action: 'QUICK_AQI', variant: 'secondary' },
@@ -712,7 +707,6 @@ async function handleAuthorityContacts(userMessage, location) {
   return {
     text,
     cards: [],
-    speechData: recipient.portalUrl ? { contact: { organization: recipient.organization, portal: recipient.portalUrl, source: recipient.sourceUrl, national: Boolean(recipient.localUnavailable) } } : null,
     actions: [
       { label: '📧 Draft Complaint Email', action: 'QUICK_DRAFT_EMAIL', variant: 'primary' },
       { label: '📋 File Report', action: 'QUICK_REPORT', variant: 'secondary' },

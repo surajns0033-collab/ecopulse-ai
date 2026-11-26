@@ -5,8 +5,6 @@
 // live APIs and verified contacts when the sentinel comes back.
 
 import { requestAI } from './aiClient.js';
-import { canonicalTalkLocale } from './talkLanguage.js';
-import { TALK_HISTORY_LIMIT } from './talkSession.js';
 
 /** Returned when no AI provider could be reached. */
 export const AI_UNAVAILABLE_TEXT =
@@ -96,31 +94,6 @@ export async function getChatResponse(messages, systemContext = '', options = {}
     .map((source) => `• ${source.title}: ${source.url}`)
     .join('\n');
   return `${text}\n\n**Sources**\n${sources}`;
-}
-
-/** Low-latency response path for voice conversations. */
-export async function getVoiceResponse(messages, options = {}) {
-  const useSearch = options.useSearch ?? false;
-  const history = toHistory(useSearch ? messages.slice(-1) : messages, TALK_HISTORY_LIMIT + 1);
-  if (!history.length) return null;
-  const locale = canonicalTalkLocale(options.language);
-  const language = locale && new Intl.DisplayNames(['en'], { type: 'language' }).of(locale);
-  const result = await requestAI({
-    system: useSearch ? '' : `You are EcoPulse AI, a general conversation partner. Respond with a JSON object containing "text" (one or two short, natural sentences to speak, no formatting) and "locale" (the BCP 47 language tag for that text). ${language ? `Reply in ${language}, even if earlier turns used another language.` : 'Match the latest user message’s language, not the language of earlier replies. Use English if the latest message has no identifiable language.'} Write Hindi or Marathi in Devanagari, even for Romanized input. Answer what the user asked in plain language. If the request is unclear, ask a short follow-up instead of inventing a request. Build on the earlier exchanges for follow-up questions without making the user repeat details. ${CORRECTION_GUIDANCE} Treat “what’s going on?” and similar greetings as small talk. Only ask for a city if the request needs one. Never treat a previous reading as current, assume the user's location, or guess live facts or contacts.`,
-    messages: history,
-    timeoutMs: 12000,
-    useSearch,
-    mode: 'talk',
-    signal: options.signal,
-  });
-  if (!result?.text?.trim()) return null;
-  if (useSearch) return result.sources?.length ? { text: result.text.trim(), sources: result.sources } : null;
-  try {
-    const reply = JSON.parse(result.text.trim().replace(/^```(?:json)?\s*|\s*```$/gi, ''));
-    const spokenLocale = canonicalTalkLocale(reply?.locale);
-    if (spokenLocale && typeof reply.text === 'string' && reply.text.trim()) return { text: reply.text.trim(), locale: spokenLocale };
-  } catch { /* Never play protocol text as a reply. */ }
-  return null;
 }
 
 /**
