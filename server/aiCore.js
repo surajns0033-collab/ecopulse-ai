@@ -96,7 +96,7 @@ function buildGeminiContents(messages, images) {
 async function callGemini(payload) {
   if (Date.now() < state.geminiDisabledUntil) throw new Error('Gemini key rejected earlier â€” skipped')
 
-  const candidates = [state.geminiWorkingModel, payload.model].filter(Boolean)
+  const candidates = [payload.model, state.geminiWorkingModel].filter(Boolean)
   if (!state.geminiModels) {
     const listed = await listGeminiModels(payload.key)
     candidates.push(...listed)
@@ -134,7 +134,7 @@ async function callGemini(payload) {
         .join('')
         .trim()
       if (text) {
-        state.geminiWorkingModel = model
+        if (!payload.model) state.geminiWorkingModel = model
         const chunks = candidate?.groundingMetadata?.groundingChunks || []
         const sources = chunks
           .map((chunk) => chunk?.web)
@@ -382,7 +382,7 @@ export function makeAiHandler(env) {
           key: geminiKey,
           contents: buildGeminiContents(payload.messages, payload.images),
           system: payload.system,
-          model: env.GEMINI_MODEL,
+          model: payload.model || env.GEMINI_MODEL,
           temperature: payload.temperature,
           maxTokens: payload.maxTokens,
           timeoutMs: payload.timeoutMs,

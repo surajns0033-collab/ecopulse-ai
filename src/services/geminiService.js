@@ -89,6 +89,21 @@ export async function getChatResponse(messages, systemContext = '', options = {}
   return `${text}\n\n**Sources**\n${sources}`;
 }
 
+/** Low-latency response path for voice conversations. */
+export async function getVoiceResponse(messages, options = {}) {
+  const history = toHistory(messages, 8);
+  if (!history.length) return AI_UNAVAILABLE_TEXT;
+  const result = await requestAI({
+    system: 'You are EcoPulse AI in a voice conversation. Reply naturally in the user\'s language in one or two short spoken sentences. Never use headings, bullets, markdown, URLs, feature lists, or canned advertising. Ask one brief follow-up when useful. Do not invent current facts.',
+    messages: history,
+    temperature: options.temperature ?? 0.55,
+    maxTokens: options.maxTokens ?? 500,
+    timeoutMs: options.timeoutMs ?? 18000,
+    model: options.model ?? 'gemini-3.1-flash-lite',
+  });
+  return result?.text?.trim() || AI_UNAVAILABLE_TEXT;
+}
+
 /**
  * Ask for a strict JSON object. Returns null when unavailable or unparseable,
  * so callers can fall back to their deterministic path.

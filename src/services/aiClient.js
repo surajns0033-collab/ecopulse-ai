@@ -43,7 +43,7 @@ async function postJson(url, body, timeoutMs) {
 }
 
 /** Direct browser → Gemini REST call (works even when the dev proxy is absent). */
-async function callGeminiDirect({ system, messages, images, temperature, maxTokens, timeoutMs, useSearch }) {
+async function callGeminiDirect({ system, messages, images, temperature, maxTokens, timeoutMs, useSearch, model }) {
   const key = (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
   if (!key || /^your_/i.test(key)) throw new Error('No browser Gemini key configured');
 
@@ -77,6 +77,7 @@ async function callGeminiDirect({ system, messages, images, temperature, maxToke
   if (useSearch) body.tools = [{ google_search: {} }];
 
   const models = [
+    model,
     import.meta.env.VITE_GEMINI_MODEL,
     'gemini-2.5-flash',
     'gemini-2.0-flash',
@@ -124,6 +125,7 @@ export async function requestAI({
   maxTokens = 600,
   timeoutMs = 30000,
   useSearch = false,
+  model = '',
 } = {}) {
   const cleanMessages = (messages || [])
     .map((m) => ({ role: m.role === 'assistant' || m.role === 'ai' ? 'assistant' : 'user', text: (m.text || '').trim() }))
@@ -139,6 +141,7 @@ export async function requestAI({
     maxTokens,
     timeoutMs,
     useSearch,
+    model,
   };
 
   // 1. Server proxy (preferred — keeps keys private, handles CORS & provider fallback)
@@ -163,7 +166,7 @@ export async function requestAI({
 
   // 2. Direct Gemini from the browser (only if a real key is present)
   try {
-    const direct = await callGeminiDirect({ system, messages: cleanMessages, images, temperature, maxTokens, timeoutMs, useSearch });
+    const direct = await callGeminiDirect({ system, messages: cleanMessages, images, temperature, maxTokens, timeoutMs, useSearch, model });
     state.lastProvider = direct.provider;
     return direct;
   } catch (err) {

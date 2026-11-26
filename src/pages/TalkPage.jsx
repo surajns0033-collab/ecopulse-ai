@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
 import { processMessage } from '../agent/agentOrchestrator';
 import { DEFAULT_LOCATION } from '../services/environmentalData';
-import { getChatResponse, isAIUnavailable } from '../services/geminiService';
+import { getVoiceResponse, isAIUnavailable } from '../services/geminiService';
 
 function cardSpeech(cards = [], existingText = '') {
   if (/\bAQI\b/i.test(existingText)) return '';
@@ -24,9 +24,10 @@ export default function TalkPage() {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [error, setError] = useState('');
-  const [mouthOpen, setMouthOpen] = useState(false);
+  const [speechPulse, setSpeechPulse] = useState(false);
   const recognitionRef = useRef(null);
   const pendingActionRef = useRef(null);
+  const voiceListRef = useRef([]);
   const speechLanguageRef = useRef(
     typeof navigator !== 'undefined' && /^(?:hi|mr|en)-/i.test(navigator.language)
       ? navigator.language
@@ -41,6 +42,17 @@ export default function TalkPage() {
   useEffect(() => () => {
     recognitionRef.current?.abort?.();
     window.speechSynthesis?.cancel();
+  }, []);
+
+  useEffect(() => {
+    if (!window.speechSynthesis) return undefined;
+    const loadVoices = () => {
+      const available = window.speechSynthesis.getVoices();
+      if (available.length) voiceListRef.current = available;
+    };
+    loadVoices();
+    window.speechSynthesis.addEventListener?.('voiceschanged', loadVoices);
+    return () => window.speechSynthesis.removeEventListener?.('voiceschanged', loadVoices);
   }, []);
 
   function cleanSpeech(textValue) {
@@ -58,17 +70,19 @@ export default function TalkPage() {
     return sentences.slice(0, 2).join(' ').trim();
   }
 
-  async function spokenReply(rawAnswer, userText) {
+  function spokenReply(rawAnswer, response) {
     const clean = cleanSpeech(rawAnswer);
     const sentenceCount = (clean.match(/[.!?]+/g) || []).length;
     if (clean.length <= 260 && sentenceCount <= 2 && !/\bDirect impact:/i.test(rawAnswer)) return clean;
-
-    const condensed = await getChatResponse(
-      [{ role: 'user', text: `User said: "${userText}"\nFactual assistant result: "${clean.slice(0, 5000)}"\nReply as a natural voice companion in at most two short sentences. Preserve the most useful live number or action. No list, heading, markdown, URL, feature advertisement, or disclaimer unless safety-critical.` }],
-      'Voice-only conversation. Keep supplied facts unchanged and sound natural rather than reading a report.',
-      { maxTokens: 700, timeoutMs: 20000, temperature: 0.45 },
-    );
-    return isAIUnavailable(condensed) ? shortFallback(clean) : cleanSpeech(condensed);
+    if (response?.pending === 'SMOG_PLAN_AWAITING_PROFILE') {
+      return 'Tell me your usual commute, daily routine, cooking setup, air cleaning, and whether children, older adults, or anyone with heart or lung sensitivity is at home.';
+    }
+    const aqi = response?.cards?.find((card) => card.type === 'aqi')?.data;
+    if (aqi?.aqi != null) {
+      const priority = clean.match(/Top priority:?\s*([^.!?]+[.!?]?)/i)?.[1];
+      return `Your current AQI is ${aqi.aqi}. ${priority ? `Your top priority is ${priority}` : shortFallback(clean)}`;
+    }
+    return shortFallback(clean);
   }
 
   function speak(answer) {
@@ -79,20 +93,36 @@ export default function TalkPage() {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(answer.replace(/[*#_`]/g, ''));
     utterance.lang = /[\u0900-\u097F]/.test(answer) ? speechLanguageRef.current : 'en-IN';
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find((voice) => voice.lang.toLowerCase().startsWith(utterance.lang.slice(0, 2).toLowerCase()) && /natural|neural|google|microsoft/i.test(voice.name))
-      || voices.find((voice) => voice.lang.toLowerCase().startsWith(utterance.lang.slice(0, 2).toLowerCase()));
+    const voices = voiceListRef.current.length ? voiceListRef.current : window.speechSynthesis.getVoices();
+    const languageRoot = utterance.lang.slice(0, 2).toLowerCase();
+    const scored = voices
+      .filter((voice) => voice.lang.toLowerCase().startsWith(languageRoot))
+      .map((voice) => {
+        let score = 0;
+        const name = voice.name.toLowerCase();
+        if (voice.lang.toLowerCase() === utterance.lang.toLowerCase()) score += 30;
+        if (/natural|neural/.test(name)) score += 120;
+        if (/google/.test(name)) score += 85;
+        if (/google uk english female/.test(name)) score += 35;
+        if (/google हिन्दी/.test(voice.name)) score += 35;
+        if (/female|zira|heera|kalpana/.test(name)) score += 8;
+        if (/microsoft david/.test(name)) score -= 30;
+        return { voice, score };
+      })
+      .sort((a, b) => b.score - a.score);
+    const preferred = scored[0]?.voice;
     if (preferred) utterance.voice = preferred;
-    utterance.rate = 1.03;
-    utterance.pitch = 1;
+    utterance.rate = 0.96;
+    utterance.pitch = 1.02;
+    utterance.volume = 1;
     utterance.onstart = () => setMode('speaking');
     utterance.onboundary = (event) => {
       if (event.name === 'word' || event.charLength > 0) {
-        setMouthOpen((current) => !current);
+        setSpeechPulse((current) => !current);
       }
     };
-    utterance.onend = () => { setMouthOpen(false); setMode('idle'); };
-    utterance.onerror = () => { setMouthOpen(false); setMode('idle'); };
+    utterance.onend = () => { setSpeechPulse(false); setMode('idle'); };
+    utterance.onerror = () => { setSpeechPulse(false); setMode('idle'); };
     window.speechSynthesis.speak(utterance);
   }
 
@@ -108,10 +138,22 @@ export default function TalkPage() {
     setMode('thinking');
     try {
       const history = messagesRef.current.map((message) => ({ role: message.role, text: message.text }));
-      const response = await Promise.race([
-        processMessage(cleaned, history, user, location || DEFAULT_LOCATION, null, pendingActionRef.current),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Talk request timed out')), 45000)),
-      ]);
+      const needsTools = Boolean(pendingActionRef.current) || /\b(aqi|air quality|weather|smog|pollution|pm2\.5|pm10|map|location|complaint|report|authority|garbage|dumping|burning|sewage|naala|tree cutting|parking|latest|search the web)\b/i.test(cleaned);
+      let response;
+      if (needsTools) {
+        response = await Promise.race([
+          processMessage(cleaned, history, user, location || DEFAULT_LOCATION, null, pendingActionRef.current),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Talk request timed out')), 40000)),
+        ]);
+      } else {
+        const voiceText = await Promise.race([
+          getVoiceResponse([...history, userMessage], { timeoutMs: 18000, maxTokens: 500 }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Talk request timed out')), 25000)),
+        ]);
+        response = isAIUnavailable(voiceText)
+          ? await processMessage(cleaned, history, user, location || DEFAULT_LOCATION, null, pendingActionRef.current)
+          : { text: voiceText, cards: [], status: 'success' };
+      }
       if (response.resolvedLocation) setLocation(response.resolvedLocation);
       if (response.pending) {
         pendingActionRef.current = { type: response.pending, city: (location || DEFAULT_LOCATION).city };
@@ -120,7 +162,7 @@ export default function TalkPage() {
       }
       const responseText = response.text || 'I’m listening.';
       const factualAnswer = `${responseText}${cardSpeech(response.cards, responseText)}`.trim();
-      const answer = await spokenReply(factualAnswer, cleaned);
+      const answer = spokenReply(factualAnswer, response);
       const aiMessage = { role: 'ai', text: answer };
       setMessages((current) => [...current, aiMessage]);
       speak(answer);
@@ -181,7 +223,7 @@ export default function TalkPage() {
     window.speechSynthesis?.cancel();
     setMessages([]);
     pendingActionRef.current = null;
-    setMouthOpen(false);
+    setSpeechPulse(false);
     setError('');
     setMode('idle');
   }
@@ -211,16 +253,15 @@ export default function TalkPage() {
 
         <section className="talk-visual-section">
           <button
-            className={`air-visual ${mode}`}
+            className={`air-visual ${mode}${speechPulse ? ' pulse' : ''}`}
             onClick={mode === 'listening' ? stopListening : mode === 'idle' ? startListening : undefined}
             disabled={mode === 'thinking' || mode === 'speaking'}
             aria-label={mode === 'listening' ? 'Stop listening' : 'Start AI Talk'}
           >
-            <span className="air-tree-canopy" />
-            <span className="air-tree-stem" />
-            <span className="air-eye left"><i /></span>
-            <span className="air-eye right"><i /></span>
-            <span className={`air-mouth${mouthOpen ? ' open' : ''}`} />
+            <span className="air-vortex" />
+            <span className={`air-wave${speechPulse ? ' pulse' : ''}`}>
+              <i /><i /><i /><i /><i /><i /><i />
+            </span>
             <span className="air-particle p1" />
             <span className="air-particle p2" />
             <span className="air-particle p3" />
