@@ -2,7 +2,7 @@
   <img src="public/favicon.svg" alt="EcoPulse AI Logo" width="88" />
   <h1>EcoPulse AI</h1>
   <p>
-    <strong>Your personal AI companion for cleaner air, safer routines and smarter everyday decisions during urban pollution.</strong>
+    <strong>Conversational intelligence for live environmental telemetry, civic grievance routing, and privacy-first community action.</strong>
   </p>
 
   <p>
@@ -54,37 +54,21 @@ Instead of leaving users with generic chatbot replies or unverified contact deta
 | :--- | :--- | :--- |
 | **Conversational Assistant** | Natural-language chat in **English, Hindi, and Hinglish** with automatic language detection, daily-life civic guidance, and deterministic fallback responses. | Gemini AI, OpenRouter Free, `fallbackBrain.js` |
 | **Live AQI & Weather** | Real-time Air Quality Index (`PM2.5`, `PM10`, `NO₂`, `O₃`), weather conditions, and actionable health insights for any city worldwide. | Open-Meteo Air Quality & Forecast APIs |
-| **Personal Smog Action Plan** | Tailors a live-AQI plan to the city and the user's routine, with lower-emission choices, indoor-air steps, and an AQI forecast window when available. | Open-Meteo + deterministic exposure/action engine |
 | **Typo-Tolerant Global Maps** | Resolves misspelled or landmark-level locations (e.g., reserves, beaches, neighborhoods) into verified coordinates and Google Maps deep links. | Open-Meteo, Photon, Nominatim (OSM) |
-| **Civic Grievance & Email Routing** | Identifies the incident jurisdiction, links official contacts where available, and prepares an editable draft. Opening Gmail requires confirmation and never sends the draft. | `authorityDirectory.js`, `agentTools.js` |
-| **Grounded Web Research** | Answers current-events and policy questions with clickable sources and asks for a city when a local search needs one. | Tavily Search API (`/api/ai/chat`) |
+| **Civic Grievance & Email Routing** | Classifies incidents (tree cutting, mangrove dumping, open burning, sewage, waste), surfaces verified helplines/portals, and drafts formal complaints with **Forest Dept CC** and **1-click Gmail Compose**. | `authorityDirectory.js`, `agentTools.js` |
+| **Grounded Web Research** | Answers current-events and policy questions with cited, clickable official sources rather than ungrounded guesses. | Tavily Search API (`/api/ai/chat`) |
 | **Vision & Opt-In OCR** | Analyzes uploaded incident photos for severity and category, with private on-device classification and opt-in multilingual OCR (**English, Hindi, Marathi**). | Gemini Vision, Transformers.js (CLIP), Tesseract.js |
-| **Community & Eco-Meetups** | Public location-tagged channel with newest messages at the bottom, stable per-user identity colours, local eco-events, RSVP support, and guest read-only mode. | Firebase Auth, Cloud Firestore |
-
----
-
-## 🌫 Challenge 6 — Urban Air Quality Assistant
-
-EcoPulse directly addresses the challenge with:
-
-- **Severe winter-smog mode** driven by live AQI, PM2.5, PM10, temperature, and wind.
-- **Lifestyle personalization** for commute mode, work/school/outdoor routine, cooking fuel, air filtration, children, older adults, and heart/lung sensitivity.
-- **Low-emission alternatives** such as public transit, carpooling, trip batching, anti-idling, and zero-tailpipe active travel when exposure conditions allow.
-- **Indoor-air hacks** covering a cleaner-air room, HEPA use, damp cleaning, ventilation timing, cooking exhaust, and avoidance of ozone/ionizer devices.
-- **24-hour AQI planning** that identifies the forecast's lowest-AQI outdoor window.
-- **Action → direct impact** cards that explain both exposure and emissions outcomes without inventing quantified savings.
-- **Community-scale action** for no-burning, no-idling, hotspot evidence, and verified civic reporting.
-- **Private lifestyle details** are used to tailor the plan, not stored in shared community documents.
+| **Community & Eco-Meetups** | Public location-tagged community feed and local eco-events (cleanups, plantation drives) with RSVP support and guest read-only mode. | Firebase Auth, Cloud Firestore |
 
 ---
 
 ## 🏗 Architecture
 
-AI and web-search provider keys are configured server-side. Vite serves `/api/ai/chat` locally; a Vercel Function serves it in production.
+All AI and web-search provider secrets remain server-side behind `/api/ai/chat` (handled by the Vite dev proxy locally and Vercel Serverless Functions in production).
 
 ```mermaid
 flowchart TB
-    UI["React 19 PWA UI<br/>(Chat, Community, Events)"] --> IE["Intent Engine & Orchestrator<br/>(intentEngine.js / agentOrchestrator.js)"]
+    UI["React 19 PWA UI<br/>(Chat, Meetups, Community, Report Detail)"] --> IE["Intent Engine & Orchestrator<br/>(intentEngine.js / agentOrchestrator.js)"]
 
     IE -->|"AQI & Weather"| OM["Open-Meteo APIs"]
     IE -->|"Geocoding & Maps"| GEO["Open-Meteo + Photon + Nominatim"]
@@ -107,9 +91,8 @@ flowchart TB
 
 | Capability | Primary Provider | Fallback Chain |
 | :--- | :--- | :--- |
-| **Chat** | Google Gemini | OpenRouter Free → Deterministic `fallbackBrain.js` |
-| **Civic complaint drafts** | User-provided details and verified directory, formatted locally | An unaddressed draft when no local email is verified |
-| **Grounded Web Search** | Tavily Basic Search | Gemini grounding |
+| **Chat & Drafting** | Google Gemini | OpenRouter Free → Deterministic `fallbackBrain.js` |
+| **Grounded Web Search** | Tavily Search | Gemini grounding → Honest unavailable notice |
 | **Image Classification** | Gemini Vision | On-device CLIP (`onDeviceVision.js`) → User confirmation |
 | **Document / Sign OCR** | Tesseract.js (opt-in) | Prompt user to clarify unclear text |
 | **AQI, Weather & Geo** | Open-Meteo | Photon / Nominatim (OSM) → Clear unavailable state |
@@ -145,8 +128,7 @@ ecopulse-ai/
 │   │   └── meetups/
 │   │       └── EventCard.jsx        # Eco-event card with RSVP state
 │   ├── contexts/
-│   │   ├── AppContext.js            # Shared app context and hook
-│   │   ├── AppProvider.jsx          # Selected city & private Chat session state
+│   │   ├── AppContext.jsx           # Location & global app state
 │   │   └── AuthContext.jsx          # Firebase Google, Email-link & Anonymous auth
 │   ├── firebase/
 │   │   ├── collections.js           # Firestore collection helpers
@@ -231,10 +213,9 @@ See [`.env.example`](.env.example) for all optional keys (including OpenWeatherM
 ## 🔐 Privacy & Safety Model
 
 - **Minimal Public Footprint:** EcoPulse never copies user email addresses, phone numbers, Google display names, or precise GPS coordinates into public Firestore documents. Community posts store only the Firebase UID, chosen public alias, message text, timestamp, and an optional city/global label.
-- **Chat location:** Chat verifies cities and asks you to confirm uncertain matches. Set a preferred city with “Set my city to …”, or explicitly share your device location to check rounded coordinates. Web search receives only the current query, not earlier conversation text.
 - **Guest Mode:** Anonymous users can browse the public community channel in read-only mode without creating an account, enforced by [`firestore.rules`](firestore.rules).
 - **Human-in-the-Loop Complaints:** Drafted complaint emails are **never** sent automatically. Users review, edit, copy, or open them in Gmail with explicit confirmation.
-- **Jurisdiction Checks:** When an Indian city has no verified local contact, EcoPulse links to the official national portal for the issue, such as [CPGRAMS](https://pgportal.gov.in). It does not reuse Indian contacts for a photo or request from another country.
+- **Zero Contact Fabrication:** Authority emails and helplines are pulled strictly from verified official directories or grounded search; unknown cities are routed to official national portals such as [CPGRAMS](https://pgportal.gov.in) and the 24/7 Forest Helpline (`1926`).
 - **Distinguished Guidance:** Responses separate immediate on-the-spot emergency actions from formal grievance filing, and frame health tips as general information rather than medical diagnosis.
 
 ---
@@ -264,7 +245,6 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run build` | Build optimized production bundle into `dist/` |
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run static checks with **Oxlint** |
-| `npm test` | Run Chat, location verification, and Community regression tests |
 
 ---
 
