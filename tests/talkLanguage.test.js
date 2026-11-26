@@ -27,6 +27,12 @@ test('common phonetically spelled English recovers without translating actual lo
   assert.equal(talkMicLocale('en-GB', 'en-IN'), 'en-GB');
 });
 
+test('Romanized Marathi grammar can switch the reply language without a confident acoustic locale', () => {
+  assert.equal(talkInputLanguage('Khana saathi baksya mhanun.', 'hi-IN'), 'mr-IN');
+  assert.equal(talkInputLanguage('Khanya saati baksya manun.', 'en-IN'), 'mr-IN');
+  assert.equal(talkInputLanguage('What can I bring for Sathi and Manun?', 'mr-IN'), 'en-IN');
+});
+
 test('reject an unrelated language instead of speaking it with a different voice', () => {
   assert.equal(talkReplyLocale('मला नीट ऐकू आलं नाही.', 'en-IN', 'en-IN'), '');
   assert.equal(talkReplyLocale('Good morning! How are you?', 'hi-IN', 'hi-IN'), '');

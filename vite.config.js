@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), aiPlugin],
+    worker: { format: 'es' },
     server: { port: 5173 },
   }
 })

@@ -6,7 +6,7 @@ const aliases = new Map(Object.entries({
   bangalore: 'Bengaluru', bombay: 'Mumbai', bambai: 'Mumbai', dilli: 'Delhi',
   madras: 'Chennai', calcutta: 'Kolkata', poona: 'Pune', gurgaon: 'Gurugram',
   baroda: 'Vadodara', trivandrum: 'Thiruvananthapuram', cochin: 'Kochi', benares: 'Varanasi',
-  मुंबई: 'Mumbai', मुंबईत: 'Mumbai', 'नवी मुंबई': 'Navi Mumbai', 'नवी मुंबईत': 'Navi Mumbai',
+  मुंबई: 'Mumbai', मुम्बई: 'Mumbai', मुंबईत: 'Mumbai', 'नवी मुंबई': 'Navi Mumbai', 'नवी मुंबईत': 'Navi Mumbai',
   'नई दिल्ली': 'New Delhi', दिल्ली: 'Delhi', दिल्लीत: 'Delhi',
   पुणे: 'Pune', पुण्यात: 'Pune', बेंगलुरु: 'Bengaluru', बैंगलोर: 'Bengaluru', पनवेल: 'Panvel', पनवेलमध्ये: 'Panvel',
   महाराष्ट्र: 'Maharashtra', भारत: 'India',
@@ -22,6 +22,7 @@ const regionKey = (value) => {
   return Object.hasOwn(regions, key) ? regions[key] : key;
 };
 const commonTypos = new Map(['sanfransico', 'sanfrancisco', 'sanfransisco', 'san fransico'].map((typo) => [typo, 'San Francisco']));
+const spokenTypos = new Map([['pun', 'Pune'], ['puna', 'Pune']]);
 
 function alias(value) {
   return aliases.get(value.toLowerCase()) || value;
@@ -102,12 +103,13 @@ async function readPlaces(url, signal, request) {
   }
 }
 
-export async function lookupTalkPlace(query, { map = false, signal, request = fetch } = {}) {
+export async function lookupTalkPlace(query, { map = false, speech = false, signal, request = fetch } = {}) {
   const [rawName, ...qualifiers] = query.split(',').map((part) => alias(part.trim())).filter(Boolean);
   if (!rawName) return {};
   // Resolve a common transcription/spelling error without relying on the
   // availability of the fuzzy provider. The correction still needs consent.
-  const corrected = commonTypos.get(normalize(rawName));
+  const normalized = normalize(rawName);
+  const corrected = commonTypos.get(normalized);
   const name = corrected || rawName;
   const expected = normalize(name);
   const data = await readPlaces(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&language=en&count=20`, signal, request);
@@ -124,7 +126,16 @@ export async function lookupTalkPlace(query, { map = false, signal, request = fe
     // Same-named settlements are not substitutes for a state or country.
     return { ambiguous: true, candidate: exact?.location && places.some((p) => p.population >= 100000 && p.lat === exact.location.lat && p.lng === exact.location.lng) ? exact.location : null };
   }
-  if (exact) return corrected && exact.location ? { candidate: exact.location } : exact;
+  if (exact?.location || exact?.candidate) return corrected && exact.location ? { candidate: exact.location } : exact;
+
+  // A recognizer can hear a short name as a different word. If its spelling
+  // doesn't identify a city or useful candidate, propose a verified alternate.
+  const alternate = speech && !qualifiers.length && spokenTypos.get(normalized);
+  if (alternate) {
+    const hit = await lookupTalkPlace(alternate, { map, signal, request });
+    if (hit.location || hit.candidate) return { candidate: hit.location || hit.candidate };
+  }
+  if (exact) return exact;
 
   // Keep typo and landmark lookup, but never present a fuzzy hit as confirmed.
   const queryWithRegion = [name, ...qualifiers].join(', ');

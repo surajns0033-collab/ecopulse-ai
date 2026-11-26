@@ -12,7 +12,7 @@ const ENGLISH_SHORT = /^(?:hi|hey|hello|goodbye|bye|thanks?|weather|forecast|tem
 const HINDI = vocabulary('है हैं हूँ हूं था थी थे मेरा मेरे मेरी मुझे मुझको हमें आप आपको आपका क्या कैसा कैसी कैसे क्यों कहाँ कहां यहाँ यहां वहाँ वहां कितना कितनी कितने बताओ बताइए बताएं बताएँ कहना बोलो बोलिए चाहिए नहीं हाँ हां समझ रहा रही रहे सुनाई करें करूँगी सकी सके सका लिए पाई कौन किस मौजूदा');
 const MARATHI = vocabulary('आहे आहेत आहेस आहात नाही मला तुला तुम्हाला तुम्ही माझ्या माझा माझे माझी तुमचं काय कुठे कसा कशी कसं कसे किती करा सांगा सांगाल सांगू सांगता पाहू आत्ता सध्या इथे तिथे मध्ये आणि पाऊस उद्या आजचा आजचं चांगलं बरोबर खात्रीने शकतो शकते म्हणायचं कोणते हवामान');
 const HINDI_LATIN = vocabulary('hai hain hoon hun mujhe mera meri mere kya kaisa kaise kaisi kyun kyon kahan kahaan kitna kitni batao bataiye chahiye nahi nahin nahii haan mausam baarish aap aapko mujko matlab');
-const MARATHI_LATIN = vocabulary('aahe ahe aahet aahat havaman havaaman madhye madhe sanga saanga sangal majhya mazya maza majha aajcha aata atta ithe kuthe kiti kashi kase tumhala tumhi aani barobar');
+const MARATHI_LATIN = vocabulary('aahe ahe aahet aahat havaman havaaman madhye madhe sanga saanga sangal majhya mazya maza majha aajcha aata atta ithe kuthe kiti kashi kase tumhala tumhi aani barobar sathi saathi saati mhanun mhanoon manun tyanna tyana tyanchya aaplya jithe tithe pudhe punha kartat kartaat');
 const OTHER_SCRIPTS = [
   [/\p{Script=Bengali}/u, 'bn-IN'], [/\p{Script=Gujarati}/u, 'gu-IN'], [/\p{Script=Gurmukhi}/u, 'pa-IN'],
   [/\p{Script=Tamil}/u, 'ta-IN'], [/\p{Script=Telugu}/u, 'te-IN'], [/\p{Script=Kannada}/u, 'kn-IN'],

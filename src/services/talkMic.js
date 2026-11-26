@@ -18,8 +18,11 @@ export function isTalkEcho(text, playback) {
   const heard = spokenWords(text);
   const said = spokenWords(playback);
   if (!heard || !said) return false;
-  // A fragment of the reply may be a valid answer, e.g. repeating a city name.
-  return heard === said || (said.split(' ').length >= 4 && ` ${heard} `.includes(` ${said} `));
+  // Don't discard a city name repeated by the user. Only treat a partial
+  // match as echo when it includes the wording of the assistant's question.
+  return heard === said || (said.split(' ').length >= 4 && ` ${heard} `.includes(` ${said} `)) ||
+    (heard.split(' ').length >= 4 && /\b(?:should i|did you mean|which city|could you|can you)\b/u.test(heard) &&
+      ` ${said} `.includes(` ${heard} `));
 }
 
 function collectInput(parts) {
@@ -99,6 +102,7 @@ export function createTalkMic(Recognition) {
     active = session;
     const isCurrent = () => active === session && !session.closing;
     recognition.lang = options.language;
+    if (options.localOnly) recognition.processLocally = true;
     recognition.interimResults = true;
     recognition.continuous = session.monitor || !singleInput;
     recognition.maxAlternatives = 1;
@@ -179,6 +183,12 @@ export function createTalkMic(Recognition) {
 
   return {
     supported: Boolean(Recognition),
+    async localAvailable(locale) {
+      try {
+        return typeof Recognition?.available === 'function' && 'processLocally' in Recognition.prototype &&
+          await Recognition.available({ langs: [locale], processLocally: true }) === 'available';
+      } catch { return false; }
+    },
     listen(options) {
       if (!options.onStop && options.playback && !singleInput && active?.monitor && !active.closing &&
           active.options.playback === options.playback && active.options.language === options.language) {

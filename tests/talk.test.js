@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { INTENTS } from '../src/agent/intentEngine.js';
-import { emptyTalkContext, resolveTalkTurn, routeTalkRequest } from '../src/agent/talkContext.js';
+import { awaitingTalkPlace, emptyTalkContext, resolveTalkTurn, routeTalkRequest } from '../src/agent/talkContext.js';
 import { parseSmogProfile } from '../src/agent/smogProfile.js';
 import { shortSpeech, talkStatus, talkWebReference, toolSpeech } from '../src/agent/talkReply.js';
 import { detectTalkLanguage, talkInputLanguage } from '../src/services/talkLanguage.js';
@@ -30,6 +30,13 @@ test('only an explicit device request authorizes location, then the waiting ques
   assert.equal(found.message, 'AQI here');
   assert.equal(found.location, Mumbai);
   assert.equal(found.context.chosenLocation, Mumbai);
+});
+
+test('an uncertain voice command cannot authorize reading device location', async () => {
+  const first = await resolveTalkTurn('What is the weather near me?', emptyTalkContext(), { lookup: forbidLookup });
+  const retry = await resolveTalkTurn('Use my location', first.context, { fromMic: true, uncertain: true, locateDevice: assert.fail });
+  assert.equal(retry.silent, true);
+  assert.equal(retry.context, first.context);
 });
 
 test('device location rejects imprecise fixes and only reverse-geocodes rounded coordinates', async () => {
@@ -73,7 +80,11 @@ test('a discussed city is offered for a local lookup, but never assumed', async 
 });
 
 test('a standalone verified city statement sets Talk’s local city', async () => {
-  for (const [input, city] of [["I’m currently in Mumbai", 'Mumbai'], ['My city is Mumbai', 'Mumbai'], ['मैं मुंबई में हूँ', 'मुंबई'], ['मेरा शहर मुंबई है', 'मुंबई'], ['मी मुंबईमध्ये आहे', 'मुंबई']]) {
+  for (const [input, city] of [
+    ['I’m currently in Mumbai', 'Mumbai'], ['My city is Mumbai', 'Mumbai'],
+    ['मैं मुंबई में हूँ', 'मुंबई'], ['मेरा शहर मुंबई है', 'मुंबई'], ['मी मुंबईमध्ये आहे', 'मुंबई'],
+    ['मी मुंबई मधे आहे', 'मुंबई'], ['Main abhi Mumbai mein hoon.', 'Mumbai'], ['Mi Mumbai madhe aahe.', 'Mumbai'],
+  ]) {
     const selected = await resolveTalkTurn(input, emptyTalkContext(), {
       lookup: async (query) => { assert.equal(query, city); return { location: Mumbai }; },
     });
@@ -124,7 +135,7 @@ test('failed or repeatedly uncertain city answers offer a retry without inventin
 test('a mic check or general request does not become a city lookup', async () => {
   const waiting = await resolveTalkTurn('AQI here', emptyTalkContext(), { lookup: forbidLookup });
   const voice = await resolveTalkTurn('Can you hear me here now?', waiting.context, { fromMic: true, confidence: .91, lookup: forbidLookup });
-  assert.match(voice.text, /browser recognized your question/);
+  assert.match(voice.text, /heard your question/);
   assert.equal(voice.context.waiting, waiting.context.waiting);
   assert.ok(!voice.expectsReply);
   const typed = await resolveTalkTurn('Can you hear me?', waiting.context, { lookup: forbidLookup });
@@ -134,6 +145,62 @@ test('a mic check or general request does not become a city lookup', async () =>
   const weather = await resolveTalkTurn('Send me weather for Mumbai', emptyTalkContext(), { lookup: async () => ({ location: Mumbai }) });
   assert.equal(weather.intent, INTENTS.GET_WEATHER);
   assert.equal(weather.location, Mumbai);
+});
+
+test('a different topic parks a pending city lookup; returning restores the original request', async () => {
+  const input = 'What is the weather near me tomorrow?';
+  const options = { fromMic: true, uncertain: false, lookup: forbidLookup };
+  const first = await resolveTalkTurn(input, emptyTalkContext(), options);
+  assert.equal(awaitingTalkPlace(first.context), true);
+  const switchOnly = await resolveTalkTurn('New topic.', first.context, options);
+  assert.equal(switchOnly.context.waiting.paused, true);
+  assert.ok(!switchOnly.expectsReply, 'a topic change alone must not reopen the mic');
+  for (const query of ['New topic. Help me plan a birthday party.', 'Tell me a joke about cats.', 'Birthday party ideas', 'Recommend a movie']) {
+    const changed = await resolveTalkTurn(query, first.context, options);
+    assert.equal(changed.kind, 'general');
+    assert.equal(awaitingTalkPlace(changed.context), false);
+    assert.equal(changed.context.waiting.turn.message, input);
+    const resumed = await resolveTalkTurn('Can we continue the weather question?', changed.context, options);
+    assert.equal(awaitingTalkPlace(resumed.context), true);
+    assert.equal(resumed.context.waiting.turn.message, input);
+    const answer = await resolveTalkTurn('City is Mumbai', resumed.context, {
+      ...options, lookup: async (query) => { assert.equal(query, 'Mumbai'); return { location: Mumbai }; },
+    });
+    assert.equal(answer.message, input);
+    assert.equal(answer.intent, INTENTS.GET_WEATHER);
+    assert.equal(answer.location, Mumbai);
+    assert.equal(answer.context.waiting, null);
+  }
+});
+
+test('resuming can supply a city, and an ambiguous answer does not replay a prompt', async () => {
+  const request = 'What is the air quality near me?';
+  const first = await resolveTalkTurn(request, emptyTalkContext(), { lookup: forbidLookup });
+  const ambiguous = await resolveTalkTurn('Springfield', first.context, { fromMic: true, lookup: async () => ({ ambiguous: true }) });
+  assert.equal(ambiguous.silent, true);
+  assert.equal(ambiguous.context.waiting.turn.message, request);
+  const candidate = await resolveTalkTurn('Panvel', ambiguous.context, { fromMic: true, uncertain: true, lookup: async () => ({ location: Panvel }) });
+  assert.equal(candidate.context.waiting.candidate, Panvel);
+  const uncertain = await resolveTalkTurn('Yes, that is right.', candidate.context, { fromMic: true, uncertain: true, lookup: forbidLookup });
+  assert.equal(uncertain.silent, true);
+  assert.equal(uncertain.context.waiting.candidate, Panvel);
+  const changed = await resolveTalkTurn('Show me a recipe', candidate.context, { lookup: forbidLookup });
+  const answer = await resolveTalkTurn('Back to the air quality question for Mumbai', changed.context, {
+    fromMic: true, uncertain: false, lookup: async (query) => { assert.equal(query, 'Mumbai'); return { location: Mumbai }; },
+  });
+  assert.equal(answer.message, request);
+  assert.equal(answer.context.chosenLocation, Mumbai);
+  assert.equal(answer.context.waiting, null);
+});
+
+test('voice can resume a parked request without restating the subject', async () => {
+  const first = await resolveTalkTurn('Weather near me', emptyTalkContext(), { lookup: forbidLookup });
+  const changed = await resolveTalkTurn('Tell me a story', first.context, { lookup: forbidLookup });
+  for (const input of ['Can we continue?', 'Continue from where we left off.', 'पिछले सवाल पर वापस चलें।', 'मागच्या प्रश्नाकडे परत जाऊया.']) {
+    const resumed = await resolveTalkTurn(input, changed.context, { fromMic: true, lookup: forbidLookup });
+    assert.equal(awaitingTalkPlace(resumed.context), true, input);
+    assert.equal(resumed.context.waiting.turn.message, 'Weather near me');
+  }
 });
 
 test('Chat retains its existing place clarification flow', async () => {
@@ -215,6 +282,7 @@ test('spoken Hindi and Marathi city phrasing routes without inferring location',
   assert.equal(routeTalkRequest('Mumbai ka mausam').place, 'Mumbai');
   assert.equal(routeTalkRequest('Pune madhye havaman kasa aahe').place, 'Pune');
   assert.equal(routeTalkRequest('पुण्यात हवामान कसं आहे?').place, 'पुण्यात');
+  assert.equal(routeTalkRequest('मुंबईत आत्ता हवामान कसं आहे?').place, 'मुंबईत');
   assert.equal(routeTalkRequest('आज हवामान कसं आहे?').place, '');
   assert.equal(routeTalkRequest('मुंबई में स्मॉग प्लान').intent, INTENTS.GET_SMOG_PLAN);
   assert.equal(detectTalkLanguage('मला हवामान सांगाल का?'), 'mr-IN');
@@ -284,6 +352,19 @@ test('a known provider spelling of a region preserves the state and country qual
   const hit = await lookupTalkPlace('Paris, Île-de-France, France', { request });
   assert.equal(hit.location?.city, 'Paris, Île-de-France Region, France');
   assert.equal((await lookupTalkPlace('Paris, Texas, France', { request })).location, undefined);
+});
+
+test('spoken "pun" may suggest a verified Pune when the original spelling is ambiguous', async () => {
+  const pune = { ...openPlace('Pune', 'Maharashtra', 'India', 18.52, 73.86), population: 3000000 };
+  const request = async (url) => Response.json({ results: new URL(url).searchParams.get('name') === 'Pune' ? [pune] : [
+    openPlace('Pun', 'Karnali Pradesh', 'Nepal', 29, 81), openPlace('Pun', 'Loreto', 'Peru', -4, -73),
+  ] });
+  assert.deepEqual(await lookupTalkPlace('Pun', { request }), { ambiguous: true, candidate: null });
+  const suggestion = await lookupTalkPlace('Pun', { speech: true, request });
+  assert.equal(suggestion.location, undefined);
+  assert.equal(suggestion.candidate.city, 'Pune, Maharashtra, India');
+  const qualified = await lookupTalkPlace('Pun, Loreto', { speech: true, request });
+  assert.equal(qualified.location.city, 'Pun, Loreto, Peru');
 });
 
 test('a fuzzy search’s first hit is not used unless its spelling or region matches', async () => {
