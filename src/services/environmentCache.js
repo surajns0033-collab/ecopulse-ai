@@ -1,3 +1,5 @@
+import { logFailure } from './diagnostics.js';
+
 const rawWaqi = import.meta.env?.VITE_WAQI_TOKEN || '';
 const rawOwm = import.meta.env?.VITE_OPENWEATHER_KEY || import.meta.env?.VITE_OPENWEATHER_API_KEY || '';
 
@@ -43,4 +45,21 @@ export function requestSignal(signal, timeout = 5000) {
   return signal ? AbortSignal.any([signal, deadline]) : deadline;
 }
 
-// Weather code -> human readable description (WMO codes used by Open-Meteo)
+
+
+export function coordinateKey(kind, lat, lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return `${kind}:${lat.toFixed(2)},${lng.toFixed(2)}`;
+}
+
+export async function environmentJson(url, operation, signal, timeout) {
+  try {
+    const response = await fetch(url, { signal: requestSignal(signal, timeout) });
+    if (response.ok) return await response.json();
+    logFailure(operation, response.status);
+  } catch {
+    signal?.throwIfAborted();
+    logFailure(operation);
+  }
+  return null;
+}

@@ -1,74 +1,27 @@
-import { logFailure } from './diagnostics.js';
-import { WAQI_TOKEN, getCached, setCached, toUtcIso, requestSignal } from './environmentCache.js';
+import { WAQI_TOKEN, coordinateKey, environmentJson, getCached, setCached, toUtcIso } from './environmentCache.js';
 
-/**
- * Get real-time AQI data: tries WAQI (if real token configured), then Open-Meteo Air Quality (free, any global location)
- * Returns null if both fail (never returns fabricated data)
- */
-export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {}) {
-  signal?.throwIfAborted();
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  const cacheKey = `aqi:${Number(lat).toFixed(2)},${Number(lng).toFixed(2)}`;
-  const cached = getCached(cacheKey);
-  if (cached) return cityLabel ? { ...cached, city: cityLabel } : cached;
+function stationReading(json) {
+  const data = json?.data;
+  if (json?.status !== 'ok' || !Number.isFinite(data?.aqi) || data.aqi < 0) return null;
+  // WAQI pollutant subindices cannot be displayed as concentrations.
+  const station = data.city?.name || null;
+  return { aqi: data.aqi, station, city: station, timestamp: data.time?.iso || null,
+    source: 'World Air Quality Index', sourceUrl: 'https://aqicn.org/map/' };
+}
 
-  // 1. Try WAQI only if user configured a real WAQI token
-  if (WAQI_TOKEN) {
-    try {
-      const url = `https://api.waqi.info/feed/geo:${lat};${lng}/?token=${WAQI_TOKEN}`;
-      const res = await fetch(url, { signal: requestSignal(signal) });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.status === 'ok' && Number.isFinite(json.data?.aqi) && json.data.aqi >= 0) {
-          const d = json.data;
-          return setCached(cacheKey, {
-            aqi: d.aqi ?? null,
-            // WAQI's IAQI fields are subindices, not pollutant concentrations.
-            station: d.city?.name || cityLabel || null,
-            city: cityLabel || d.city?.name || null,
-            timestamp: d.time?.iso || null,
-            source: 'World Air Quality Index',
-            sourceUrl: 'https://aqicn.org/map/',
-          });
-        }
-      }
-    } catch {
-      signal?.throwIfAborted();
-      logFailure('air.waqi');
-    }
-  }
+function concentration(value, precision = 10) {
+  return Number.isFinite(value) && value >= 0 ? Math.round(value * precision) / precision : null;
+}
 
-  // 2. Open-Meteo Air Quality API — completely free, no key needed, works for any lat/lng worldwide
-  try {
-    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone&timezone=GMT`;
-    const res = await fetch(url, { signal: requestSignal(signal) });
-    if (res.ok) {
-      const json = await res.json();
-      const cur = json.current || {};
-      if (Number.isFinite(cur.us_aqi) && cur.us_aqi >= 0) {
-        return setCached(cacheKey, {
-          aqi: Math.round(cur.us_aqi),
-          pm25: cur.pm2_5 != null ? Math.round(cur.pm2_5 * 10) / 10 : null,
-          pm10: cur.pm10 != null ? Math.round(cur.pm10 * 10) / 10 : null,
-          no2: cur.nitrogen_dioxide != null ? Math.round(cur.nitrogen_dioxide * 10) / 10 : null,
-          o3: cur.ozone != null ? Math.round(cur.ozone * 10) / 10 : null,
-          co: cur.carbon_monoxide != null ? Math.round(cur.carbon_monoxide) : null,
-          so2: cur.sulphur_dioxide != null ? Math.round(cur.sulphur_dioxide * 10) / 10 : null,
-          scale: 'U.S. AQI',
-          sourceType: 'modeled',
-          city: cityLabel || null,
-          timestamp: toUtcIso(cur.time),
-          source: 'Open-Meteo Air Quality',
-          sourceUrl: url,
-        });
-      }
-    }
-  } catch {
-    signal?.throwIfAborted();
-    logFailure('air.current');
-  }
-
-  return null;
+function modeledReading(current, sourceUrl) {
+  if (!Number.isFinite(current?.us_aqi) || current.us_aqi < 0) return null;
+  return {
+    aqi: Math.round(current.us_aqi), pm25: concentration(current.pm2_5), pm10: concentration(current.pm10),
+    no2: concentration(current.nitrogen_dioxide), o3: concentration(current.ozone),
+    co: concentration(current.carbon_monoxide, 1), so2: concentration(current.sulphur_dioxide),
+    scale: 'U.S. AQI', sourceType: 'modeled', city: null, timestamp: toUtcIso(current.time),
+    source: 'Open-Meteo Air Quality', sourceUrl,
+  };
 }
 
 export function isRecentAirQuality(reading, now = Date.now()) {
@@ -77,39 +30,52 @@ export function isRecentAirQuality(reading, now = Date.now()) {
   return age >= -15 * 60_000 && age <= 2 * 60 * 60_000;
 }
 
+export async function readAirSources(lat, lng, signal, token = WAQI_TOKEN) {
+  let station = null;
+  if (token) {
+    const url = `https://api.waqi.info/feed/geo:${lat};${lng}/?token=${encodeURIComponent(token)}`;
+    station = stationReading(await environmentJson(url, 'air.waqi', signal));
+    if (isRecentAirQuality(station)) return station;
+  }
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone&timezone=GMT`;
+  const json = await environmentJson(url, 'air.current', signal);
+  const modeled = modeledReading(json?.current, url);
+  if (isRecentAirQuality(modeled)) return modeled;
+  return station || modeled;
+}
+
+export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {}) {
+  signal?.throwIfAborted();
+  const key = coordinateKey('aqi', lat, lng);
+  if (!key) return null;
+  const reading = getCached(key) || setCached(key, await readAirSources(lat, lng, signal));
+  return reading && cityLabel ? { ...reading, city: cityLabel } : reading;
+}
+
 export async function getCurrentAirQuality(lat, lng, city, options) {
   const reading = await getAirQuality(lat, lng, city, options);
   return isRecentAirQuality(reading) ? reading : null;
 }
 
-/** Next 24 hours of AQI data for planning lower-exposure outdoor windows. */
+function forecastHours(json) {
+  const currentTime = json?.current?.time;
+  const times = json?.hourly?.time;
+  if (!Number.isFinite(currentTime) || typeof json.timezone !== 'string' || !Array.isArray(times)) return null;
+  const first = times.findIndex(time => Number.isFinite(time) && time >= currentTime);
+  if (first < 0) return null;
+  const hours = times.slice(first, first + 25).flatMap((time, offset) => {
+    const aqi = json.hourly.us_aqi?.[first + offset];
+    return Number.isFinite(time) && Number.isFinite(aqi) && aqi >= 0 ? [{ time: time * 1000, aqi: Math.round(aqi) }] : [];
+  });
+  return hours.length ? { hours, timeZone: json.timezone } : null;
+}
+
 export async function getAirQualityForecast(lat, lng, { signal } = {}) {
   signal?.throwIfAborted();
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  const cacheKey = `aqi-forecast:${Number(lat).toFixed(2)},${Number(lng).toFixed(2)}`;
-  const cached = getCached(cacheKey);
+  const key = coordinateKey('aqi-forecast', lat, lng);
+  if (!key) return null;
+  const cached = getCached(key);
   if (cached) return cached;
-
-  try {
-    // Unix times remain absolute while `timezone=auto` gives the city's display zone.
-    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi&hourly=us_aqi&forecast_days=2&timezone=auto&timeformat=unixtime`;
-    const res = await fetch(url, { signal: requestSignal(signal, 6000) });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const times = json.hourly?.time || [];
-    const currentTime = json.current?.time;
-    if (!Number.isFinite(currentTime) || typeof json.timezone !== 'string') return null;
-    const start = times.findIndex((time) => time >= currentTime);
-    if (start < 0) return null;
-    const hours = times.slice(start, start + 25).flatMap((time, offset) => {
-      const aqi = json.hourly?.us_aqi?.[start + offset];
-      return Number.isFinite(time) && Number.isFinite(aqi) && aqi >= 0
-        ? [{ time: time * 1000, aqi: Math.round(aqi) }] : [];
-    });
-    return hours.length ? setCached(cacheKey, { hours, timeZone: json.timezone }) : null;
-  } catch {
-    signal?.throwIfAborted();
-    logFailure('air.forecast');
-    return null;
-  }
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi&hourly=us_aqi&forecast_days=2&timezone=auto&timeformat=unixtime`;
+  return setCached(key, forecastHours(await environmentJson(url, 'air.forecast', signal, 6000)));
 }
