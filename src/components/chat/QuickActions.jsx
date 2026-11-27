@@ -1,4 +1,5 @@
 // Persistent shortcuts for the assistant's core daily-help flows.
+import { useState } from 'react';
 import { Wind, CloudSun, CloudFog, Siren, Image, Heart, Navigation, Users, Recycle } from 'lucide-react';
 
 const ACTIONS = [
@@ -14,11 +15,33 @@ const ACTIONS = [
 ];
 
 export default function QuickActions({ onMessage, onCommand }) {
+
+  const [active, setActive] = useState(0);
+
+  function moveFocus(event) {
+    const buttons = Array.from(event.currentTarget.querySelectorAll('button'));
+    const index = buttons.indexOf(event.target);
+    if (index < 0) return;
+    const last = buttons.length - 1;
+    let next;
+    switch (event.key) {
+      case 'ArrowRight': next = index === last ? 0 : index + 1; break;
+      case 'ArrowLeft': next = index === 0 ? last : index - 1; break;
+      case 'Home': next = 0; break;
+      case 'End': next = last; break;
+      default: return;
+    }
+    event.preventDefault();
+    buttons[next].focus();
+  }
+
   return (
-    <div className="quick-actions-bar" role="toolbar" aria-label="Quick actions">
-      {ACTIONS.map((action) => (
+    <div className="quick-actions-bar" role="toolbar" aria-label="Quick actions" onKeyDown={moveFocus}>
+      {ACTIONS.map((action, index) => (
         <button
           key={action.label}
+          tabIndex={index === active ? 0 : -1}
+          onFocus={() => setActive(index)}
           className="quick-action-btn"
           onClick={() => action.command ? onCommand?.(action.command) : onMessage?.(action.message)}
           aria-label={action.label}
