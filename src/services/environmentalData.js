@@ -134,6 +134,17 @@ export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {})
   return null;
 }
 
+export function isRecentAirQuality(reading, now = Date.now()) {
+  if (!Number.isFinite(reading?.aqi) || reading.aqi < 0) return false;
+  const age = now - Date.parse(reading.timestamp);
+  return age >= -15 * 60_000 && age <= 2 * 60 * 60_000;
+}
+
+export async function getCurrentAirQuality(lat, lng, city, options) {
+  const reading = await getAirQuality(lat, lng, city, options);
+  return isRecentAirQuality(reading) ? reading : null;
+}
+
 /** Next 24 hours of AQI data for planning lower-exposure outdoor windows. */
 export async function getAirQualityForecast(lat, lng, { signal } = {}) {
   signal?.throwIfAborted();
