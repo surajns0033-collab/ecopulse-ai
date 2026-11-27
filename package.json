@@ -10,7 +10,7 @@
     "quality:inventory": "oxlint --config tests/maintainability.oxlintrc.json --format github src server api",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/** --test-coverage-include=server/**",
-    "benchmark": "node --test tests/submissionScenarios.test.js",
+    "benchmark": "node --test tests/submissionScenarios.test.js tests/routineQuestions.test.js",
     "benchmark:submission": "node tests/submissionBenchmark.mjs",
     "verify": "npm run lint && npm test && npm run build",
     "preview": "vite preview",

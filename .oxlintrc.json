@@ -7,7 +7,7 @@
   },
   "overrides": [
     {
-      "files": ["src/agent/agentOrchestrator.js", "src/agent/intentEngine.js", "src/agent/placeContext.js", "src/agent/placeTurn.js", "src/agent/smog*.js"],
+      "files": ["src/agent/agentOrchestrator.js", "src/agent/intentEngine.js", "src/agent/place*.js", "src/agent/smog*.js"],
       "rules": {
         "complexity": ["error", { "max": 15 }],
         "max-lines-per-function": ["error", { "max": 60, "skipBlankLines": true, "skipComments": true }]
