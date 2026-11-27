@@ -100,6 +100,33 @@ test('a Guest can plan a school smog day with a keyboard and stale readings stay
   await guest.waitFor();
 });
 
+test('a Guest gets kitchen advice without a purifier and society advice with stale AQI', { timeout: 90000 }, async t => {
+  const { context, origin } = await openBrowser(t);
+  const { counts, data } = await mockDelhi(context);
+  const page = await context.newPage();
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  const log = page.getByRole('log', { name: 'Chat messages' });
+
+  await ask(page, 'I live in Delhi, India. We cook with gas and have no purifier. How can we keep our kitchen air cleaner during smog?');
+  const kitchen = log.locator('.message-row.ai').filter({ hasText: 'exhaust hood that vents outdoors' });
+  await kitchen.waitFor();
+  assert.match(await kitchen.innerText(), /damp-clean/i);
+  assert.doesNotMatch(await kitchen.innerText(), /run HEPA in/i);
+  await kitchen.getByRole('button', { name: 'Explain these choices with AI' }).waitFor();
+
+  data.ageHours = 4;
+  await page.reload();
+  await ask(page, 'How can our housing society cut emissions during winter smog in Delhi, India?');
+  const society = log.locator('.chat-bubble-ai').filter({ hasText: 'avoid idling at the gate' });
+  await society.waitFor();
+  const plan = await society.innerText();
+  assert.match(plan, /no recent timestamp/i);
+  assert.match(plan, /composting for garden waste/i);
+  assert.doesNotMatch(plan, /Current AQI: 208/i);
+  assert.equal(counts.aqi, 2);
+});
+
 test('a saved report opens from its Chat confirmation and stays private across device sessions', { timeout: 90000 }, async t => {
   const { context, origin } = await openBrowser(t);
   await mockDelhi(context);
