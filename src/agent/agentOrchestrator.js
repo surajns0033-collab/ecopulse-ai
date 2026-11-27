@@ -317,7 +317,7 @@ async function handleFindEvents(city, category, userId) {
 
 function handleJoinEventPrompt() {
   return {
-    text: "To join an event, tap the **Join** button on any event card, or tell me the event name and I'll help you RSVP! 🤝",
+    text: "To join an event, tap **Join event** on its card. You can also cancel your place from Events.",
     cards: [],
     actions: [{ label: '🔍 Find Events', action: 'QUICK_FIND_EVENTS', variant: 'primary' }],
     status: 'info',
@@ -845,7 +845,7 @@ async function handleUserImpact(userId) {
   const stats = await tools.getUserImpact({ userId });
 
   return {
-    text: `🌟 **Your EcoPulse Impact:**\n\n📋 Reports Submitted: **${stats.reportsSubmitted}**\n🤝 Events Joined: **${stats.eventsJoined}**\n🌱 Carbon Offset: ~**${stats.carbonSaved.toFixed(1)} kg CO₂**\n\nEvery report and event attendance makes your city cleaner! Keep going! 💪`,
+    text: `🌟 **Your EcoPulse Impact:**\n\n📋 Reports Submitted: **${stats.reportsSubmitted}**\n🤝 Event registrations: **${stats.eventsJoined}**`,
     cards: [],
     actions: [
       { label: '📋 File a Report', action: 'QUICK_REPORT', variant: 'primary' },
