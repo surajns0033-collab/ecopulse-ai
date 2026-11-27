@@ -1,12 +1,12 @@
-﻿const state = {
+﻿import { ChatRequestError, readChatRequest } from './chatRequest.js'
+
+const state = {
   geminiModels: null,
   geminiModelsAt: 0,
   geminiWorkingModel: null,
   geminiDisabledUntil: 0,
   llm7DisabledUntil: 0,
   pollinationsDisabledUntil: 0,
-  lastProvider: null,
-  lastError: null,
 }
 
 const PLACEHOLDER = /^(your_|replace_with|changeme|xxx)/i
@@ -19,19 +19,14 @@ function realKey(value) {
   return key
 }
 
-async function fetchJson(url, options = {}, timeoutMs = 45000) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal
-  try {
-    const res = await fetch(url, { ...options, signal })
-    const raw = await res.text()
-    let json = null
-    try { json = JSON.parse(raw) } catch { /* not json */ }
-    return { ok: res.ok, status: res.status, json, raw }
-  } finally {
-    clearTimeout(timer)
-  }
+async function fetchJson(url, options) {
+  options.signal.throwIfAborted()
+  const res = await fetch(url, options)
+  const raw = await res.text()
+  options.signal.throwIfAborted()
+  let json = null
+  try { json = JSON.parse(raw) } catch { /* not json */ }
+  return { ok: res.ok, status: res.status, json, raw }
 }
 
 function geminiErrorText(json, raw) {
@@ -46,15 +41,14 @@ function isWebUrl(value) {
 
 const MODEL_BLOCKLIST = /embedding|aqa|imagen|veo|tts|native-audio|live|image|thinking/i
 
-async function listGeminiModels(key) {
+async function listGeminiModels(key, signal) {
   const now = Date.now()
   if (state.geminiModels && now - state.geminiModelsAt < 10 * 60 * 1000) {
     return state.geminiModels
   }
   const { ok, json } = await fetchJson(
     'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000',
-    { headers: { 'x-goog-api-key': key } },
-    15000
+    { headers: { 'x-goog-api-key': key }, signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]) },
   )
   if (!ok) {
     const msg = geminiErrorText(json, '')
@@ -79,9 +73,8 @@ async function listGeminiModels(key) {
 function buildGeminiContents(messages, images) {
   const out = []
   for (const message of messages || []) {
-    const role = message.role === 'assistant' || message.role === 'model' || message.role === 'ai' ? 'model' : 'user'
-    const text = typeof message.text === 'string' ? message.text.trim() : ''
-    if (!text) continue
+    const role = message.role === 'assistant' ? 'model' : 'user'
+    const { text } = message
     if (out.length && out[out.length - 1].role === role) {
       out[out.length - 1].parts.push({ text })
     } else {
@@ -89,19 +82,15 @@ function buildGeminiContents(messages, images) {
     }
   }
   while (out.length && out[0].role !== 'user') out.shift()
-  if (!out.length) out.push({ role: 'user', parts: [{ text: 'Hello' }] })
-
-  const imageParts = (images || [])
-    .filter((img) => img && img.base64)
-    .map((img) => ({ inlineData: { mimeType: img.mimeType || 'image/jpeg', data: String(img.base64).replace(/^data:[^,]+,/, '') } }))
-  if (imageParts.length) out[out.length - 1].parts.push(...imageParts)
+  const imageParts = images.map(({ mimeType, base64 }) => ({ inlineData: { mimeType, data: base64 } }))
+  if (imageParts.length) out.at(-1).parts.push(...imageParts)
   return out
 }
 
 async function callGemini(payload) {
   if (Date.now() < state.geminiDisabledUntil) throw new Error('Gemini key rejected earlier; skipping request')
 
-  const listed = state.geminiModels || await listGeminiModels(payload.key)
+  const listed = await listGeminiModels(payload.key, payload.signal)
   const models = [...new Set([payload.model, state.geminiWorkingModel, ...listed].filter(Boolean))].slice(0, 4)
   if (!models.length) throw new Error('No Gemini text model available for this key')
 
@@ -125,7 +114,6 @@ async function callGemini(payload) {
         signal: payload.signal,
         body: JSON.stringify(body),
       },
-      payload.timeoutMs || 45000
     )
     if (ok) {
       const candidate = json?.candidates?.[0]
@@ -167,19 +155,17 @@ async function callOpenAICompatible(payload, env) {
   if (!base || !key) throw new Error('No OpenAI-compatible provider configured')
 
   const model = env.OPENAI_MODEL || env.OPENROUTER_MODEL || (openRouterKey ? 'openrouter/free' : 'gpt-4o-mini')
-  const hasImages = Array.isArray(payload.images) && payload.images.length > 0
   const messages = [
     ...(payload.system ? [{ role: 'system', content: payload.system }] : []),
-    ...(payload.messages || []).map((m) => {
-      const role = m.role === 'ai' ? 'assistant' : m.role
-      if (!hasImages || role !== 'user') return { role, content: m.text }
+    ...payload.messages.map((m, index) => {
+      if (!payload.images.length || index !== payload.messages.length - 1) return { role: m.role, content: m.text }
       return {
-        role,
+        role: m.role,
         content: [
           { type: 'text', text: m.text },
-          ...payload.images.map((img) => ({
+          ...payload.images.map(({ mimeType, base64 }) => ({
             type: 'image_url',
-            image_url: { url: `data:${img.mimeType || 'image/jpeg'};base64,${String(img.base64).replace(/^data:[^,]+,/, '')}` },
+            image_url: { url: `data:${mimeType};base64,${base64}` },
           })),
         ],
       }
@@ -190,6 +176,7 @@ async function callOpenAICompatible(payload, env) {
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      signal: payload.signal,
       body: JSON.stringify({
         model,
         messages,
@@ -197,7 +184,6 @@ async function callOpenAICompatible(payload, env) {
         max_tokens: Math.min(Math.max(payload.maxTokens || 600, 64), 2048),
       }),
     },
-    payload.timeoutMs || 45000
   )
   if (!ok) throw new Error(`OpenAI-compatible ${status}: ${geminiErrorText(json, raw)}`)
   const text = json?.choices?.[0]?.message?.content?.trim()
@@ -208,13 +194,13 @@ async function callOpenAICompatible(payload, env) {
 async function callTavilySearch(payload, env) {
   const key = realKey(env.TAVILY_API_KEY)
   if (!key) throw new Error('No Tavily search key configured')
-  const query = [...(payload.messages || [])].reverse().find((message) => message.role !== 'assistant')?.text?.trim()
-  if (!query) throw new Error('No search query supplied')
+  const query = payload.messages[0].text
 
   const { ok, status, json, raw } = await fetchJson(
     'https://api.tavily.com/search',
     {
       method: 'POST',
+      signal: payload.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`,
@@ -228,7 +214,6 @@ async function callTavilySearch(payload, env) {
         include_raw_content: false,
       }),
     },
-    payload.timeoutMs || 45000
   )
   if (!ok) throw new Error(`Tavily ${status}: ${geminiErrorText(json, raw)}`)
 
@@ -262,6 +247,7 @@ async function callLlm7(payload) {
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: payload.signal,
       body: JSON.stringify({
         model: 'gpt-oss:20b',
         messages,
@@ -270,7 +256,6 @@ async function callLlm7(payload) {
         max_tokens: Math.min(Math.max(payload.maxTokens || 600, 1000), 2400),
       }),
     },
-    payload.timeoutMs || 45000
   )
   if (!ok) {
     const detail = geminiErrorText(json, raw)
@@ -301,6 +286,7 @@ async function callPollinations(payload) {
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: payload.signal,
       body: JSON.stringify({
         model: 'openai',
         messages,
@@ -308,7 +294,6 @@ async function callPollinations(payload) {
         max_tokens: Math.min(Math.max(payload.maxTokens || 500, 64), 1200),
       }),
     },
-    payload.timeoutMs || 40000
   )
   if (!ok) {
     const detail = geminiErrorText(json, raw)
@@ -324,133 +309,75 @@ async function callPollinations(payload) {
   return { text, provider: 'pollinations' }
 }
 
+function sendJson(res, status, data) {
+  res.statusCode = status
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.end(JSON.stringify(data))
+}
+
 export function makeAiHandler(env) {
+  const geminiKey = realKey(env.GEMINI_API_KEY) || realKey(env.GOOGLE_API_KEY) || realKey(env.VITE_GEMINI_API_KEY)
   return async function aiHandler(req, res, next) {
-    const url = req.url || ''
-    if (!url.startsWith('/api/ai/')) return next()
+    const path = (req.url || '').split('?', 1)[0]
+    if (path === '/api/ai/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok' })
 
-    if (url.startsWith('/api/ai/health') && req.method === 'GET') {
-      const geminiKey = realKey(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || env.GOOGLE_API_KEY)
-      const openaiReady = Boolean(
-        (realKey(env.OPENAI_API_KEY) && (env.OPENAI_BASE_URL || '').trim()) || realKey(env.OPENROUTER_API_KEY)
-      )
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({
-        geminiKey: Boolean(geminiKey),
-        geminiDisabled: Date.now() < state.geminiDisabledUntil,
-        geminiModel: state.geminiWorkingModel,
-        openaiCompatible: openaiReady,
-        openRouterFree: Boolean(realKey(env.OPENROUTER_API_KEY)),
-        tavilySearch: Boolean(realKey(env.TAVILY_API_KEY)),
-        keyless: Date.now() >= state.llm7DisabledUntil || Date.now() >= state.pollinationsDisabledUntil,
-        keylessLlm7: Date.now() >= state.llm7DisabledUntil,
-        keylessPollinations: Date.now() >= state.pollinationsDisabledUntil,
-        lastProvider: state.lastProvider,
-        lastError: state.lastError,
-      }))
-      return
-    }
-
-    if (!url.startsWith('/api/ai/chat')) return next()
+    if (path !== '/api/ai/chat') return next()
     if (req.method !== 'POST') {
-      res.statusCode = 405
-      res.end(JSON.stringify({ error: 'Use POST' }))
-      return
+      res.setHeader('Allow', 'POST')
+      return sendJson(res, 405, { error: 'Use POST' })
     }
 
     let payload
     try {
-      payload = await readJsonBody(req)
+      payload = await readChatRequest(req)
     } catch (err) {
-      res.statusCode = 400
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ error: `Bad request body: ${err.message}` }))
-      return
+      if (err instanceof ChatRequestError) return sendJson(res, err.status, { error: err.message })
+      return sendJson(res, 500, { error: 'Chat request could not be processed' })
     }
 
-    // Don't forward requests from retired voice clients to Chat's providers.
-    if (payload?.mode === 'talk' || payload?.mode === 'bot') {
-      res.statusCode = 410
-      res.setHeader('Content-Type', 'application/json')
-      res.setHeader('Cache-Control', 'no-store')
-      res.end(JSON.stringify({ error: 'Voice replies are no longer available' }))
-      return
-    }
-    const geminiKey = realKey(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || env.GOOGLE_API_KEY)
-    const attempts = []
+    const deadline = AbortSignal.timeout(payload.timeoutMs)
+    const disconnected = new AbortController()
+    const signal = AbortSignal.any([deadline, disconnected.signal])
+    const onClose = () => { if (!res.writableEnded) disconnected.abort() }
+    res.once?.('close', onClose)
+    if (res.destroyed) onClose()
+    payload.signal = signal
 
     const providers = []
-    if (payload.useSearch) {
-      providers.push({ name: 'tavily-search', run: () => callTavilySearch(payload, env) })
-    }
+    if (payload.useSearch) providers.push(() => callTavilySearch(payload, env))
     if (geminiKey) {
-      providers.push({
-        name: 'gemini',
-        run: () => callGemini({
-          key: geminiKey,
-          contents: buildGeminiContents(payload.messages, payload.images),
-          system: payload.system,
-          model: payload.model || env.GEMINI_MODEL,
-          temperature: payload.temperature,
-          maxTokens: payload.maxTokens,
-          timeoutMs: payload.timeoutMs,
-          useSearch: payload.useSearch,
-        }),
-      })
+      providers.push(() => callGemini({
+        key: geminiKey,
+        contents: buildGeminiContents(payload.messages, payload.images),
+        system: payload.system,
+        model: env.GEMINI_MODEL,
+        temperature: payload.temperature,
+        maxTokens: payload.maxTokens,
+        signal,
+        useSearch: payload.useSearch,
+      }))
     }
     if (!payload.useSearch) {
-      providers.push({ name: 'openai-compatible', run: () => callOpenAICompatible(payload, env) })
-      providers.push({ name: 'keyless-llm7', run: () => callLlm7(payload) })
-      providers.push({ name: 'keyless-pollinations', run: () => callPollinations(payload) })
+      providers.push(() => callOpenAICompatible(payload, env), () => callLlm7(payload), () => callPollinations(payload))
     }
 
-    for (const provider of providers) {
-      try {
-        const result = await provider.run()
-        if (payload.useSearch && !result.sources?.length) throw new Error('Provider returned no web sources')
-        state.lastProvider = result.provider
-        state.lastError = null
-        res.statusCode = 200
-        res.setHeader('Content-Type', 'application/json')
-        res.setHeader('Cache-Control', 'no-store')
-        res.end(JSON.stringify({ ...result, attempts }))
-        return
-      } catch (err) {
-        attempts.push({ provider: provider.name, error: err.message })
+    try {
+      for (const run of providers) {
+        if (signal.aborted) break
+        try {
+          const result = await run()
+          if (signal.aborted) break
+          if (payload.useSearch && !result.sources?.length) continue
+          return sendJson(res, 200, result)
+        } catch { /* Try the next configured route within the same request budget. */ }
       }
+      if (disconnected.signal.aborted) return
+      if (deadline.aborted) return sendJson(res, 504, { error: 'AI request timed out' })
+      return sendJson(res, 502, { error: 'AI service is temporarily unavailable' })
+    } finally {
+      res.off?.('close', onClose)
     }
-
-    state.lastProvider = null
-    state.lastError = attempts.map((a) => `${a.provider}: ${a.error}`).join(' | ')
-    res.statusCode = 502
-    res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({
-      error: 'All AI providers failed',
-      attempts,
-      hint: 'Add a valid GEMINI_API_KEY (https://aistudio.google.com/apikey) to .env and restart the dev server.',
-    }))
   }
-}
-
-function readJsonBody(req) {
-  if (req.body != null) {
-    if (typeof req.body === 'object') return Promise.resolve(req.body)
-    try { return Promise.resolve(JSON.parse(String(req.body))) } catch (err) { return Promise.reject(err) }
-  }
-  return new Promise((resolve, reject) => {
-    let body = ''
-    req.on('data', (chunk) => {
-      body += chunk
-      if (body.length > 25 * 1024 * 1024) {
-        reject(new Error('Request body too large'))
-        req.destroy()
-      }
-    })
-    req.on('end', () => {
-      if (!body.trim()) return resolve({})
-      try { resolve(JSON.parse(body)) } catch (err) { reject(err) }
-    })
-    req.on('error', reject)
-  })
 }

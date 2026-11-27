@@ -1,4 +1,5 @@
-import { detectIntent, INTENTS } from './intentEngine.js';
+import { asksForSmogPlan, detectIntent, INTENTS } from './intentEngine.js';
+import { isSmogProfile } from './smogProfile.js';
 import { getDevicePlace, lookupPlace } from '../services/placeLookup.js';
 
 const WEATHER = /\b(?:weather|temperature|forecast|rain(?:ing)?|mausam|baarish|havaman)\b|मौसम|बारिश|हवामान|तापमान|पाऊस/iu;
@@ -9,7 +10,6 @@ const READING_RELATED_NEWS = /\b(?:news|headlines|laws?|rules?|policy|policies|d
 const CIVIC_OFFICE = /\b(?:municipal|city council|pollution control board|traffic police|environment(?:al)? (?:agency|department)|forest department|nmmc|bmc|mpcb)\b/i;
 const HERE = /\b(?:here|near (?:me|us|here)|nearby|locally|local (?:area|weather|aqi|news)|in my|around (?:me|us)|my (?:city|area|location|locality|neighbou?rhood)|(?:at|near) home|where i (?:am|live))\b|मेरे (?:यहाँ|यहां|शहर)|यहाँ|यहां|माझ्या|इथे/iu;
 const DEVICE_LOCATION = /^(?:(?:please\s+)?(?:use|share|detect|show|find|check) (?:my|current) (?:current )?(?:location|city)|where am i|what(?:['’]s| is) my (?:current )?(?:location|city)|which city am i in)[.?!]*$/i;
-const SMOG = /\b(?:smog plan|(?:personalized|personalised|clean.air|cleaner.air|indoor.air) plan|winter smog|low.emission routine)\b|(?:स्मॉग|धुंध).{0,20}(?:योजना|प्लान)/iu;
 const LOCAL_NEWS = /\b(?:news|headlines|what(?:['’]s| is) (?:going on|happening))\s+(?:in|near|around|for)\b/i;
 const PLACE_COMMAND = /^(?:i live in|i (?:am|come) from|i['’]m from|(?:set|change) (?:my )?(?:city|location) to|use the city of)\s+(.+)$/i;
 const PLACE_FOLLOWUP = /^(?:i (?:am|live)|i['’]m) in\s+(.+)$/i;
@@ -75,6 +75,32 @@ function statedCity(text) {
     clean.match(/^mi\s+(.+?)\s+(?:madhye|madhe|ithe|yethe)\s+(?:aahe|ahe)[.!?]*$/i)?.[1] || '';
 }
 
+function routeSmogPlan(text, { profileReply = false } = {}) {
+  // Keep comma-separated city qualifiers intact while splitting off profile statements.
+  const separator = /[;!?\n]+|(?<!\b(?:st|ste|mt|ft))\.(?=\s|$)|,\s*(?=(?:i|we|my|our|commute|routine|cooking|air cleaning|household)\b)/iu;
+  const clauses = text.split(separator).map((clause) => clause.trim()).filter(Boolean);
+  const request = profileReply ? '' : clauses.find(asksForSmogPlan) || text;
+  const requestedCity = explicitPlace(request, true);
+  let declaredCity = '';
+  let pinLocation = false;
+  const details = [];
+  for (const clause of clauses) {
+    if (clause === request) continue;
+    const command = clause.match(PLACE_COMMAND);
+    const city = labeledCity(clause) || placeName(statedCity(clause) || command?.[1]);
+    if (city && !declaredCity) {
+      declaredCity = city;
+      pinLocation = Boolean(command);
+    } else if (!city && isSmogProfile(clause)) {
+      details.push(clause);
+    }
+  }
+  return {
+    kind: 'tool', needsPlace: true, intent: INTENTS.GET_SMOG_PLAN, relative: HERE.test(request),
+    place: requestedCity || declaredCity, smogDetails: details.join('; '), pinLocation: !requestedCity && pinLocation,
+  };
+}
+
 function cityAnswer(text) {
   const trimmed = text.trim().replace(/^(?:(?:um|uh|erm)[,\s]+)+/i, '');
   const stripped = trimmed.replace(/^i (?:already |just )?(?:said|meant)[,:\s]+/i, '');
@@ -104,13 +130,16 @@ function correctedCity(text) {
   return explicit ? cityAnswer(explicit[1]) : '';
 }
 
-export function routePlaceRequest(text, history = []) {
+export function routePlaceRequest(text, history = [], { awaitingSmogProfile = false } = {}) {
   const clean = text.trim();
   const relative = HERE.test(clean) || /\b(?:air|weather|temperature) outside\b/i.test(clean);
   if (DEVICE_LOCATION.test(clean)) return { kind: 'device' };
+  const smogRequest = asksForSmogPlan(clean);
+  const profile = awaitingSmogProfile && !smogRequest ? routeSmogPlan(clean, { profileReply: true }) : null;
   const command = clean.match(PLACE_COMMAND);
+  if (command && profile?.pinLocation && profile.smogDetails) return profile;
   const settingCity = command && (correctedCity(command[1]) || placeName(command[1]));
-  if (settingCity) return { kind: 'city', needsPlace: true, place: settingCity };
+  if (settingCity && !smogRequest) return { kind: 'city', needsPlace: true, place: settingCity };
 
   const mapRequest = clean.replace(/[.?!।]+$/u, '');
   const map = mapRequest.match(MAP) || mapRequest.match(MAP_QUESTION) || mapRequest.match(ON_MAP);
@@ -125,20 +154,20 @@ export function routePlaceRequest(text, history = []) {
   }
 
   const { intent } = detectIntent(clean, history);
-  const isSmog = SMOG.test(clean) || intent === INTENTS.GET_SMOG_PLAN;
+  const smog = smogRequest || intent === INTENTS.GET_SMOG_PLAN ? routeSmogPlan(clean) : null;
   const air = AIR.test(clean);
   const weather = WEATHER.test(clean);
   const localNews = LOCAL_NEWS.test(clean);
   const contact = intent === INTENTS.GET_AUTHORITY_CONTACTS || (intent !== INTENTS.CREATE_EMAIL &&
     CIVIC_OFFICE.test(clean) && /\b(?:email|phone|helpline|contacts?|portal)\b/i.test(clean));
-  const place = air || weather || isSmog || contact || PLACE_TOOLS.has(intent) || relative || localNews
-    ? explicitPlace(clean, air || weather || isSmog) : '';
+  const place = smog?.place ?? (air || weather || contact || PLACE_TOOLS.has(intent) || relative || localNews
+    ? explicitPlace(clean, air || weather) : '');
   const definition = /^(?:what (?:is|does)|define|explain)\s+(?:the term\s+)?(?:aqi|air quality|air pollution|pm\s*2\.5|pm\s*10|weather|smog)(?:\s+(?:mean|stand for))?[.?!]*$/i.test(clean) ||
     (!place && !relative && /\b(?:how (?:to|can i|do we) (?:reduce|improve|prevent)|what causes|effects of|why (?:does|is))\b/i.test(clean));
 
-  if (definition && (air || weather || isSmog)) return { kind: 'general', intent: INTENTS.ASK_QUESTION };
+  if (definition && (air || weather || smog)) return { kind: 'general', intent: INTENTS.ASK_QUESTION };
 
-  if (isSmog && !definition) return { kind: 'tool', needsPlace: true, intent: INTENTS.GET_SMOG_PLAN, relative, place };
+  if (smog) return smog;
   if (localNews || (WEB.test(clean) && (READING_RELATED_NEWS.test(clean) || (!air && !weather && !contact))) || (relative && /\b(?:news|what['’]?s (?:going on|happening))\b/i.test(clean))) {
     return { kind: 'web', needsPlace: relative || localNews, relative, place };
   }
@@ -161,9 +190,10 @@ export function routePlaceRequest(text, history = []) {
     return { kind: 'web', needsPlace: true, relative, place };
   }
   if ([INTENTS.UPLOAD_PHOTO_REPORT, INTENTS.GET_COMMUNITY, INTENTS.GET_USER_IMPACT, INTENTS.GET_WASTE_TIPS].includes(intent) &&
-    /\b(?:analy[sz]e (?:a |this )?photo|community feed|my (?:reports|eco impact)|waste (?:segregation|reduction)|recycling tips)\b/i.test(clean)) {
+      /\b(?:analy[sz]e (?:a |this )?photo|community feed|my (?:reports|eco impact)|waste (?:segregation|reduction)|recycling tips)\b/i.test(clean)) {
     return { kind: 'tool', intent };
   }
+  if (profile?.smogDetails) return profile;
   return { kind: 'general' };
 }
 
@@ -188,7 +218,7 @@ export async function resolvePlaceTurn(text, context, route, {
     return { kind: 'general', message: input, context: { ...context, waiting: null } };
   }
   let turn = { ...route, message: input };
-  const explicitlyChooseCity = turn.kind === 'city';
+  const explicitlyChooseCity = turn.kind === 'city' || turn.pinLocation;
   if (turn.kind === 'device') {
     turn = waiting?.turn || { ...turn, kind: 'city', needsPlace: true };
     const location = await locateDevice({ signal });

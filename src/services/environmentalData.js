@@ -11,6 +11,7 @@ const WAQI_TOKEN = isConfiguredKey(rawWaqi) ? rawWaqi : '';
 const OWM_KEY = isConfiguredKey(rawOwm) ? rawOwm : '';
 
 const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+const CACHE_MAX_ENTRIES = 128;
 const apiCache = new Map();
 
 function getCached(key) {
@@ -20,11 +21,17 @@ function getCached(key) {
     apiCache.delete(key);
     return null;
   }
+  apiCache.delete(key);
+  apiCache.set(key, entry);
   return entry.value;
 }
 
 function setCached(key, value) {
-  if (value != null) apiCache.set(key, { value, ts: Date.now() });
+  if (value != null) {
+    apiCache.delete(key);
+    apiCache.set(key, { value, ts: Date.now() });
+    if (apiCache.size > CACHE_MAX_ENTRIES) apiCache.delete(apiCache.keys().next().value);
+  }
   return value;
 }
 
@@ -75,7 +82,7 @@ export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {})
       const res = await fetch(url, { signal: requestSignal(signal) });
       if (res.ok) {
         const json = await res.json();
-        if (json.status === 'ok' && Number.isFinite(json.data?.aqi)) {
+        if (json.status === 'ok' && Number.isFinite(json.data?.aqi) && json.data.aqi >= 0) {
           const d = json.data;
           return setCached(cacheKey, {
             aqi: d.aqi ?? null,
@@ -101,7 +108,7 @@ export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {})
     if (res.ok) {
       const json = await res.json();
       const cur = json.current || {};
-      if (Number.isFinite(cur.us_aqi)) {
+      if (Number.isFinite(cur.us_aqi) && cur.us_aqi >= 0) {
         return setCached(cacheKey, {
           aqi: Math.round(cur.us_aqi),
           pm25: cur.pm2_5 != null ? Math.round(cur.pm2_5 * 10) / 10 : null,
@@ -111,6 +118,7 @@ export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {})
           co: cur.carbon_monoxide != null ? Math.round(cur.carbon_monoxide) : null,
           so2: cur.sulphur_dioxide != null ? Math.round(cur.sulphur_dioxide * 10) / 10 : null,
           scale: 'U.S. AQI',
+          sourceType: 'modeled',
           city: cityLabel || null,
           timestamp: toUtcIso(cur.time),
           source: 'Open-Meteo Air Quality',
@@ -135,25 +143,22 @@ export async function getAirQualityForecast(lat, lng, { signal } = {}) {
   if (cached) return cached;
 
   try {
-    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi&hourly=us_aqi,pm2_5,pm10&forecast_days=2&timezone=auto`;
+    // Unix times remain absolute while `timezone=auto` gives the city's display zone.
+    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi&hourly=us_aqi&forecast_days=2&timezone=auto&timeformat=unixtime`;
     const res = await fetch(url, { signal: requestSignal(signal, 6000) });
     if (!res.ok) return null;
     const json = await res.json();
     const times = json.hourly?.time || [];
     const currentTime = json.current?.time;
-    if (!currentTime) return null;
+    if (!Number.isFinite(currentTime) || typeof json.timezone !== 'string') return null;
     const start = times.findIndex((time) => time >= currentTime);
     if (start < 0) return null;
-    const hours = times.slice(start, start + 24).map((time, offset) => {
-      const index = start + offset;
-      return {
-        time,
-        aqi: json.hourly?.us_aqi?.[index] == null ? null : Math.round(json.hourly.us_aqi[index]),
-        pm25: json.hourly?.pm2_5?.[index] == null ? null : Math.round(json.hourly.pm2_5[index] * 10) / 10,
-        pm10: json.hourly?.pm10?.[index] == null ? null : Math.round(json.hourly.pm10[index] * 10) / 10,
-      };
-    }).filter((hour) => Number.isFinite(hour.aqi));
-    return setCached(cacheKey, { hours, source: 'Open-Meteo Air Quality', sourceUrl: url });
+    const hours = times.slice(start, start + 25).flatMap((time, offset) => {
+      const aqi = json.hourly?.us_aqi?.[start + offset];
+      return Number.isFinite(time) && Number.isFinite(aqi) && aqi >= 0
+        ? [{ time: time * 1000, aqi: Math.round(aqi) }] : [];
+    });
+    return hours.length ? setCached(cacheKey, { hours, timeZone: json.timezone }) : null;
   } catch (err) {
     signal?.throwIfAborted();
     console.warn('Open-Meteo AQI forecast failed:', err.message);

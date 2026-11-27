@@ -1,17 +1,18 @@
 // Agent Orchestrator — processes user messages and returns structured responses
 
 import { detectIntent, INTENTS } from './intentEngine';
-import { isSmogProfile, parseSmogProfile } from './smogProfile';
+import { getSmogPlan, startSmogPlan } from './smogPlan';
 import { AWAITING_CHAT_PLACE, AWAITING_DRAFT_DETAILS, incidentCity, isDraftDetailFragment, resolveChatPlace } from './chatPlaces';
 import { asksForForecast } from './placeContext';
 import { tools } from '../services/agentTools';
 import { getChatResponse, getJsonResponse, isAIUnavailable } from '../services/geminiService';
 import { buildFallbackReply, buildComplaintEmailTemplate, contactLines } from './fallbackBrain';
-import { getAQIInsight, getAQICategory, getAirQuality, getAirQualityForecast, getWeather } from '../services/environmentalData';
+import { getAQIInsight, getAQICategory, getAirQuality, getWeather } from '../services/environmentalData';
 import { lookupPlace } from '../services/placeLookup';
 import { getAuthorityBundle, isIndianPlace } from '../services/authorityDirectory';
 import { COLLECTIONS } from '../firebase/collections';
-import { db, isFirebaseConfigured } from '../firebase/config';
+import { isFirebaseConfigured } from '../firebase/config';
+import { db } from '../firebase/firestoreClient';
 import { addDoc, collection, Timestamp } from 'firebase/firestore';
 
 async function logAction(userId, action, data) {
@@ -31,7 +32,6 @@ function resolveCity(city) {
 
 export async function processMessage(userMessage, conversationHistory, user, location, imageData, pendingAction, { chosenLocation, photoLocation, signal } = {}) {
   const userId = user?.uid || 'anonymous';
-  const followingSmog = pendingAction?.type === 'SMOG_PLAN_AWAITING_PROFILE' && isSmogProfile(userMessage);
 
   try {
     if (imageData?.base64) {
@@ -47,10 +47,9 @@ export async function processMessage(userMessage, conversationHistory, user, loc
     const chatLocation = fromPhoto ? photoLocation : location;
     const draftDetails = !fromPhoto && pendingAction?.type === AWAITING_DRAFT_DETAILS &&
       (describesIssue(userMessage) || isDraftDetailFragment(userMessage));
-    const placeTurn = followingSmog ? null :
-      await resolveChatPlace(userMessage, conversationHistory, chatLocation, fromPhoto ? null : pendingAction, {
-        chosenLocation: fromPhoto ? null : chosenLocation, draftDetails, fromPhoto, signal,
-      });
+    const placeTurn = await resolveChatPlace(userMessage, conversationHistory, chatLocation, fromPhoto ? null : pendingAction, {
+      chosenLocation: fromPhoto ? null : chosenLocation, draftDetails, fromPhoto, signal,
+    });
     const contextUpdate = placeTurn?.context;
     const placeUpdate = {
       ...(!fromPhoto && contextUpdate?.location && contextUpdate.location !== location ? { resolvedLocation: contextUpdate.location } : {}),
@@ -69,7 +68,7 @@ export async function processMessage(userMessage, conversationHistory, user, loc
     }
     if (placeTurn?.kind === 'map') return { ...chatMap(placeTurn.location), ...placeUpdate };
 
-    const active = placeTurn?.location || (followingSmog && pendingAction.location) || chatLocation;
+    const active = placeTurn?.location || chatLocation;
     const { lat, lng } = active || {};
     const city = resolveCity(active?.city);
     const message = placeTurn?.message || userMessage;
@@ -79,10 +78,7 @@ export async function processMessage(userMessage, conversationHistory, user, loc
 
     let result;
 
-    if (followingSmog) {
-      result = await handleSmogPlanProfile(message, { city, lat, lng }, signal);
-    } else {
-      switch (intent) {
+    switch (intent) {
       case INTENTS.GET_AIR_QUALITY:
         result = await handleAirQuality(lat, lng, city, userId, { signal, forecast: asksForForecast(message) });
         break;
@@ -144,7 +140,9 @@ export async function processMessage(userMessage, conversationHistory, user, loc
         break;
 
       case INTENTS.GET_SMOG_PLAN:
-        result = handleSmogPlanStart(city);
+        result = placeTurn?.smogDetails
+          ? await getSmogPlan(placeTurn.smogDetails, { city, lat, lng }, signal)
+          : startSmogPlan(city);
         break;
 
       default:
@@ -152,7 +150,6 @@ export async function processMessage(userMessage, conversationHistory, user, loc
           snapshot: placeTurn?.snapshot, web: placeTurn?.kind === 'web', webLocation: placeTurn?.location, signal,
         });
         break;
-      }
     }
 
     if (result.pending && active) result.pendingData = { ...result.pendingData, location: active };
@@ -175,112 +172,6 @@ function chatMap(place, selected = false) {
     text: selected ? `📍 **${place.city}** is your selected city for Chat.` : `🗺️ Here is **${place.city}** on the map.`,
     cards: [{ type: 'map', data: { ...place, label: place.city } }],
     actions: selected ? [{ label: '🌬️ Check Air Quality', action: 'QUICK_AQI', variant: 'primary' }] : [],
-    status: 'success',
-  };
-}
-
-function handleSmogPlanStart(city) {
-  return {
-    text: `Let's create your personalized clean-air and winter-smog plan for **${city || 'your city'}**. Reply naturally in one message with whatever you know:\n\n• Usual commute: car / two-wheeler / public transport / walk-cycle / work from home\n• Routine: office-school / outdoor work / mostly home / mixed\n• Cooking: gas / induction-electric / mixed\n• Air cleaning: HEPA / DIY filter / none\n• Household: children, older adults, or heart/lung sensitivity (optional)\n\nExample: *“Car commute, outdoor work, gas stove, HEPA purifier, one child.”*`,
-    cards: [],
-    actions: [],
-    status: 'needs_info',
-    pending: 'SMOG_PLAN_AWAITING_PROFILE',
-  };
-}
-
-function lowestAqiWindow(forecast) {
-  const hours = forecast?.hours || [];
-  const usable = hours.filter((item) => {
-    const hour = Number(String(item.time).slice(11, 13));
-    return hour >= 6 && hour <= 21;
-  });
-  const best = [...(usable.length ? usable : hours)].sort((a, b) => a.aqi - b.aqi)[0];
-  if (!best) return null;
-  // Open-Meteo already sent wall-clock time for the target city. Preserve it
-  // even if the device is in another zone (or has a DST transition that day).
-  const date = new Date(`${best.time}Z`);
-  return {
-    ...best,
-    label: Number.isNaN(date.getTime()) ? best.time.replace('T', ' ') : date.toLocaleString([], { weekday: 'short', hour: 'numeric', timeZone: 'UTC' }),
-  };
-}
-
-async function handleSmogPlanProfile(userMessage, location, signal) {
-  const targetCity = location?.city || 'your area';
-  const lat = location?.lat;
-  const lng = location?.lng;
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return {
-      text: 'I have your routine, but I need a location for live AQI. Type the city name or share your location, then ask for the smog plan again.',
-      cards: [],
-      actions: [{ label: '📍 Share Location', action: 'REQUEST_LOCATION', variant: 'primary' }],
-      status: 'needs_location',
-    };
-  }
-
-  const profile = parseSmogProfile(userMessage);
-  const [aqi, weather, forecast] = await Promise.all([
-    getAirQuality(lat, lng, targetCity, { signal }),
-    getWeather(lat, lng, { signal }),
-    getAirQualityForecast(lat, lng, { signal }),
-  ]);
-  const hasAqi = aqi?.aqi != null && Number.isFinite(Number(aqi.aqi));
-  const category = getAQICategory(aqi?.aqi);
-  const severe = hasAqi && aqi.aqi >= 151;
-  const sensitive = hasAqi && aqi.aqi >= 101;
-  const best = lowestAqiWindow(forecast);
-  const vulnerable = profile.vulnerable.length ? profile.vulnerable.join(', ') : 'none stated';
-
-  const commuteAdvice = profile.commute === 'car'
-    ? 'Bundle errands, carpool when practical, avoid idling, and use cabin recirculation near heavy traffic.'
-    : profile.commute === 'two-wheeler'
-      ? `${severe ? 'Use metro/train/bus for the longest leg today; ' : ''}avoid waiting behind buses and trucks.`
-      : profile.commute === 'walk/cycle'
-        ? `${severe ? 'Avoid strenuous roadside exercise today; use transit for the polluted segment.' : 'Use internal lanes away from traffic.'}`
-        : profile.commute === 'work from home'
-          ? 'Preserve the avoided commute benefit by grouping deliveries and unnecessary trips.'
-          : profile.commute === 'public transport'
-            ? 'Keep the long leg on public transport and reach it through quieter internal streets.'
-            : 'Choose public transport or carpool for longer journeys where practical, and avoid idling.';
-  const commuteImpact = profile.commute === 'walk/cycle'
-    ? 'Active travel has zero tailpipe emissions; moving it away from peak smog prevents high breathing rates from multiplying exposure.'
-    : 'Fewer solo vehicle kilometres and less idling reduce tailpipe emissions while quieter routes reduce roadside exposure.';
-
-  const indoorAdvice = profile.filtration === 'HEPA purifier'
-    ? 'Run HEPA in one closed cleaner-air room, keep airflow clear, wet-mop, and avoid ozone/ionizer modes.'
-    : 'Create one low-dust room, damp-clean instead of dry sweeping, close traffic-facing leaks during peaks, and ventilate only when outdoor AQI is lower.';
-  const cookingAdvice = profile.cooking === 'gas stove'
-    ? 'Exhaust the gas stove outdoors every time it runs; prefer back burners and keep children away from the cooking plume.'
-    : 'If you fry or cook at high heat, use an exhaust fan that vents outdoors.';
-
-  const profileSummary = [profile.commute, profile.routine, profile.cooking, profile.filtration].filter(Boolean).join('; ') || 'routine not specified';
-
-  const forecastLine = best
-    ? `**Lower-AQI outdoor window:** ${best.label} (city local time; forecast U.S. AQI ${best.aqi}). [Open-Meteo forecast](${forecast.sourceUrl}). Check the latest reading before going out.`
-    : '**Lower-AQI outdoor window:** forecast temporarily unavailable—check live AQI before going out.';
-  const lowWind = weather?.windSpeed != null && weather.windSpeed < 2
-    ? ` Wind is low at ${weather.windSpeed} m/s ([${weather.source}](${weather.sourceUrl})), so dispersion may be slow.`
-    : '';
-
-  const reading = hasAqi
-    ? `**Current:** AQI **${aqi.aqi} — ${category.label}** · PM2.5 ${aqi.pm25 ?? '—'} · PM10 ${aqi.pm10 ?? '—'} (${aqi.source}).`
-    : '**Current AQI:** temporarily unavailable. The steps below are based on your routine, not on an assumed reading.';
-  const exposure = !hasAqi ? 'Check the current AQI before strenuous outdoor activity, and avoid visible smoke and idling vehicles.'
-    : severe ? 'Move exercise indoors, shorten non-essential outdoor tasks, and use a well-fitted N95/FFP2 for unavoidable travel.'
-      : sensitive ? 'Shorten prolonged outdoor exertion, especially beside traffic; sensitive family members should take extra care.'
-        : 'Follow local guidance and avoid visible smoke and idling traffic.';
-  const workAdvice = profile.routine === 'outdoor work' && (sensitive || !hasAqi)
-    ? ' If you work outside, take breaks in a cleaner indoor space when possible.' : '';
-  const factualPlan = `🌫️ **Your clean-air plan — ${targetCity}**\n\n${reading}${lowWind}\n**Profile understood:** ${profileSummary}; household sensitivity: ${vulnerable}.\n\n🛡️ **1. Exposure routine**\n${exposure}${workAdvice}\n**Direct impact:** reduces inhaled fine-particle dose; this does not reduce the pollution source itself.\n\n🚌 **2. Lower-emission commute**\n${commuteAdvice}\n**Direct impact:** ${commuteImpact}\n\n🏠 **3. Indoor air**\n${indoorAdvice}\n**Direct impact:** source control prevents new indoor particles; filtration removes particles already suspended indoors.\n\n🍳 **4. Cooking**\n${cookingAdvice}\n**Direct impact:** prevents controllable cooking pollution from adding another exposure layer on an outdoor-smog day.\n\n🌿 **5. Community choice**\nDo not burn leaves or waste, discourage idling, share verified AQI guidance, and report smoke or dust hotspots with location and photos.\n**Direct impact:** avoiding burning and idling cuts emissions at the source.\n\n🕒 ${forecastLine}`;
-
-  return {
-    text: `${factualPlan}\n\n_General exposure guidance, not medical advice. Follow local advisories and consult a clinician for symptoms or individual medical decisions._`,
-    cards: hasAqi ? [{ type: 'aqi', data: { ...aqi, insight: getAQIInsight(aqi) } }] : [],
-    actions: [
-      { label: '💊 AQI Health Tips', action: 'QUICK_HEALTH_TIPS', variant: 'secondary' },
-      { label: '📷 Report a Pollution Source', action: 'OPEN_IMAGE_PICKER', variant: 'secondary' },
-    ],
     status: 'success',
   };
 }

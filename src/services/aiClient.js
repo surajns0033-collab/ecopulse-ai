@@ -1,9 +1,7 @@
 // AI client — single entry point for every model call in the app.
 //
-// Priority:
-//   1. Server-side proxy  /api/ai/chat   (Gemini → OpenAI-compatible → keyless)
-//   2. Direct Gemini call from the browser using VITE_GEMINI_API_KEY
-//   3. null  → callers fall back to their verified rule-based answer
+// The server-side proxy owns model credentials. If it is unavailable,
+// callers use the verified rule-based answer rather than a browser API key.
 //
 // Nothing here invents data. If no model is reachable, callers must degrade
 // gracefully with live API data / official contacts instead of guessing.
@@ -33,85 +31,12 @@ async function postJson(url, body, timeoutMs, signal) {
       body: JSON.stringify(body),
       signal: signal ? AbortSignal.any([t.signal, signal]) : t.signal,
     });
-    const raw = await res.text();
     let json = null;
-    try { json = JSON.parse(raw); } catch { /* ignore */ }
-    return { ok: res.ok, status: res.status, json, raw };
+    try { json = await res.json(); } catch { /* The host may return an HTML error page. */ }
+    return { ok: res.ok, status: res.status, json };
   } finally {
     t.done();
   }
-}
-
-/** Direct browser → Gemini REST call (works even when the dev proxy is absent). */
-async function callGeminiDirect({ system, messages, images, temperature, maxTokens, timeoutMs, useSearch, model, signal }) {
-  const key = (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
-  if (!key || /^your_/i.test(key)) throw new Error('No browser Gemini key configured');
-
-  const contents = [];
-  for (const message of messages || []) {
-    const role = message.role === 'ai' || message.role === 'assistant' ? 'model' : 'user';
-    const text = (message.text || '').trim();
-    if (!text) continue;
-    if (contents.length && contents[contents.length - 1].role === role) {
-      contents[contents.length - 1].parts.push({ text });
-    } else {
-      contents.push({ role, parts: [{ text }] });
-    }
-  }
-  while (contents.length && contents[0].role !== 'user') contents.shift();
-  if (!contents.length) contents.push({ role: 'user', parts: [{ text: 'Hello' }] });
-
-  const imageParts = (images || [])
-    .filter((img) => img?.base64)
-    .map((img) => ({ inlineData: { mimeType: img.mimeType || 'image/jpeg', data: String(img.base64).replace(/^data:[^,]+,/, '') } }));
-  if (imageParts.length) contents[contents.length - 1].parts.push(...imageParts);
-
-  const body = {
-    contents,
-    generationConfig: {
-      temperature: typeof temperature === 'number' ? temperature : 0.7,
-      maxOutputTokens: Math.min(maxTokens || 600, 2048),
-    },
-  };
-  if (system) body.systemInstruction = { parts: [{ text: system }] };
-  if (useSearch) body.tools = [{ google_search: {} }];
-
-  const models = [
-    model,
-    import.meta.env.VITE_GEMINI_MODEL,
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-  ].filter(Boolean);
-
-  let lastError = null;
-  for (const model of models) {
-    const { ok, status, json, raw } = await postJson(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,
-      body,
-      timeoutMs || 20000,
-      signal,
-    );
-    if (ok) {
-      const candidate = json?.candidates?.[0];
-      const text = (candidate?.content?.parts || []).map((p) => p?.text || '').join('').trim();
-      if (text) {
-        const sources = (candidate?.groundingMetadata?.groundingChunks || [])
-          .map((chunk) => chunk?.web)
-          .filter((web) => web?.uri)
-          .map((web) => ({ title: web.title || 'Web source', url: web.uri }))
-          .filter((source, index, list) => list.findIndex((item) => item.url === source.url) === index)
-          .slice(0, 6);
-        return { text, sources, provider: `gemini-direct:${model}` };
-      }
-      lastError = new Error('Gemini returned an empty response');
-      continue;
-    }
-    const message = json?.error?.message || raw.slice(0, 200);
-    lastError = new Error(`Gemini ${status}: ${message}`);
-    if (/API key not valid|API_KEY_INVALID/i.test(message)) break;
-  }
-  throw lastError || new Error('Gemini request failed');
 }
 
 /**
@@ -126,7 +51,6 @@ export async function requestAI({
   maxTokens = 600,
   timeoutMs = 30000,
   useSearch = false,
-  model = '',
   signal,
 } = {}) {
   const cleanMessages = (messages || [])
@@ -143,13 +67,12 @@ export async function requestAI({
     maxTokens,
     timeoutMs,
     useSearch,
-    model,
   };
 
-  // 1. Server proxy (preferred — keeps keys private, handles CORS & provider fallback)
+  // All credentials and provider fallbacks stay in the server proxy.
   if (Date.now() > state.proxyUnavailableUntil) {
     try {
-      const { ok, status, json, raw } = await postJson(PROXY, payload, timeoutMs + 10000, signal);
+      const { ok, status, json } = await postJson(PROXY, payload, Math.min(timeoutMs, 40_000) + 5_000, signal);
       if (ok && json?.text) {
         state.lastProvider = json.provider || 'proxy';
         return { text: json.text, sources: json.sources || [], provider: state.lastProvider };
@@ -159,23 +82,11 @@ export async function requestAI({
         state.proxyUnavailableUntil = Date.now() + 5 * 60 * 1000;
         state.proxyUnavailableReason = 'AI endpoint not available on this host';
       } else {
-        state.lastError = (json?.attempts || []).map((a) => `${a.provider}: ${a.error}`).join(' | ') || json?.error || raw.slice(0, 200);
+        state.lastError = json?.error || `AI endpoint returned HTTP ${status}`;
       }
     } catch (err) {
       if (signal?.aborted) return null;
       state.lastError = String(err?.message || err);
-    }
-  }
-
-  // 2. Direct Gemini from the browser (only if a real key is present)
-  if (signal?.aborted) return null;
-  try {
-    const direct = await callGeminiDirect({ system, messages: cleanMessages, images, temperature, maxTokens, timeoutMs, useSearch, model, signal });
-    state.lastProvider = direct.provider;
-    return direct;
-  } catch (err) {
-    if (!/No browser Gemini key/i.test(err.message)) {
-      state.lastError = [state.lastError, err.message].filter(Boolean).join(' | ');
     }
   }
 

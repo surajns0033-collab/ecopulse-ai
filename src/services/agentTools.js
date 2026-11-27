@@ -4,7 +4,8 @@ import {
   collection, addDoc, getDocs, doc, updateDoc, deleteDoc,
   query, where, orderBy, limit as fsLimit, Timestamp, increment, onSnapshot
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from '../firebase/config';
+import { isFirebaseConfigured } from '../firebase/config';
+import { db } from '../firebase/firestoreClient';
 import { COLLECTIONS, generateReportId, generateEventId } from '../firebase/collections';
 import { getAirQuality, getWeather } from './environmentalData';
 import { analyzeEnvironmentalImage as geminiAnalyze } from './geminiService';

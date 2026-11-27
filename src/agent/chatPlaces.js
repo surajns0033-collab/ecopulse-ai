@@ -1,5 +1,6 @@
 import { labeledCity, placeName, resolvePlaceTurn, routePlaceRequest } from './placeContext.js';
 import { INTENTS } from './intentEngine.js';
+import { AWAITING_SMOG_PROFILE } from './smogProfile.js';
 
 export const AWAITING_CHAT_PLACE = 'CHAT_PLACE_AWAITING_INPUT';
 export const AWAITING_DRAFT_DETAILS = 'DRAFT_EMAIL_AWAITING_INFO';
@@ -30,7 +31,9 @@ const knownCities = new Set([
 
 export async function resolveChatPlace(message, history, location, pending, { chosenLocation = null, draftDetails = false, fromPhoto = false, ...options } = {}) {
   const waiting = pending?.type === AWAITING_CHAT_PLACE ? pending.waiting : null;
-  let route = routePlaceRequest(message, history);
+  const awaitingSmogProfile = !fromPhoto && pending?.type === AWAITING_SMOG_PROFILE;
+  let route = routePlaceRequest(message, history, { awaitingSmogProfile });
+  const smogLocation = awaitingSmogProfile && route.intent === INTENTS.GET_SMOG_PLAN ? pending.location : null;
   const continuingDraft = draftDetails && pending?.type === AWAITING_DRAFT_DETAILS && ['general', 'tool'].includes(route.kind);
   if (continuingDraft) {
     route = {
@@ -50,7 +53,7 @@ export async function resolveChatPlace(message, history, location, pending, { ch
   }
   if (route.kind === 'tool' && !route.needsPlace) return null;
   const resolved = await resolvePlaceTurn(message, {
-    location: continuingDraft ? pending.location : location, chosenLocation, waiting,
+    location: continuingDraft ? pending.location : smogLocation || location, chosenLocation, waiting,
   }, route, options);
   // A capitalized word like “Photosynthesis” isn't necessarily a city. If no
   // place matches and the user didn't ask for local data, leave it to Chat.

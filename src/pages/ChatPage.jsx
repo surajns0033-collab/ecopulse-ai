@@ -45,7 +45,8 @@ export default function ChatPage() {
 
   // Scroll to bottom
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    messagesEndRef.current?.scrollIntoView({ behavior: reduceMotion ? 'instant' : 'smooth' });
   }, []);
 
   useEffect(() => {
@@ -434,7 +435,7 @@ export default function ChatPage() {
     <div className="app-shell">
       <Header onRefresh={handleRefresh} />
 
-      <div className="chat-scroll-area" ref={scrollRef}>
+      <div className="chat-scroll-area" ref={scrollRef} role="log" aria-label="Chat messages" aria-relevant="additions" tabIndex={0}>
         {conversation.map((msg) => (
           <MessageBubble
             key={msg.id}
@@ -444,7 +445,7 @@ export default function ChatPage() {
         ))}
 
         {isTyping && (
-          <div className="typing-indicator">
+          <div className="typing-indicator" aria-hidden="true">
             <div className="message-avatar">
               <span style={{ fontSize: 14 }}>🤖</span>
             </div>
@@ -461,6 +462,7 @@ export default function ChatPage() {
 
         <div ref={messagesEndRef} />
       </div>
+      <div className="chat-visually-hidden" role="status">{isTyping ? typingStatus : ''}</div>
 
       <QuickActions
         onMessage={(msg) => sendMessage(msg, null)}

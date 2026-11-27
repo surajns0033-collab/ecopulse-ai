@@ -4,6 +4,7 @@ import { AWAITING_CHAT_PLACE, AWAITING_DRAFT_DETAILS, incidentCity, isDraftDetai
 import { buildComplaintEmailTemplate } from '../src/agent/fallbackBrain.js';
 import { INTENTS } from '../src/agent/intentEngine.js';
 import { routePlaceRequest } from '../src/agent/placeContext.js';
+import { AWAITING_SMOG_PROFILE } from '../src/agent/smogProfile.js';
 import { getAuthorityBundle, matchesDirectoryCity } from '../src/services/authorityDirectory.js';
 
 const NaviMumbai = { city: 'Navi Mumbai, Maharashtra, India', name: 'Navi Mumbai', lat: 19.04, lng: 73.02 };
@@ -107,6 +108,70 @@ test('Hindi, Hinglish, and Marathi city phrasing stays in Chat’s grounded rout
   assert.equal(routePlaceRequest('मुंबईत आत्ता हवामान कसं आहे?').place, 'मुंबईत');
   assert.equal(routePlaceRequest('आज हवामान कसं आहे?').place, '');
   assert.equal(routePlaceRequest('मुंबई में स्मॉग प्लान').intent, INTENTS.GET_SMOG_PLAN);
+});
+
+test('a one-message clean-air plan separates the qualified city from private lifestyle details', async () => {
+  const text = 'Make a smog action plan for Navi Mumbai, Maharashtra, India. I take the train and have no purifier.';
+  const turn = await resolveChatPlace(text, [], null, null, {
+    lookup: async (query) => {
+      assert.equal(query, NaviMumbai.city);
+      return { location: NaviMumbai };
+    },
+    locateDevice: assert.fail,
+  });
+  assert.equal(turn.intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(turn.location, NaviMumbai);
+  assert.equal(turn.smogDetails, 'I take the train and have no purifier');
+});
+
+test('a low-emission daily routine can use a separate city statement and does not invent a commute', async () => {
+  const text = 'I live in Paris, France. Suggest a low-emission daily routine. I cook with induction.';
+  const turn = await resolveChatPlace(text, [], NaviMumbai, null, {
+    lookup: async (query) => {
+      assert.equal(query, 'Paris, France');
+      return { location: Paris };
+    },
+  });
+  assert.equal(turn.intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(turn.location, Paris);
+  assert.equal(turn.smogDetails, 'I cook with induction');
+  assert.equal(turn.context.chosenLocation, Paris);
+});
+
+test('an unresolved smog-plan city does not use the previous location or discard the supplied profile', async () => {
+  const request = 'Smog plan for Parris; I work outdoors and use a gas stove.';
+  const offered = await resolveChatPlace(request, [], NaviMumbai, null, {
+    lookup: async (query) => {
+      assert.equal(query, 'Parris');
+      return { candidate: Paris };
+    },
+  });
+  assert.equal(offered.kind, 'reply');
+  assert.match(offered.text, /^Did you mean Paris/);
+  assert.equal(offered.location, undefined);
+  const pending = { type: AWAITING_CHAT_PLACE, waiting: offered.context.waiting };
+  const confirmed = await resolveChatPlace('Yes', [], NaviMumbai, pending, { lookup: forbidLookup });
+  assert.equal(confirmed.intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(confirmed.location, Paris);
+  assert.equal(confirmed.smogDetails, 'I work outdoors and use a gas stove');
+});
+
+test('when Chat is waiting for a profile, a new city replaces the original city only after verification', async () => {
+  const pending = { type: AWAITING_SMOG_PROFILE, location: NaviMumbai };
+  const skip = await resolveChatPlace('Skip.', [], null, pending, { lookup: forbidLookup });
+  assert.equal(skip.location, NaviMumbai);
+  assert.equal(skip.smogDetails, 'Skip');
+
+  const change = await resolveChatPlace('Set my city to Paris; I commute by bus', [], NaviMumbai, pending, {
+    lookup: async (query) => {
+      assert.equal(query, 'Paris');
+      return { location: Paris };
+    },
+  });
+  assert.equal(change.intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(change.location, Paris);
+  assert.equal(change.context.chosenLocation, Paris);
+  assert.equal(change.smogDetails, 'I commute by bus');
 });
 
 test('global web searches do not geocode a region; local web searches ask for a city', async () => {

@@ -25,7 +25,7 @@ export const INTENTS = {
 const INTENT_PATTERNS = [
   {
     intent: INTENTS.GET_SMOG_PLAN,
-    keywords: ['smog plan', 'winter smog', 'personalized air plan', 'personalised air plan', 'indoor air plan', 'low-emission routine'],
+    keywords: ['smog plan', 'smog action plan', 'personalized air plan', 'personalised air plan', 'indoor air plan', 'low-emission routine'],
     confidence: 0.99,
     tool: null,
   },
@@ -125,6 +125,8 @@ const INTENT_PATTERNS = [
   },
 ];
 
+export const asksForSmogPlan = (text) => /\b(?:smog (?:action )?plan|(?:clean[ -]air|cleaner[ -]air|indoor[ -]air|personali[sz]ed air) (?:action )?plan|low[ -]emission (?:daily )?routine)\b|(?:स्मॉग|धुंध).{0,20}(?:योजना|प्लान)/iu.test(text);
+
 /**
  * Detect user intent from a message
  * @param {string} message
@@ -134,7 +136,7 @@ const INTENT_PATTERNS = [
 export function detectIntent(message, conversationHistory = []) {
   const lower = message.toLowerCase().trim();
 
-  if (/\b(smog plan|winter smog|personalized (?:air|clean-air) plan|personalised (?:air|clean-air) plan|indoor air plan|low-emission routine)\b/i.test(lower)) {
+  if (asksForSmogPlan(lower)) {
     return {
       intent: INTENTS.GET_SMOG_PLAN,
       confidence: 0.99,
