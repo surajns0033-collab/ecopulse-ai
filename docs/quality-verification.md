@@ -29,6 +29,25 @@ npm run build
 | Testing | The Node tests use fixtures and mock external providers; they do not require paid calls, credentials or a live database. |
 | Accessibility | Chat has a named message log, a separate progress announcement, visible keyboard focus and reduced-motion support. Tab to controls and use Enter to send or Shift+Enter for a new line. |
 
-**Local results:** 57 tests passed; the production build succeeded. Lint completed without errors, with 16 existing warnings. The offline Chromium smoke test uses mocked readings and geocoding, so it does not measure live provider availability.
+**Earlier local run at `3b758da8`.** The suite passed 57 tests, the production build succeeded and lint reported 16 warnings. The offline Chromium smoke test uses mocked readings and geocoding, so it does not measure live provider availability.
 
 **Landing-page measurement:** Two local production builds with the same settings, before and after deferring Firestore, loaded **253.6 KiB → 117.6 KiB** of compressed JavaScript before Guest entry (**53.6% less**). This sums gzip sizes of the JavaScript requested by Chromium on a 390 px viewport; it is not a live latency or leaderboard score.
+
+## Submission checks
+
+Use Node.js 22.12 or later on a supported LTS release. Install from the lockfile with `npm ci`.
+
+| Rubric area | How to check EcoPulse |
+| --- | --- |
+| Code quality (high) | `npm run verify` runs lint, the Node suite and the production build. Profile parsing, advice generation and environmental data remain independently testable. |
+| Problem statement alignment (high) | `npm run benchmark` exercises location, commute, cooking, children's exposure, indoor air, community recommendations and missing or stale AQI. Each of the six fixed household or community scenarios checks the advice and five explanations of direct impact. |
+| Security (medium) | With Java 21 installed, `npm run test:rules` starts local Auth and Firestore emulators for an isolated demo project. It tests owner edits, privacy, allowed public post fields and Guest permissions. The regular Node suite covers the chat endpoint's input limits and generic errors. |
+| Efficiency (medium) | The seventh benchmark check counts data requests. It expects three for a first plan, zero additional calls for an immediate repeat and three after the cache expires. The repeated plan must match the first. |
+| Testing (low) | `npm run test:coverage` reports native Node coverage. The cooking regression covers a missing appliance, coordinated denials, a later affirmative mention and Hindi input. The verification workflow also runs the build and emulator checks. |
+| Accessibility (low) | Check Guest Chat, Community and Events at a 390 px viewport. Try keyboard input, active navigation, filter labels, the chat log and reply announcements. Mobile zoom is enabled and the dark green used for active text contrasts with white at 5.02:1. |
+
+Before the cooking correction, the published code at `3b758da8` passed five of the six fixed smog scenarios. A family saying it cooked with gas and had no induction stove received an induction profile. The corrected parser passed all six scenarios in a browser fixture run. It gives that household gas-specific ventilation and burner-use advice.
+
+The deterministic plan and generative follow-up are separate paths. In a live Guest Chat check, the model-backed reply explained that damp dusting reduces indoor particle exposure and carpooling reduces travel emissions. The proxy identified its provider and the answer appeared in the chat log.
+
+Start with incorrect advice, private data access and broken checks when triaging a new revision. The longer-term cleanup is to separate photo and report handling from the main chat orchestrator.
