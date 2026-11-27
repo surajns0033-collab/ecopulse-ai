@@ -125,196 +125,106 @@ const INTENT_PATTERNS = [
   },
 ];
 
-export const asksForSmogPlan = (text) => /\b(?:smog (?:action )?plan|(?:clean[ -]air|cleaner[ -]air|indoor[ -]air|personali[sz]ed air) (?:action )?plan|low[ -]emission (?:daily )?routine)\b|(?:स्मॉग|धुंध).{0,20}(?:योजना|प्लान)/iu.test(text);
+const NAMED_SMOG_PLAN = /\b(?:smog (?:action )?plan|(?:clean[ -]air|cleaner[ -]air|indoor[ -]air|personali[sz]ed air) (?:action )?plan|low[ -]emission (?:daily )?routine)\b|(?:स्मॉग|धुंध).{0,20}(?:योजना|प्लान)/iu;
+const INTENT_DETAILS = new Map(INTENT_PATTERNS.map(pattern => [pattern.intent, pattern]));
 
-/**
- * Detect user intent from a message
- * @param {string} message
- * @param {Array} conversationHistory
- * @returns {{ intent, confidence, entities, suggestedTool, requiresConfirmation }}
- */
-export function detectIntent(message, conversationHistory = []) {
-  const lower = message.toLowerCase().trim();
+const PLAN_FOR_SMOG = /\b(?:plan|routine)\s+(?:for|during|around)\s+(?:(?:the|a|severe|heavy|winter|urban|local)\s+)*(?:smog|air pollution)\b/i;
+const AIR_TOPIC = /\b(?:smog|air pollution|polluted air|indoor air quality)\b/i;
+const DAILY_SETTING = /\b(?:home|household|family|families|kids|children|school|commute|community|neighbou?rhood|housing society)\b/i;
+const PRACTICAL_ADVICE = /\b(?:(?:reduce|lower|limit)\s+(?:(?:our|my|air pollution|particle|smog)\s+)*exposure|improve (?:our |my |the )?indoor air|clean[ -]air routine)\b/i;
 
-  if (asksForSmogPlan(lower)) {
-    return {
-      intent: INTENTS.GET_SMOG_PLAN,
-      confidence: 0.99,
-      suggestedTool: null,
-      requiresConfirmation: false,
-      entities: extractEntities(lower),
-      message: lower,
-    };
+export function asksForSmogPlan(text) {
+  if (NAMED_SMOG_PLAN.test(text)) return true;
+  if (/\b(?:government|official|policy|news)\b/i.test(text)) return false;
+  return PLAN_FOR_SMOG.test(text) || (AIR_TOPIC.test(text) && DAILY_SETTING.test(text) && PRACTICAL_ADVICE.test(text));
+}
+
+const civicTopic = /\b(complaint|municipal|authority|pollution|garbage|dumping|burning|sewage|naala|nala|tree cutting|forest|traffic police|road obstruction|mpcb|nmmc|bmc|bbmp|mcd)\b/i;
+const incident = /\b(garbage|kachra|waste|dumping|dump|landfill|excavation|rubble|soil|debris|burning|buring|smoke|sewage|nali|naala|nala|drain|overflow|tree|cutting|felling|plastic|litter|dust|construction|pollution|parking|parked|vehicle|obstruction|blocked|footpath|leak|chemical|stink|smell)\b/i;
+const incidentContext = /\b(my|our|near|nearby|outside|behind|in front|beside|society|building|street|road|area|locality|colony|vashi|kharghar|belapur|panvel|ulwe|airoli|nerul|saw|seen|noticed|happening|since|stink|smell|complain|complaint|report|shikayat|kisko|kahan|where|whom)\b/i;
+
+function asksForContacts(text) {
+  return (/\b(national|central|state|local)\b/.test(text) && /\b(contact|contacts|helpline|email|phone|portal|authorit)/.test(text))
+    || /\b(contact details?|contact numbers?|helpline numbers?|list of (authorities|contacts)|authority contacts?|all contacts?)\b/.test(text);
+}
+
+function asksForDraft(text) {
+  const writing = /\b(draft|write|compose|create|send|bhejo|provide|give|generate|prepare|make)\b/.test(text);
+  return (writing && /\b(email|mail|complaint)\b/.test(text))
+    || (/\b(cc|forest)\b/.test(text) && /\b(email|mail)\b/.test(text))
+    || /^(email|mail|draft|draft email|provide email|give email|send email)$/.test(text)
+    || text.startsWith('draft ');
+}
+
+function isGeneralTopic(text, civicContext) {
+  if (/\b(health|sleep|diet|exercise|stress|sehat|healthy)\b/.test(text)
+      && !/\b(aqi|air quality|pollution|smog|pm2\.5|pm10|smoke exposure)\b/.test(text)) return true;
+  if (/\b(route|travel|trip)\b/.test(text) && !/\b(traffic|commute|pollution|green route|low-traffic|low pollution)\b/.test(text)) return true;
+  if (/\b(event|events)\b/.test(text) && !/\b(eco|environment|cleanup|clean-up|plantation|community)\b/.test(text)) return true;
+  if (/\b(email|mail|letter|message|application|resume|cover letter)\b/.test(text) && !civicContext) return true;
+  return /\b(plan my day|daily schedule|study plan|work plan|interview plan|trip plan|plan today|air india|air fryer|air conditioner|air conditioning)\b/.test(text);
+}
+
+function asksHowTo(text) {
+  const emailFeedback = /\b(not enough|not engough|insufficient|more|other|what|which|who|whom|tell|is there|any other)\b/.test(text) && /\b(email|mail)\b/.test(text);
+  const question = emailFeedback || /\b(how|where|steps|step|process|procedure|which|who|whom|what|why|kaise|kahan|kisko|kya)\b/.test(text) || /https?:\/\//.test(text);
+  return question && !/\b(aqi|air quality|weather|temperature|meetup|meetups|event|events|route|routes|health tips|waste reduction)\b/.test(text);
+}
+
+function asksAboutEventCreation(text) {
+  return /\b(create|organi[sz]e|host|start|plan|make|setup|set up)\b/.test(text) && /\b(meetup|meet-up|event|drive|cleanup|clean-up|plantation)\b/.test(text);
+}
+
+function describesLocalIncident(text) {
+  return incident.test(text) && incidentContext.test(text) && text.split(/\s+/).length >= 3;
+}
+
+function witnessedIncident(text) {
+  return /\b(saw|seen|sighted|noticed|happening|going on|someone is)\b/.test(text)
+    && /\b(garbage|waste|dumping|smoke|industrial|burning|buring|sewage|drain|tree|cutting|pollution|leak|chemical)\b/.test(text);
+}
+
+// Explicit requests take precedence over keyword matches. The order also keeps
+// a local incident separate from general questions about the same subject.
+function explicitIntent(text, history) {
+  if (asksForSmogPlan(text)) return { intent: INTENTS.GET_SMOG_PLAN, confidence: 0.99 };
+  if (asksAboutEventCreation(text)) return { intent: INTENTS.CREATE_EVENT, confidence: 0.98 };
+  if (asksForContacts(text)) return { intent: INTENTS.GET_AUTHORITY_CONTACTS, confidence: 0.97 };
+  if (/\b(search (?:the )?web|google (?:this|it|for)|look (?:this )?up|latest (?:news|update|information)|recent news|today'?s news|current (?:law|rules?|policy|deadline|official update))\b/.test(text)) {
+    return { intent: INTENTS.ASK_QUESTION, confidence: 0.99 };
   }
 
-  // Explicit check: creating/organizing an event or meetup must take priority over FIND_EVENTS
-  if (
-    /\b(create|organi[sz]e|host|start|plan|make|setup|set up)\b/.test(lower) &&
-    /\b(meetup|meet-up|event|drive|cleanup|clean-up|plantation)\b/.test(lower)
-  ) {
-    return {
-      intent: INTENTS.CREATE_EVENT,
-      confidence: 0.98,
-      suggestedTool: 'createMeetup',
-      requiresConfirmation: true,
-      entities: extractEntities(lower),
-      message: lower,
-    };
-  }
+  const recent = (history || []).slice(-5).map(item => item.text || '').join(' ');
+  const civicContext = civicTopic.test(text + ' ' + recent);
+  if (civicContext && asksForDraft(text)) return { intent: INTENTS.CREATE_EMAIL, confidence: 0.97 };
+  if (isGeneralTopic(text, civicContext)) return { intent: INTENTS.ASK_QUESTION, confidence: 0.98 };
+  if (describesLocalIncident(text)) return { intent: INTENTS.CREATE_REPORT, confidence: 0.95 };
+  if (asksHowTo(text)) return { intent: INTENTS.ASK_QUESTION, confidence: 0.96 };
+  if (witnessedIncident(text)) return { intent: INTENTS.CREATE_REPORT, confidence: 0.96 };
+  return null;
+}
 
-  // Explicit check: user wants the contact directory itself (national / state /
-  // local authority emails, helplines, portals) rather than a report or a draft.
-  const wantsAuthorityContacts =
-    (/\b(national|central|state|local)\b/i.test(lower) &&
-      /\b(contact|contacts|helpline|email|phone|portal|authorit)/i.test(lower)) ||
-    /\b(contact details?|contact numbers?|helpline numbers?|list of (authorities|contacts)|authority contacts?|all contacts?)\b/i.test(lower);
-
-  if (wantsAuthorityContacts) {
-    return {
-      intent: INTENTS.GET_AUTHORITY_CONTACTS,
-      confidence: 0.97,
-      suggestedTool: null,
-      requiresConfirmation: false,
-      entities: extractEntities(lower),
-      message: lower,
-    };
-  }
-
-  // Explicit live-web requests must not be confused with the app's local
-  // community feed merely because they contain words such as "news/latest".
-  const wantsWebSearch = /\b(search (?:the )?web|google (?:this|it|for)|look (?:this )?up|latest (?:news|update|information)|recent news|today'?s news|current (?:law|rules?|policy|deadline|official update))\b/i.test(lower);
-  if (wantsWebSearch) {
-    return {
-      intent: INTENTS.ASK_QUESTION,
-      confidence: 0.99,
-      suggestedTool: null,
-      requiresConfirmation: false,
-      entities: extractEntities(lower),
-      message: lower,
-    };
-  }
-
-  // Explicit check: user wants to draft, prepare, provide, or CC an email
-  const recentContext = (conversationHistory || []).slice(-5).map((item) => item.text || '').join(' ');
-  const civicEmailContext = /\b(complaint|municipal|authority|pollution|garbage|dumping|burning|sewage|naala|nala|tree cutting|forest|traffic police|road obstruction|mpcb|nmmc|bmc|bbmp|mcd)\b/i.test(`${lower} ${recentContext}`);
-  const wantsToDraftEmail = civicEmailContext && (
-    (/\b(draft|write|compose|create|send|bhejo|provide|give|generate|prepare|make)\b/i.test(lower) && /\b(email|mail|complaint)\b/i.test(lower)) ||
-    (/\b(cc|forest)\b/i.test(lower) && /\b(email|mail)\b/i.test(lower)) ||
-    /^(email|mail|draft|draft email|provide email|give email|send email)$/i.test(lower) ||
-    lower.startsWith('draft ')
-  );
-
-  if (wantsToDraftEmail) {
-    return {
-      intent: INTENTS.CREATE_EMAIL,
-      confidence: 0.97,
-      suggestedTool: 'createEmailDraft',
-      requiresConfirmation: true,
-      entities: extractEntities(lower),
-      message: lower,
-    };
-  }
-
-  // General daily-life requests must stay with the conversational model instead
-  // of being hijacked by similarly named environmental shortcuts.
-  const environmentalHealthContext = /\b(aqi|air quality|pollution|smog|pm2\.5|pm10|smoke exposure)\b/i.test(lower);
-  const looksLikeGeneralHealth = /\b(health|sleep|diet|exercise|stress|sehat|healthy)\b/i.test(lower) && !environmentalHealthContext;
-  const looksLikeGeneralPlan = /\b(plan my day|daily schedule|study plan|work plan|interview plan|trip plan|plan today)\b/i.test(lower);
-  const looksLikeGeneralRoute = /\b(route|travel|trip)\b/i.test(lower) && !/\b(traffic|commute|pollution|green route|low-traffic|low pollution)\b/i.test(lower);
-  const looksLikeGeneralEvent = /\b(event|events)\b/i.test(lower) && !/\b(eco|environment|cleanup|clean-up|plantation|community)\b/i.test(lower);
-  const nonEnvironmentalAir = /\b(air india|air fryer|air conditioner|air conditioning)\b/i.test(lower);
-  const looksLikeGeneralWriting = /\b(email|mail|letter|message|application|resume|cover letter)\b/i.test(lower) && !civicEmailContext;
-  if (looksLikeGeneralHealth || looksLikeGeneralPlan || looksLikeGeneralRoute || looksLikeGeneralEvent || nonEnvironmentalAir || looksLikeGeneralWriting) {
-    return {
-      intent: INTENTS.ASK_QUESTION,
-      confidence: 0.98,
-      suggestedTool: null,
-      requiresConfirmation: false,
-      entities: extractEntities(lower),
-      message: lower,
-    };
-  }
-
-  // Someone describing a real-world situation (not a general question) should reach
-  // the complaint flow even if they phrase it as "what should I do / where do I call".
-  const issueWord = /\b(garbage|kachra|waste|dumping|dump|landfill|excavation|rubble|soil|debris|burning|buring|smoke|sewage|nali|naala|nala|drain|overflow|tree|cutting|felling|plastic|litter|dust|construction|pollution|parking|parked|vehicle|obstruction|blocked|footpath|leak|chemical|stink|smell)\b/i;
-  const situationWord = /\b(my|our|near|nearby|outside|behind|in front|beside|society|building|street|road|area|locality|colony|vashi|kharghar|belapur|panvel|ulwe|airoli|nerul|saw|seen|noticed|happening|since|stink|smell|complain|complaint|report|shikayat|kisko|kahan|where|whom)\b/i;
-  if (issueWord.test(lower) && situationWord.test(lower) && lower.trim().split(/\s+/).length >= 3) {
-    return {
-      intent: INTENTS.CREATE_REPORT,
-      confidence: 0.95,
-      suggestedTool: 'createEnvironmentalReport',
-      requiresConfirmation: true,
-      entities: extractEntities(lower),
-      message: lower,
-    };
-  }
-
-  // Questions or feedback about emails/procedures go to AI
-  const isAskingOrFeedbackAboutEmail =
-    /\b(not enough|not engough|insufficient|more|other|what|which|who|whom|tell|is there|any other)\b/i.test(lower) &&
-    /\b(email|mail)\b/i.test(lower);
-  const isQuestionOrHowTo =
-    isAskingOrFeedbackAboutEmail ||
-    /\b(how|where|steps|step|process|procedure|which|who|whom|what|why|kaise|kahan|kisko|kya)\b/.test(lower) ||
-    /https?:\/\//.test(lower);
-
-  if (isQuestionOrHowTo && !/\b(aqi|air quality|weather|temperature|meetup|meetups|event|events|route|routes|health tips|waste reduction)\b/.test(lower)) {
-    return {
-      intent: INTENTS.ASK_QUESTION,
-      confidence: 0.96,
-      suggestedTool: null,
-      requiresConfirmation: false,
-      entities: extractEntities(lower),
-      message: lower,
-    };
-  }
-
-  // Witnessed incident ("saw / seen / sighted / noticed ... dumping / smoke / cutting / sewage") -> CREATE_REPORT
-  if (
-    /\b(saw|seen|sighted|noticed|happening|going on|someone is)\b/.test(lower) &&
-    /\b(garbage|waste|dumping|smoke|industrial|burning|buring|sewage|drain|tree|cutting|pollution|leak|chemical)\b/.test(lower)
-  ) {
-    return {
-      intent: INTENTS.CREATE_REPORT,
-      confidence: 0.96,
-      suggestedTool: 'createEnvironmentalReport',
-      requiresConfirmation: true,
-      entities: extractEntities(lower),
-      message: lower,
-    };
-  }
-
-  let bestMatch = {
-    intent: INTENTS.ASK_QUESTION,
-    confidence: 0.5,
-    suggestedTool: null,
-    requiresConfirmation: false,
-  };
-
+function keywordIntent(text) {
+  let best = { intent: INTENTS.ASK_QUESTION, confidence: 0.5 };
   for (const pattern of INTENT_PATTERNS) {
-    const matched = pattern.keywords.filter((kw) => lower.includes(kw.toLowerCase()));
-    if (matched.length > 0) {
-      const confidence = pattern.confidence * Math.min(1, 0.6 + matched.length * 0.2);
-      if (confidence > bestMatch.confidence) {
-        bestMatch = {
-          intent: pattern.intent,
-          confidence,
-          suggestedTool: pattern.tool,
-          requiresConfirmation: pattern.requiresConfirmation || false,
-          matchedKeywords: matched,
-        };
-      }
-    }
+    const matches = pattern.keywords.filter(keyword => text.includes(keyword));
+    if (!matches.length) continue;
+    const confidence = pattern.confidence * Math.min(1, 0.6 + matches.length * 0.2);
+    if (confidence > best.confidence) best = { intent: pattern.intent, confidence, matchedKeywords: matches };
   }
+  return best;
+}
 
-  // Extract entities
-  const entities = extractEntities(lower);
-
+export function detectIntent(message, conversationHistory = []) {
+  const text = message.toLowerCase().trim();
+  const match = explicitIntent(text, conversationHistory) ?? keywordIntent(text);
+  const details = INTENT_DETAILS.get(match.intent);
   return {
-    ...bestMatch,
-    entities,
-    message: lower,
+    ...match,
+    suggestedTool: details?.tool ?? null,
+    requiresConfirmation: details?.requiresConfirmation ?? false,
+    entities: extractEntities(text),
+    message: text,
   };
 }
 

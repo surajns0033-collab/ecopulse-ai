@@ -31,6 +31,17 @@ function currentReading(reading, now) {
   };
 }
 
+function lowestDaytimeHour(hours, now, clock) {
+  let best;
+  for (const slot of hours) {
+    if (!Number.isFinite(slot.aqi) || slot.aqi < 0 || !Number.isFinite(slot.time) || slot.time < now || slot.time > now + 24 * HOUR_MS) continue;
+    const hour = Number(clock.format(slot.time));
+    if (hour < 6 || hour >= 18) continue;
+    if (!best || slot.aqi < best.aqi || (slot.aqi === best.aqi && slot.time < best.time)) best = slot;
+  }
+  return best;
+}
+
 function forecastWindow(forecast, now, sensitive) {
   const unavailable = '**Daytime AQI forecast:** no upcoming daytime forecast is available. Check a fresh reading before going out.';
   if (!forecast?.timeZone || !forecast.hours?.length) return unavailable;
@@ -42,13 +53,7 @@ function forecastWindow(forecast, now, sensitive) {
     return unavailable;
   }
 
-  let best;
-  for (const slot of forecast.hours) {
-    if (!Number.isFinite(slot.aqi) || slot.aqi < 0 || !Number.isFinite(slot.time) || slot.time < now || slot.time > now + 24 * HOUR_MS) continue;
-    const hour = Number(clock.format(slot.time));
-    if (hour < 6 || hour >= 18) continue;
-    if (!best || slot.aqi < best.aqi || (slot.aqi === best.aqi && slot.time < best.time)) best = slot;
-  }
+  const best = lowestDaytimeHour(forecast.hours, now, clock);
   if (!best) return unavailable;
 
   const label = new Intl.DateTimeFormat('en-IN', {

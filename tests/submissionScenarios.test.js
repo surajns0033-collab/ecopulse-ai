@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSmogPlan, getSmogPlan } from '../src/agent/smogPlan.js';
+import { routePlaceRequest } from '../src/agent/placeContext.js';
+import { INTENTS } from '../src/agent/intentEngine.js';
 import { parseSmogProfile } from '../src/agent/smogProfile.js';
 
 const fixtureTime = Date.parse('2026-11-27T05:00:00Z');
@@ -93,6 +95,43 @@ for (const scenario of scenarios) {
     assert.equal(plan.text.match(/\*\*Direct impact:\*\*/g)?.length, 5);
   });
 }
+
+test('a natural-language winter smog request keeps its city and household details through to the AI explanation', () => {
+  const request = 'Can you make a plan for severe winter smog in Delhi, India? I take the metro to school. I have no HEPA purifier, but use a DIY filtered fan.';
+  const route = routePlaceRequest(request);
+  assert.equal(route.intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(route.place, 'Delhi, India');
+  const reading = { aqi: 180, timestamp: new Date(fixtureTime).toISOString(), sourceType: 'modeled' };
+  const profile = parseSmogProfile(route.smogDetails);
+  const plan = buildSmogPlan(profile, { city: route.place, aqi: reading, now: fixtureTime });
+  assert.match(plan.text, /Keep the long leg on transit/);
+  assert.match(plan.text, /existing filtered-air setup/);
+  assert.doesNotMatch(plan.text, /Run HEPA in one cleaner-air room|Bundle errands/);
+  const withoutHepa = buildSmogPlan(parseSmogProfile('I don’t have HEPA.'), { city: route.place, aqi: reading, now: fixtureTime });
+  assert.match(withoutHepa.text, /without HEPA purifier/);
+  assert.doesNotMatch(withoutHepa.text, /Run HEPA in one cleaner-air room|no purifier/);
+  const choices = plan.actions.find(action => action.action === 'EXPLAIN_SMOG_CHOICES').data.choices;
+  assert.equal(choices.length, 5);
+  for (const { advice, impact } of choices) {
+    assert.ok(plan.text.includes(advice));
+    assert.ok(plan.text.includes(impact));
+  }
+});
+
+test('a school-pickup question keeps a stated family detail without turning it into a complaint', () => {
+  const question = 'How do we lower air pollution exposure for our kids during school pickup in Pune, India?';
+  const route = routePlaceRequest(question);
+  assert.equal(route.intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(route.place, 'Pune, India');
+  const reading = { aqi: 170, timestamp: new Date(fixtureTime).toISOString(), sourceType: 'modeled' };
+  const makePlan = details => buildSmogPlan(parseSmogProfile(details), { city: route.place, aqi: reading, now: fixtureTime });
+  const personal = makePlan(route.smogDetails);
+  assert.match(personal.text, /household sensitivity: children/);
+  assert.match(personal.text, /household members you flagged as sensitive/);
+  const general = makePlan(routePlaceRequest(question.replace('our kids', 'children')).smogDetails);
+  assert.match(general.text, /household sensitivity: not stated/);
+  assert.doesNotMatch(general.text, /household members you flagged as sensitive/);
+});
 
 test('a complete smog plan refreshes its three data sources only after cache expiry', async (t) => {
   let now = fixtureTime;

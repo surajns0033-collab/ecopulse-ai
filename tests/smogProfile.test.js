@@ -10,7 +10,7 @@ test('partial and multilingual smog profiles never fill in unstated details', ()
   assert.equal(profile.routine, 'office/school');
   assert.equal(profile.cooking, 'gas stove');
   assert.equal(profile.filtration, null);
-  assert.equal(parseSmogProfile('Gas stove, no HEPA filter').filtration, 'no purifier');
+  assert.equal(parseSmogProfile('Gas stove, no HEPA filter').filtration, 'without HEPA purifier');
   assert.equal(parseSmogProfile('I don’t drive; I take the bus.').commute, 'public transport');
   assert.equal(isSmogProfile('Hello!'), false);
 });
@@ -58,4 +58,14 @@ test('cooking advice uses appliances the household says it has', () => {
   assert.equal(parseSmogProfile('No induction at work, but I cook with gas at home.').cooking, 'gas stove');
   assert.equal(parseSmogProfile('No induction at work, but I use induction at home.').cooking, 'induction/electric');
   assert.equal(parseSmogProfile('घर पर गैस है, इंडक्शन नहीं है।').cooking, 'gas stove');
+});
+
+test('air-cleaning advice respects absent equipment and separately stated alternatives', () => {
+  for (const input of ['I don’t have HEPA.', 'HEPA filter nahi hai.', 'घर पर हेपा फ़िल्टर नहीं है।']) {
+    assert.equal(parseSmogProfile(input).filtration, 'without HEPA purifier', input);
+  }
+  assert.equal(parseSmogProfile('फ़िल्टर मेरे पास नहीं है।').filtration, 'no purifier');
+  assert.equal(parseSmogProfile('No HEPA purifier, but I use a DIY filtered fan.').filtration, 'DIY filtered-air setup');
+  assert.equal(parseSmogProfile('I have no DIY filter. We use HEPA at home.').filtration, 'HEPA purifier');
+  assert.equal(parseSmogProfile('I use a purifier.').filtration, null);
 });

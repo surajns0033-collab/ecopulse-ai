@@ -18,13 +18,9 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm audit --audit-level=high
-      - run: npm run lint
-      - run: npm run test:coverage
-      - run: npm run build
-      - run: npm run test:browser
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: '21'
-      - run: npm run test:rules
+      - name: Benchmark all six submission criteria
+        run: npm run benchmark:submission

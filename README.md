@@ -287,16 +287,19 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run static checks with **Oxlint** |
 | `npm test` | Run the Node regression suite with mocked external services |
-| `npm run benchmark` | Check nine smog scenarios and the environmental request count with fixed inputs |
+| `npm run benchmark:submission` | Run and report the six submission criteria, including code complexity, coverage, security, startup budgets, accessibility and smog planning |
+| `npm run benchmark` | Run eleven smog scenarios and the request-cache check with fixed inputs |
 | `npm run test:coverage` | Measure Node test coverage |
 | `npm run test:browser` | Check production bundle sizes and exercise Guest Chat, local photo fallback, plan explanations, private reports, events and keyboard access in Chrome after a device-only build |
-| `npm audit --audit-level=high` | Check installed versions against published security advisories |
+| `npm audit --audit-level=moderate` | Check installed versions against published security advisories |
 | `npm run test:rules` | Check authenticated access in local Firebase Auth and Firestore emulators (Java 21 required) |
 | `npm run verify` | Run lint, Node tests and the production build |
 
 ---
 
 ## Verification
+
+After `npm ci`, run `npm run benchmark:submission` to reproduce the CI report with Node 24, Chrome and Java 21. The [verification guide](docs/quality-verification.md) lists each threshold, its scope and a recorded run.
 
 - `npm test` covers city changes, stale AQI, severe-smog advice, Guest chat, photo request validation, and provider timeouts. It runs with mocked providers and requires no API keys.
 - CI runs the production build, dependency audit, Chrome accessibility checks and Auth/Firestore emulator tests. It also measures JavaScript requested on Guest Chat entry and exercises photo inference with a small offline test model. To reproduce the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` and run `npm run test:browser`.
