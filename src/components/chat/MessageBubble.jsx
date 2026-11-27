@@ -1,7 +1,9 @@
 // MessageBubble — renders a single chat message matching reference screenshot
+import { lazy, Suspense } from 'react';
 import { Bot } from 'lucide-react';
 import { format } from 'date-fns';
-import InlineCards from './InlineCards';
+
+const InlineCards = lazy(() => import('./InlineCards'));
 
 export default function MessageBubble({ message, onAction }) {
   const { role, text, cards, actions, timestamp } = message;
@@ -34,7 +36,9 @@ export default function MessageBubble({ message, onAction }) {
 
         {/* Inline cards */}
         {isAI && cards && cards.length > 0 && (
-          <InlineCards cards={cards} onAction={onAction} />
+          <Suspense fallback={<span role="status">Loading card details…</span>}>
+            <InlineCards cards={cards} onAction={onAction} />
+          </Suspense>
         )}
 
         {/* Action buttons */}

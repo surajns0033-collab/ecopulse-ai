@@ -15,15 +15,38 @@ test('partial and multilingual smog profiles never fill in unstated details', ()
   assert.equal(isSmogProfile('Hello!'), false);
 });
 
-test('an explicit no-car commute is treated as transit, not driving', () => {
+test('Hindi and Hinglish commuters can rule out a mode or a sensitivity', () => {
+  assert.equal(parseSmogProfile('Mere paas car nahi hai, main metro leta hoon.').commute, 'public transport');
+  const profile = parseSmogProfile('Main bike se nahi jaata. Metro se office jaata hu. Asthma nahi hai.');
+  assert.equal(profile.commute, 'public transport');
+  assert.equal(profile.routine, 'office/school');
+  assert.deepEqual(profile.vulnerable, []);
+  assert.equal(parseSmogProfile('मैं कार से नहीं जाता, मेट्रो से ऑफिस जाता हूँ।').commute, 'public transport');
+});
+
+test('a denied transport mode leaves the stated commute available', () => {
   assert.equal(parseSmogProfile('I take the metro to work, no car.').commute, 'public transport');
   assert.equal(parseSmogProfile('I do not use a car; I cycle.').commute, 'walk/cycle');
+  assert.equal(parseSmogProfile('I don’t have a car or a bike. I take the metro.').commute, 'public transport');
+  assert.equal(parseSmogProfile('I don’t cycle. I take the train.').commute, 'public transport');
+  assert.equal(parseSmogProfile('No car or scooter.').commute, null);
+  assert.equal(parseSmogProfile('I have no car, but I drive to school.').commute, 'car');
 });
 
 test('negative household details do not hide a separate sensitivity the user disclosed', () => {
   const result = parseSmogProfile('No children, no older adults, no asthma. I have a heart condition.');
   assert.deepEqual(result.vulnerable, ['heart/lung sensitivity']);
   assert.deepEqual(parseSmogProfile('No baby; no grandparents; no lung condition.').vulnerable, []);
+  assert.deepEqual(parseSmogProfile('No kids or asthma. My grandparents live with me.').vulnerable, ['older adults']);
+});
+
+test('cooking at home preserves a separately stated office routine', () => {
+  const profile = parseSmogProfile('I take the metro to the office and cook at home.');
+  assert.equal(profile.commute, 'public transport');
+  assert.equal(profile.routine, 'office/school');
+  assert.equal(profile.cooking, null);
+  assert.equal(parseSmogProfile('I work from home and cook with gas.').routine, 'mostly home');
+  assert.equal(parseSmogProfile('मी घरून काम करते आणि घरी गॅस आहे.').routine, 'mostly home');
 });
 
 test('cooking advice uses appliances the household says it has', () => {

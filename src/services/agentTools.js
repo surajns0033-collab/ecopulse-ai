@@ -14,7 +14,6 @@ import { getAuthorityBundle, isIndianPlace, matchesDirectoryCity } from './autho
 import { createMeetup, getNearbyMeetups, joinMeetup, cancelMeetupRSVP } from './meetups';
 import { readLocalAttendance } from './localMeetupAttendance.js';
 import { joinedMeetupIds } from './meetupAttendance.js';
-import { analyzeImageOnDevice } from './onDeviceVision';
 
 // Persistent localStorage fallback store for when Firebase isn't configured
 function readLocal(key, fallback = []) {
@@ -180,6 +179,7 @@ export const tools = {
     // common civic/environmental scenes locally in the browser.
     const cloudResult = await geminiAnalyze(base64, mimeType, contextHint || '');
     if (cloudResult) return { ...cloudResult, provider: cloudResult.provider || 'AI vision' };
+    const { analyzeImageOnDevice } = await import('./onDeviceVision.js');
     return analyzeImageOnDevice(base64, mimeType, contextHint || '');
   },
 

@@ -48,7 +48,7 @@
 
 ## Overview
 
-**EcoPulse AI** is a mobile-first Progressive Web App and civic-environmental assistant built with React, Vite, Firebase, and a multi-provider AI proxy. It combines natural-language reasoning with real-time environmental telemetry, verified municipal/forest authority routing, on-device vision & OCR fallbacks, and a privacy-minimized community channel.
+**EcoPulse AI** helps families, schools and neighbourhoods plan around winter smog. Choose **Smog Action Plan**, enter a city and share a commute or household routine. The plan uses the latest available air-quality reading to suggest lower-emission travel, indoor-air improvements and community actions. Each action explains its impact. Choose **Explain these choices with AI** for a Gemini explanation grounded in that plan.
 
 The Chat router uses environmental APIs for current readings, verified directories for municipal contacts and a server-side proxy for generative answers and web search. AI and search provider credentials stay on the server.
 
@@ -287,9 +287,9 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run static checks with **Oxlint** |
 | `npm test` | Run the Node regression suite with mocked external services |
-| `npm run benchmark` | Check eight smog scenarios and the environmental request count with fixed inputs |
+| `npm run benchmark` | Check nine smog scenarios and the environmental request count with fixed inputs |
 | `npm run test:coverage` | Measure Node test coverage |
-| `npm run test:browser` | Exercise Guest Chat, plan explanations, private reports, event registration and keyboard access in Chrome after a device-only build |
+| `npm run test:browser` | Check production bundle sizes and exercise Guest Chat, local photo fallback, plan explanations, private reports, events and keyboard access in Chrome after a device-only build |
 | `npm audit --audit-level=high` | Check installed versions against published security advisories |
 | `npm run test:rules` | Check authenticated access in local Firebase Auth and Firestore emulators (Java 21 required) |
 | `npm run verify` | Run lint, Node tests and the production build |
@@ -299,7 +299,7 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 ## Verification
 
 - `npm test` covers city changes, stale AQI, severe-smog advice, Guest chat, photo request validation, and provider timeouts. It runs with mocked providers and requires no API keys.
-- CI runs the production build, dependency audit, Chrome accessibility checks and Auth/Firestore emulator tests. To reproduce the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` and run `npm run test:browser`.
+- CI runs the production build, dependency audit, Chrome accessibility checks and Auth/Firestore emulator tests. It also measures JavaScript requested on Guest Chat entry and exercises photo inference with a small offline test model. To reproduce the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` and run `npm run test:browser`.
 
 In Guest Chat, enter “Make a smog plan for our school in Delhi, India.” Select **Explain these choices with AI** to compare reducing exposure with reducing emissions. More prompts and reproducible checks are in the [verification guide](docs/quality-verification.md).
 
