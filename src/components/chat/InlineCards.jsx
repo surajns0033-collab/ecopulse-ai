@@ -4,6 +4,8 @@ import { MapPin, Calendar, Users, CheckCircle, AlertCircle, Zap, Droplets, Exter
 import { getAQICategory, getGoogleMapsUrl } from '../../services/environmentalData';
 import { MEETUP_CATEGORIES, REPORT_CATEGORIES } from '../../firebase/collections';
 import { format } from 'date-fns';
+import { useAuth } from '../../contexts/AuthContext';
+import { useMeetups } from '../meetups/useMeetups';
 
 // ===== AQI GAUGE — multi-color gradient arc matching reference screenshot =====
 function AQIGauge({ aqi, scale, categoryLabel, categoryColor, categoryBg }) {
@@ -165,8 +167,24 @@ export function MapLocationCard({ data }) {
 }
 
 // ===== MEETUP LIST =====
-export function MeetupListCard({ data, onJoin }) {
-  const { events } = data;
+export function MeetupListCard({ data, onJoin, onLeave }) {
+  const { user } = useAuth();
+  const live = useMeetups(user?.uid);
+  const [pending, setPending] = useState(new Set());
+
+  async function changePlace(event, joined) {
+    const id = event.id || event.eventId;
+    setPending(previous => new Set(previous).add(id));
+    try {
+      await (joined ? onLeave : onJoin)?.(event);
+    } finally {
+      setPending(previous => {
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
 
   function formatEventDate(d) {
     if (!d) return 'TBD';
@@ -183,8 +201,15 @@ export function MeetupListCard({ data, onJoin }) {
         <Calendar size={15} color="#22c55e" />
         <span className="card-title">Upcoming Eco-Events</span>
       </div>
+      {live.error && <div role="alert">{live.error} <button onClick={live.retry}>Retry</button></div>}
       <div className="meetup-scroll">
-        {events.map((ev) => {
+        {data.events.map((saved) => {
+          const id = saved.id || saved.eventId;
+          const current = live.events.find(event => saved.id ? event.id === saved.id : event.eventId === saved.eventId);
+          const ev = current || saved;
+          const joined = live.joinedIds.has(current?.id || id);
+          const full = current?.capacity > 0 && current.participantCount >= current.capacity;
+          const saving = pending.has(id);
           const catObj = MEETUP_CATEGORIES.find((c) => c.id === ev.category);
           const mapsUrl = getGoogleMapsUrl(ev.lat, ev.lng, ev.location);
           return (
@@ -203,9 +228,10 @@ export function MeetupListCard({ data, onJoin }) {
                   {ev.location?.length > 26 ? ev.location.slice(0, 26) + '…' : ev.location}
                 </a>
               </div>
-              <div className="event-meta"><Users size={10} /> {ev.participantCount || 0}/{ev.capacity}</div>
-              <button className="join-btn" onClick={() => onJoin && onJoin(ev)}>
-                Join Event
+              {current && <div className="event-meta"><Users size={10} /> {current.participantCount || 0}{current.capacity > 0 && `/${current.capacity}`}</div>}
+              <button className="join-btn" disabled={live.loading || !!live.error || saving || (!joined && full)}
+                onClick={() => changePlace(saved, joined)}>
+                {saving ? 'Saving…' : joined ? 'Cancel my place' : full ? 'Event full' : 'Join event'}
               </button>
             </div>
           );
@@ -592,7 +618,8 @@ export default function InlineCards({ cards, onAction }) {
               <MeetupListCard
                 key={i}
                 data={card.data}
-                onJoin={(ev) => onAction && onAction('JOIN_MEETUP', ev)}
+                onJoin={ev => onAction?.('JOIN_MEETUP', ev)}
+                onLeave={ev => onAction?.('CANCEL_MEETUP', ev)}
               />
             );
           case 'meetup-preview':
