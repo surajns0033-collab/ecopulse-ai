@@ -89,6 +89,10 @@ function routeSmogPlan(text, { profileReply = false } = {}) {
   let declaredCity = '';
   let pinLocation = false;
   const details = communitySetting(request) ? [request] : [];
+  // A question about "our kids" supplies a household detail even before the
+  // optional lifestyle prompt. A general question about children supplies none.
+  const household = request.match(/\b(?:for|with)\s+((?:my|our)\s+(?:child(?:ren)?|kids?|baby|grandparents?))\b/iu);
+  if (!details.length && household) details.push(household[1]);
   for (const clause of clauses) {
     if (clause === request) continue;
     const command = clause.match(PLACE_COMMAND);

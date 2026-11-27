@@ -28,7 +28,7 @@ const SENSITIVITIES = [
 ];
 
 const NEGATION_BEFORE = /\b(?:no|not|never|neither|without|don['’]?t|doesn['’]?t)(?:\s+(?:have|own|use|take|ride|by|(?:go|travel|commute)\s+(?:by|to)|cook(?:\s+(?:on|with))?))?(?:\s+(?:an?|any|the|my|our))?\s+$/u;
-const NEGATION_AFTER = /^\s+(?:(?:se|par|pe|से|पर)\s+)?(?:नहीं|नही|नाही|nahin?|nhi)(?=\s|[।.!?,;]|$)/u;
+const NEGATION_AFTER = /^\s+(?:(?:se|par|pe|से|पर|मेरे पास|हमारे पास|घर पर|घर में|उपलब्ध|आमच्याकडे|घरी)\s+)?(?:नहीं|नही|नाही|nahin?|nhi)(?=\s|[।.!?,;]|$)/u;
 const LIST_CONTINUATION = /^\s*,?\s*(?:or|nor)\s+(?:(?:an?|the|any)\s+)?$/u;
 
 function statedValues(text, rules) {

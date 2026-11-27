@@ -70,14 +70,17 @@ async function photoReply(image, message, userId, signal) {
   return handleImageAnalysis(image, message, userId, location);
 }
 
+function continuesDraft(message, pending) {
+  return pending?.type === AWAITING_DRAFT_DETAILS && (describesIssue(message) || isDraftDetailFragment(message));
+}
+
 async function textReply(input, history, userId, location, pending, { chosenLocation, photoLocation, signal }) {
   // A photo action keeps its incident location independent of the current city in Chat.
   const fromPhoto = photoLocation !== undefined;
   const chatLocation = fromPhoto ? photoLocation : location;
-  const draftDetails = !fromPhoto && pending?.type === AWAITING_DRAFT_DETAILS &&
-    (describesIssue(input) || isDraftDetailFragment(input));
-  const turn = await resolveChatPlace(input, history, chatLocation, fromPhoto ? null : pending, {
-    chosenLocation: fromPhoto ? null : chosenLocation, draftDetails, fromPhoto, signal,
+  const chatPending = fromPhoto ? null : pending;
+  const turn = await resolveChatPlace(input, history, chatLocation, chatPending, {
+    chosenLocation: fromPhoto ? null : chosenLocation, draftDetails: continuesDraft(input, chatPending), fromPhoto, signal,
   });
   const update = fromPhoto ? {} : placeChanges(turn?.context, location, chosenLocation);
   if (turn?.kind === 'reply') return locationReply(turn, update);
