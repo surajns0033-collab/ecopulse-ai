@@ -247,12 +247,12 @@ export function getGoogleMapsUrl(lat, lng, query = '') {
 }
 
 export function getAQICategory(aqi) {
-  if (aqi == null) return { label: 'Unknown', color: '#94a3b8', bg: '#f1f5f9' };
-  if (aqi <= 50)  return { label: 'Good', color: '#16a34a', bg: '#dcfce7' };
-  if (aqi <= 100) return { label: 'Moderate', color: '#ca8a04', bg: '#fef9c3' };
-  if (aqi <= 150) return { label: 'Unhealthy for Sensitive Groups', color: '#ea580c', bg: '#ffedd5' };
-  if (aqi <= 200) return { label: 'Unhealthy', color: '#e11d48', bg: '#ffe4e6' };
-  if (aqi <= 300) return { label: 'Very Unhealthy', color: '#9333ea', bg: '#f3e8ff' };
+  if (!Number.isFinite(aqi) || aqi < 0) return { label: 'Unknown', color: '#475569', bg: '#f1f5f9' };
+  if (aqi <= 50)  return { label: 'Good', color: '#166534', bg: '#dcfce7' };
+  if (aqi <= 100) return { label: 'Moderate', color: '#854d0e', bg: '#fef9c3' };
+  if (aqi <= 150) return { label: 'Unhealthy for Sensitive Groups', color: '#9a3412', bg: '#ffedd5' };
+  if (aqi <= 200) return { label: 'Unhealthy', color: '#9f1239', bg: '#ffe4e6' };
+  if (aqi <= 300) return { label: 'Very Unhealthy', color: '#6b21a8', bg: '#f3e8ff' };
   return { label: 'Hazardous', color: '#881337', bg: '#ffe4e6' };
 }
 
