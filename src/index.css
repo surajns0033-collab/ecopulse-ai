@@ -116,6 +116,9 @@ html, body {
 }
 
 .header-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 17px;
   font-weight: 800;
   color: var(--text);
@@ -568,7 +571,7 @@ html, body {
 
 .aqi-pollutant-unit {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--text-muted);
   font-weight: 400;
 }
 
@@ -1484,11 +1487,26 @@ html, body {
 }
 
 /* ===== HEADER DROPDOWN ===== */
-.header-dropdown {
-  position: fixed;
-  inset: 0;
-  z-index: 998;
+.account-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--green-dark);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
 }
+
+.account-avatar.large { width: 36px; height: 36px; font-size: 15px; }
+.account-avatar.guest { background: #e5e7eb; color: #475569; }
+.account-name { font-weight: 600; font-size: 13px; }
+.account-session { font-size: 11px; color: var(--text-muted); }
+.account-hint { padding: 10px 14px; background: #f0fdf4; color: #166534; font-size: 12px; line-height: 1.45; }
 
 .header-dropdown-inner {
   position: absolute;
@@ -1524,7 +1542,7 @@ html, body {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  color: #ef4444;
+  color: #b91c1c;
   transition: background 0.1s;
 }
 
@@ -1644,8 +1662,9 @@ html, body {
 }
 
 .modal-input:focus {
-  outline: none;
-  border-color: var(--green);
+  outline: 2px solid var(--green-dark);
+  outline-offset: 1px;
+  border-color: var(--green-dark);
   background: white;
 }
 
