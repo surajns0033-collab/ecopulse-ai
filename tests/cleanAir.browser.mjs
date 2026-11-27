@@ -21,7 +21,8 @@ async function mockDelhi(context) {
         hourly: { time: [nextDaylight.getTime() / 1000], us_aqi: [119] } } });
     }
     counts.aqi++;
-    return route.fulfill({ json: { current: { us_aqi: 208, time: new Date(now - data.ageHours * 3600000).toISOString() } } });
+    return route.fulfill({ json: { current: { us_aqi: 208, pm2_5: 73, pm10: 110, nitrogen_dioxide: 24, ozone: 18,
+      time: new Date(now - data.ageHours * 3600000).toISOString() } } });
   });
   await context.route('https://api.open-meteo.com/**', route => {
     counts.weather++;
@@ -52,6 +53,7 @@ test('a Guest can plan a school smog day with a keyboard and stale readings stay
   assert.match(answer, /AQI: 208/);
   assert.match(answer, /still unhealthy for sensitive groups/);
   assert.match(answer, /Move outdoor assembly/);
+  await log.getByRole('img', { name: 'U.S. AQI 208' }).waitFor();
   assert.deepEqual(counts, { aqi: 1, weather: 1, forecast: 1 });
   await page.setViewportSize({ width: 320, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -62,6 +64,22 @@ test('a Guest can plan a school smog day with a keyboard and stale readings stay
   await ask(page, 'Check AQI in Delhi, India.');
   await log.getByText(/couldn't verify the air-quality reading/i).waitFor();
   assert.doesNotMatch(await log.innerText(), /208/);
+
+  const menu = page.getByRole('button', { name: 'User menu' });
+  const exit = page.getByRole('button', { name: 'Exit Guest Mode' });
+  await menu.press('Enter');
+  assert.equal(await menu.getAttribute('aria-expanded'), 'true');
+  await page.keyboard.press('Tab');
+  assert.equal(await exit.evaluate(el => el === document.activeElement), true);
+  await auditAccessibility(page, 'Account menu');
+  await page.keyboard.press('Escape');
+  assert.equal(await menu.getAttribute('aria-expanded'), 'false');
+  assert.equal(await menu.evaluate(el => el === document.activeElement), true);
+  await menu.press('Enter');
+  await exit.press('Enter');
+  await guest.waitFor();
+  await page.reload();
+  await guest.waitFor();
 });
 
 test('a saved report opens from its Chat confirmation and stays private across device sessions', { timeout: 90000 }, async t => {
