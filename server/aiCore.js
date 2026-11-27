@@ -87,65 +87,70 @@ function buildGeminiContents(messages, images) {
   return out
 }
 
+async function* geminiCandidates(payload) {
+  const seen = new Set()
+  for (const model of [payload.model, state.geminiWorkingModel]) {
+    if (!model || seen.has(model)) continue
+    seen.add(model)
+    yield model
+  }
+  // Discover alternatives only if the configured or last working model could
+  // not answer. A slow catalogue must not delay an already known model.
+  const listed = await listGeminiModels(payload.key, payload.signal)
+  for (const model of listed) {
+    if (seen.has(model)) continue
+    if (seen.size >= 4) return
+    seen.add(model)
+    yield model
+  }
+}
+
+function geminiResult(candidate, model) {
+  const text = (candidate?.content?.parts || []).filter(part => !part?.thought)
+    .map(part => part?.text || '').join('').trim()
+  if (!text) return null
+  const sources = []
+  const seen = new Set()
+  for (const { web } of candidate.groundingMetadata?.groundingChunks || []) {
+    if (!isWebUrl(web?.uri) || seen.has(web.uri)) continue
+    seen.add(web.uri)
+    sources.push({ title: web.title || 'Web source', url: web.uri })
+    if (sources.length === 6) break
+  }
+  return { text, sources, provider: 'gemini:' + model, ...(candidate.finishReason === 'MAX_TOKENS' ? { truncated: true } : {}) }
+}
+
 async function callGemini(payload) {
   if (Date.now() < state.geminiDisabledUntil) throw new Error('Gemini key rejected earlier; skipping request')
-
-  const listed = await listGeminiModels(payload.key, payload.signal)
-  const models = [...new Set([payload.model, state.geminiWorkingModel, ...listed].filter(Boolean))].slice(0, 4)
-  if (!models.length) throw new Error('No Gemini text model available for this key')
-
-  let lastError = null
-  for (const model of models) {
-    const body = {
-      systemInstruction: payload.system ? { parts: [{ text: payload.system }] } : undefined,
-      contents: payload.contents,
-      tools: payload.useSearch ? [{ google_search: {} }] : undefined,
-      generationConfig: {
-        temperature: typeof payload.temperature === 'number' ? payload.temperature : 0.7,
-        maxOutputTokens: Math.min(Math.max(payload.maxTokens || 600, 64), 2048),
-        topP: 0.95,
-      },
-    }
+  const body = JSON.stringify({
+    systemInstruction: payload.system ? { parts: [{ text: payload.system }] } : undefined,
+    contents: buildGeminiContents(payload.messages, payload.images),
+    tools: payload.useSearch ? [{ google_search: {} }] : undefined,
+    generationConfig: { temperature: payload.temperature, maxOutputTokens: payload.maxTokens, topP: 0.95 },
+  })
+  let lastError
+  for await (const model of geminiCandidates(payload)) {
     const { ok, status, json, raw } = await fetchJson(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': payload.key },
-        signal: payload.signal,
-        body: JSON.stringify(body),
-      },
+      'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': payload.key }, signal: payload.signal, body },
     )
     if (ok) {
-      const candidate = json?.candidates?.[0]
-      const text = (candidate?.content?.parts || [])
-        .filter((part) => !part?.thought)
-        .map((p) => p?.text || '')
-        .join('')
-        .trim()
-      if (text) {
+      const result = geminiResult(json?.candidates?.[0], model)
+      if (result) {
         if (!payload.model) state.geminiWorkingModel = model
-        const chunks = candidate?.groundingMetadata?.groundingChunks || []
-        const sources = chunks
-          .map((chunk) => chunk?.web)
-          .filter((web) => isWebUrl(web?.uri))
-          .map((web) => ({ title: web.title || 'Web source', url: web.uri }))
-          .filter((source, index, list) => list.findIndex((item) => item.url === source.url) === index)
-          .slice(0, 6)
-        return { text, sources, provider: `gemini:${model}`, ...(candidate.finishReason === 'MAX_TOKENS' ? { truncated: true } : {}) }
+        return result
       }
       lastError = new Error('Gemini returned an empty response')
       continue
     }
-
     const message = geminiErrorText(json, raw)
-    lastError = new Error(`Gemini ${status}: ${message}`)
+    lastError = new Error('Gemini ' + status + ': ' + message)
     if (/API key not valid|API_KEY_INVALID/i.test(message)) {
       state.geminiDisabledUntil = Date.now() + 5 * 60 * 1000
       break
     }
-    if (status === 404 || /not found|not supported/i.test(message)) continue
   }
-  throw lastError || new Error('Gemini request failed')
+  throw lastError || new Error('No Gemini model returned an answer')
 }
 
 function compatibleReply(json, provider) {
@@ -155,13 +160,17 @@ function compatibleReply(json, provider) {
   return { text, provider, ...(choice.finish_reason === 'length' ? { truncated: true } : {}) }
 }
 
-async function callOpenAICompatible(payload, env) {
+function compatibleProvider(env) {
   const openRouterKey = realKey(env.OPENROUTER_API_KEY)
   const base = (env.OPENAI_BASE_URL || (openRouterKey ? 'https://openrouter.ai/api/v1' : '')).trim().replace(/\/+$/, '')
   const key = realKey(env.OPENAI_API_KEY || env.AI_GATEWAY_KEY || openRouterKey)
-  if (!base || !key) throw new Error('No OpenAI-compatible provider configured')
+  if (!base || !key) return null
 
   const model = env.OPENAI_MODEL || env.OPENROUTER_MODEL || (openRouterKey ? 'openrouter/free' : 'gpt-4o-mini')
+  return { base, key, model }
+}
+
+async function callOpenAICompatible(payload, { base, key, model }) {
   const messages = [
     ...(payload.system ? [{ role: 'system', content: payload.system }] : []),
     ...payload.messages.map((m, index) => {
@@ -318,6 +327,38 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data))
 }
 
+function providerRoutes(payload, env, key) {
+  const routes = []
+  if (payload.useSearch && realKey(env.TAVILY_API_KEY)) routes.push(request => callTavilySearch(request, env))
+  if (key && Date.now() >= state.geminiDisabledUntil) routes.push(request => callGemini({ ...request, key, model: env.GEMINI_MODEL }))
+  if (payload.useSearch) return routes
+
+  const compatible = compatibleProvider(env)
+  if (compatible) routes.push(request => callOpenAICompatible(request, compatible))
+  if (!payload.images.length) {
+    if (Date.now() >= state.llm7DisabledUntil) routes.push(callLlm7)
+    if (Date.now() >= state.pollinationsDisabledUntil) routes.push(callPollinations)
+  }
+  return routes
+}
+
+async function firstAvailableReply(payload, routes, shared, endTime) {
+  for (const [index, run] of routes.entries()) {
+    if (shared.aborted) break
+    const remaining = Math.floor(endTime - performance.now())
+    if (remaining <= 0) break
+    // Reserve part of the remaining request time for another eligible route.
+    const attempt = index === routes.length - 1 ? shared : AbortSignal.any([
+      shared, AbortSignal.timeout(Math.max(1, Math.floor(remaining * 0.7))),
+    ])
+    try {
+      const result = await run({ ...payload, signal: attempt })
+      if (!attempt.aborted && (!payload.useSearch || result.sources?.length)) return result
+    } catch { /* Continue within the same request deadline. */ }
+  }
+  return null
+}
+
 export function makeAiHandler(env) {
   const geminiKey = realKey(env.GEMINI_API_KEY) || realKey(env.GOOGLE_API_KEY) || realKey(env.VITE_GEMINI_API_KEY)
   return async function aiHandler(req, res, next) {
@@ -344,38 +385,12 @@ export function makeAiHandler(env) {
     const onClose = () => { if (!res.writableEnded) disconnected.abort() }
     res.once?.('close', onClose)
     if (res.destroyed) onClose()
-    payload.signal = signal
-
-    const providers = []
-    if (payload.useSearch) providers.push(() => callTavilySearch(payload, env))
-    if (geminiKey) {
-      providers.push(() => callGemini({
-        key: geminiKey,
-        contents: buildGeminiContents(payload.messages, payload.images),
-        system: payload.system,
-        model: env.GEMINI_MODEL,
-        temperature: payload.temperature,
-        maxTokens: payload.maxTokens,
-        signal,
-        useSearch: payload.useSearch,
-      }))
-    }
-    if (!payload.useSearch) {
-      providers.push(() => callOpenAICompatible(payload, env), () => callLlm7(payload), () => callPollinations(payload))
-    }
-
+    const endTime = performance.now() + payload.timeoutMs
     try {
-      for (const run of providers) {
-        if (signal.aborted) break
-        try {
-          const result = await run()
-          if (signal.aborted) break
-          if (payload.useSearch && !result.sources?.length) continue
-          return sendJson(res, 200, result)
-        } catch { /* Try the next configured route within the same request budget. */ }
-      }
+      const result = await firstAvailableReply(payload, providerRoutes(payload, env, geminiKey), signal, endTime)
+      if (result && !signal.aborted) return sendJson(res, 200, result)
       if (disconnected.signal.aborted) return
-      if (deadline.aborted) return sendJson(res, 504, { error: 'AI request timed out' })
+      if (deadline.aborted || performance.now() >= endTime) return sendJson(res, 504, { error: 'AI request timed out' })
       return sendJson(res, 502, { error: 'AI service is temporarily unavailable' })
     } finally {
       res.off?.('close', onClose)
