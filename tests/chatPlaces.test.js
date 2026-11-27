@@ -250,3 +250,16 @@ test('a local complaint draft preserves the observation and leaves unknown or un
   assert.match(body, /\[Attach the photo/);
   assert.doesNotMatch(body, /I have attached/);
 });
+
+test('a school smog request keeps its audience when a city is supplied later', async () => {
+  const question = 'Make a smog plan for our school.';
+  const first = await resolveChatPlace(question, [], null, null, { lookup: forbidLookup });
+  assert.equal(first.kind, 'reply');
+  const pending = { type: AWAITING_CHAT_PLACE, waiting: first.context.waiting };
+  const second = await resolveChatPlace('Navi Mumbai, Maharashtra, India', [], null, pending, {
+    lookup: async () => ({ location: NaviMumbai }),
+  });
+  assert.equal(second.intent, INTENTS.GET_SMOG_PLAN);
+  assert.match(second.smogDetails, /our school/i);
+  assert.equal(second.location.city, NaviMumbai.city);
+});
