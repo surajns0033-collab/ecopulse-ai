@@ -1573,7 +1573,7 @@ html, body {
 }
 
 .bottom-nav-item.active {
-  color: var(--green-dark);
+  color: #15803d;
 }
 
 .bottom-nav-icon {
