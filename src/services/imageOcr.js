@@ -1,3 +1,4 @@
+import { logFailure } from './diagnostics.js';
 // Optional on-device OCR for signboards, facility names and permit notices.
 // It runs only when useful and never sends the photograph to an OCR server.
 
@@ -44,8 +45,8 @@ export async function extractVisibleText(base64, mimeType = 'image/jpeg') {
     const confidence = Number(data?.confidence || 0);
     if (confidence < 55) return { lines: [], confidence };
     return { lines: cleanOcrLines(data?.text), confidence };
-  } catch (error) {
-    console.warn('On-device OCR unavailable:', error?.message || error);
+  } catch {
+    logFailure('vision.ocr');
     return { lines: [], confidence: 0 };
   }
 }

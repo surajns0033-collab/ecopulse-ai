@@ -1,4 +1,4 @@
-import { getAuthorityBundle, isIndianPlace, matchesDirectoryCity } from './authorityDirectory';
+import { getAuthorityBundle, isIndianPlace, matchesDirectoryCity } from './authorityDirectory.js';
 import { maharashtraContacts } from './maharashtraContacts.js';
 import { southernContacts } from './southernContacts.js';
 import { otherCityContacts } from './cityContacts.js';

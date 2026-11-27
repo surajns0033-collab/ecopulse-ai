@@ -1,3 +1,4 @@
+import { logFailure } from './diagnostics.js';
 import { collection, addDoc, getDocs, doc, deleteDoc, query, orderBy, limit as fsLimit, Timestamp, onSnapshot } from 'firebase/firestore';
 import { isFirebaseConfigured } from '../firebase/config';
 import { db } from '../firebase/firestoreClient';
@@ -43,8 +44,8 @@ export const communityTools = {
       );
       return onSnapshot(q, (snapshot) => {
         onChange(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
-      }, (error) => {
-        console.warn('Community live updates unavailable:', error.message);
+      }, () => {
+        logFailure('community.subscribe');
       });
     }
 

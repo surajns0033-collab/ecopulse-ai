@@ -1,3 +1,4 @@
+import { parseModelObject } from './modelJson.js';
 import { requestAI } from './aiClient.js';
 import { buildSystem, toHistory } from './geminiPrompt.js';
 
@@ -52,20 +53,7 @@ export async function getJsonResponse(prompt, systemContext = '', options = {}) 
     maxTokens: options.maxTokens ?? 800,
     timeoutMs: options.timeoutMs ?? 25000,
   });
-  if (!result?.text) return null;
-
-  const raw = result.text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  const candidates = [raw];
-  const braced = raw.match(/\{[\s\S]*\}/);
-  if (braced) candidates.push(braced[0]);
-
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      if (parsed && typeof parsed === 'object') return parsed;
-    } catch { /* try next */ }
-  }
-  return null;
+  return parseModelObject(result?.text);
 }
 
 /**
@@ -85,37 +73,27 @@ export async function analyzeEnvironmentalImage(base64, mimeType, contextHint = 
     timeoutMs: 40000,
   });
 
-  if (!result?.text) return null;
+  const parsed = parseModelObject(result?.text);
+  if (typeof parsed?.description !== 'string' || !parsed.description.trim()) return null;
 
-  const raw = result.text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-  const braced = raw.match(/\{[\s\S]*\}/);
-  const candidates = [raw, braced?.[0]].filter(Boolean);
+  const allowedCategories = ['garbage', 'plastic', 'burning', 'air', 'construction', 'water', 'sewage', 'trees', 'greenspace', 'industrial', 'road_obstruction', 'other'];
+  const category = allowedCategories.includes(String(parsed.category).toLowerCase())
+    ? String(parsed.category).toLowerCase()
+    : 'other';
+  const severity = ['mild', 'moderate', 'severe'].includes(String(parsed.severity).toLowerCase())
+    ? String(parsed.severity).toLowerCase()
+    : 'moderate';
 
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      if (!parsed || typeof parsed !== 'object') continue;
-
-      const allowedCategories = ['garbage', 'plastic', 'burning', 'air', 'construction', 'water', 'sewage', 'trees', 'greenspace', 'industrial', 'road_obstruction', 'other'];
-      const category = allowedCategories.includes(String(parsed.category).toLowerCase())
-        ? String(parsed.category).toLowerCase()
-        : 'other';
-      const severity = ['mild', 'moderate', 'severe'].includes(String(parsed.severity).toLowerCase())
-        ? String(parsed.severity).toLowerCase()
-        : 'moderate';
-
-      return {
-        issue: String(parsed.issue || 'Environmental issue').slice(0, 120),
-        severity,
-        category,
-        description: String(parsed.description || '').slice(0, 600),
-        actions: Array.isArray(parsed.actions) ? parsed.actions.filter(Boolean).slice(0, 3).map(String) : [],
-        confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0.6)),
-        visibleText: Array.isArray(parsed.visibleText)
-          ? parsed.visibleText.filter(Boolean).slice(0, 5).map((line) => String(line).slice(0, 100))
-          : [],
-      };
-    } catch { /* try next candidate */ }
-  }
-  return null;
+  return {
+    issue: String(parsed.issue || 'Environmental issue').slice(0, 120),
+    severity,
+    category,
+    description: String(parsed.description || '').slice(0, 600),
+    actions: Array.isArray(parsed.actions) ? parsed.actions.filter(Boolean).slice(0, 3).map(String) : [],
+    confidence: typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
+      ? Math.max(0, Math.min(1, parsed.confidence)) : 0.6,
+    visibleText: Array.isArray(parsed.visibleText)
+      ? parsed.visibleText.filter(Boolean).slice(0, 5).map((line) => String(line).slice(0, 100))
+      : [],
+  };
 }

@@ -1,3 +1,4 @@
+import { logFailure } from './diagnostics.js';
 import { photoPrompts, rankPhotoCategories } from './photoCategories.js';
 import { extractVisibleText } from './imageOcr';
 import { getRuntime } from './visionRuntime.js';
@@ -127,8 +128,8 @@ export async function analyzeImageOnDevice(base64, mimeType = 'image/jpeg', cont
         score: Number(item.score || 0),
       })),
     };
-  } catch (error) {
-    console.warn('On-device vision unavailable:', error?.message || error);
+  } catch {
+    logFailure('vision.classify');
     return null;
   }
 }

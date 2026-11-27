@@ -1,3 +1,4 @@
+import { logFailure } from './diagnostics.js';
 import { isFirebaseConfigured } from '../firebase/config';
 
 // Persistent localStorage fallback store for when Firebase isn't configured
@@ -30,8 +31,8 @@ export async function firestoreOrLocal(firestoreFn, localFallback) {
   if (!isFirebaseConfigured) return localFallback();
   try {
     return await firestoreFn();
-  } catch (err) {
-    console.warn('Firestore unavailable, using local fallback:', err.message);
+  } catch {
+    logFailure('storage.fallback');
     return localFallback();
   }
 }

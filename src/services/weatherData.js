@@ -1,3 +1,4 @@
+import { logFailure } from './diagnostics.js';
 import { OWM_KEY, getCached, setCached, toUtcIso, requestSignal } from './environmentCache.js';
 
 function wmoDescription(code) {
@@ -48,9 +49,9 @@ export async function getWeather(lat, lng, { signal } = {}) {
           });
         }
       }
-    } catch (err) {
+    } catch {
       signal?.throwIfAborted();
-      console.warn('OpenWeatherMap failed:', err.message);
+      logFailure('weather.openweather');
     }
   }
 
@@ -73,9 +74,9 @@ export async function getWeather(lat, lng, { signal } = {}) {
         sourceUrl: url,
       });
     }
-  } catch (err) {
+  } catch {
     signal?.throwIfAborted();
-    console.warn('Open-Meteo failed:', err.message);
+    logFailure('weather.openmeteo');
   }
 
   return null;

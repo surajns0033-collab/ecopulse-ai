@@ -1,3 +1,4 @@
+import { logFailure } from './diagnostics.js';
 import { WAQI_TOKEN, getCached, setCached, toUtcIso, requestSignal } from './environmentCache.js';
 
 /**
@@ -31,9 +32,9 @@ export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {})
           });
         }
       }
-    } catch (err) {
+    } catch {
       signal?.throwIfAborted();
-      console.warn('WAQI fetch failed:', err.message);
+      logFailure('air.waqi');
     }
   }
 
@@ -62,9 +63,9 @@ export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {})
         });
       }
     }
-  } catch (err) {
+  } catch {
     signal?.throwIfAborted();
-    console.warn('Open-Meteo AQI fetch failed:', err.message);
+    logFailure('air.current');
   }
 
   return null;
@@ -106,9 +107,9 @@ export async function getAirQualityForecast(lat, lng, { signal } = {}) {
         ? [{ time: time * 1000, aqi: Math.round(aqi) }] : [];
     });
     return hours.length ? setCached(cacheKey, { hours, timeZone: json.timezone }) : null;
-  } catch (err) {
+  } catch {
     signal?.throwIfAborted();
-    console.warn('Open-Meteo AQI forecast failed:', err.message);
+    logFailure('air.forecast');
     return null;
   }
 }
