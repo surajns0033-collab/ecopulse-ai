@@ -51,10 +51,22 @@ function statedValues(text, rules) {
   return rules.map(([value]) => value).filter(value => stated.has(value));
 }
 
+const FILTER_SETUPS = [
+  ['HEPA purifier', /\bhepa(?:\s+(?:air\s+)?(?:purifier|filter))?\b|हेपा(?:\s+(?:फ़िल्टर|फिल्टर|प्यूरिफायर))?/gu],
+  ['DIY filtered-air setup', /\b(?:diy(?:\s+(?:filter(?:ed)?[- ]fan|filter|purifier))?|filter(?:ed)?[- ]fan)\b/gu],
+];
+const GENERIC_FILTER = /\b(?:(?:air\s+)?purifier|filter)\b|फ़िल्टर|फिल्टर|प्यूरिफायर/gu;
+
 function airFiltration(text) {
-  if (/\b(?:no|without|don['’]?t have an?|do not have an?)\s+(?:air |hepa )?(?:purifier|filter)\b|(?:फ़िल्टर|फिल्टर|प्यूरिफायर)(?:\s+.{0,12})?\s+(?:नहीं|नाही)/u.test(text)) return 'no purifier';
-  if (/\bhepa\b|हेपा/u.test(text)) return 'HEPA purifier';
-  if (/\b(?:diy|filter fan|filtered fan)\b/u.test(text)) return 'DIY filtered-air setup';
+  const [setup] = statedValues(text, FILTER_SETUPS);
+  if (setup) return setup;
+
+  // A denied named setup or purifier calls for advice without equipment.
+  // Check the stated alternatives first: someone may use a fan without HEPA.
+  if (FILTER_SETUPS.some(([, pattern]) => text.search(pattern) >= 0)) return 'no purifier';
+  for (const match of text.matchAll(GENERIC_FILTER)) {
+    if (NEGATION_BEFORE.test(text.slice(0, match.index)) || NEGATION_AFTER.test(text.slice(match.index + match[0].length))) return 'no purifier';
+  }
   return null;
 }
 
