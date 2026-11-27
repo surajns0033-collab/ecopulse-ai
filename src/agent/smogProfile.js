@@ -61,9 +61,9 @@ function airFiltration(text) {
   const [setup] = statedValues(text, FILTER_SETUPS);
   if (setup) return setup;
 
-  // A denied named setup or purifier calls for advice without equipment.
-  // Check the stated alternatives first: someone may use a fan without HEPA.
-  if (FILTER_SETUPS.some(([, pattern]) => text.search(pattern) >= 0)) return 'no purifier';
+  // If only a specific device was ruled out, preserve that distinction.
+  const absent = FILTER_SETUPS.filter(([, pattern]) => text.search(pattern) >= 0).map(([name]) => name);
+  if (absent.length) return 'without ' + absent.join(' or ');
   for (const match of text.matchAll(GENERIC_FILTER)) {
     if (NEGATION_BEFORE.test(text.slice(0, match.index)) || NEGATION_AFTER.test(text.slice(match.index + match[0].length))) return 'no purifier';
   }
