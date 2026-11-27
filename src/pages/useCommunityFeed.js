@@ -123,5 +123,9 @@ export function useCommunityFeed() {
     ? posts
     : posts.filter((p) => (p.location || '').toLowerCase() === locationFilter.toLowerCase());
 
-  return { user, communityNameConfirmed, selectLocation, locationFilter, availableLocations, messagesRef, followLatest, handleSaveName, nameInput, setNameDraft, nameError, loading, events, navigate, visiblePosts, handleDeletePost, handleSignInToPost, handleSendPost, postCity, setPostCity, msgText, setMsgText, sending };
+  function handleScroll({ currentTarget: panel }) {
+    followLatest.current = panel.scrollHeight - panel.clientHeight - panel.scrollTop < 64;
+  }
+
+  return { user, communityNameConfirmed, selectLocation, locationFilter, availableLocations, messagesRef, handleScroll, handleSaveName, nameInput, setNameDraft, nameError, loading, events, navigate, visiblePosts, handleDeletePost, handleSignInToPost, handleSendPost, postCity, setPostCity, msgText, setMsgText, sending };
 }

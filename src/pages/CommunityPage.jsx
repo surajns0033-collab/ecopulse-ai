@@ -9,7 +9,7 @@ import { useCommunityFeed } from './useCommunityFeed.js';
 
 export default function CommunityPage() {
   const model = useCommunityFeed();
-  const { user, communityNameConfirmed, selectLocation, locationFilter, availableLocations, messagesRef, followLatest, handleSaveName,
+  const { user, communityNameConfirmed, selectLocation, locationFilter, availableLocations, messagesRef, handleScroll, handleSaveName,
     nameInput, setNameDraft, nameError, loading, events, navigate, visiblePosts, handleDeletePost } = model;
 
   function formatEventDate(d) {
@@ -51,9 +51,7 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      <main className="page-content" aria-label="Community messages" tabIndex={0} ref={messagesRef} style={{ paddingBottom: 12 }} onScroll={({ currentTarget: panel }) => {
-        followLatest.current = panel.scrollHeight - panel.clientHeight - panel.scrollTop < 64;
-      }}>
+      <main className="page-content" aria-label="Community messages" tabIndex={0} ref={messagesRef} style={{ paddingBottom: 12 }} onScroll={handleScroll}>
         {user && !user.isAnonymous && (
           <form onSubmit={handleSaveName} className="community-name-panel">
             <div>
