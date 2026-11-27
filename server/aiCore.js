@@ -131,7 +131,7 @@ async function callGemini(payload) {
           .map((web) => ({ title: web.title || 'Web source', url: web.uri }))
           .filter((source, index, list) => list.findIndex((item) => item.url === source.url) === index)
           .slice(0, 6)
-        return { text, sources, provider: `gemini:${model}` }
+        return { text, sources, provider: `gemini:${model}`, ...(candidate.finishReason === 'MAX_TOKENS' ? { truncated: true } : {}) }
       }
       lastError = new Error('Gemini returned an empty response')
       continue
@@ -146,6 +146,13 @@ async function callGemini(payload) {
     if (status === 404 || /not found|not supported/i.test(message)) continue
   }
   throw lastError || new Error('Gemini request failed')
+}
+
+function compatibleReply(json, provider) {
+  const choice = json?.choices?.[0]
+  const text = choice?.message?.content?.trim()
+  if (!text) throw new Error('Provider returned an empty response')
+  return { text, provider, ...(choice.finish_reason === 'length' ? { truncated: true } : {}) }
 }
 
 async function callOpenAICompatible(payload, env) {
@@ -186,9 +193,7 @@ async function callOpenAICompatible(payload, env) {
     },
   )
   if (!ok) throw new Error(`OpenAI-compatible ${status}: ${geminiErrorText(json, raw)}`)
-  const text = json?.choices?.[0]?.message?.content?.trim()
-  if (!text) throw new Error('OpenAI-compatible provider returned an empty response')
-  return { text, provider: `openai:${model}` }
+  return compatibleReply(json, `openai:${model}`)
 }
 
 async function callTavilySearch(payload, env) {
@@ -265,9 +270,7 @@ async function callLlm7(payload) {
     }
     throw new Error(`LLM7 ${status}: ${detail}`)
   }
-  const text = json?.choices?.[0]?.message?.content?.trim()
-  if (!text) throw new Error('LLM7 returned an empty response')
-  return { text, provider: 'llm7:gpt-oss-20b' }
+  return compatibleReply(json, 'llm7:gpt-oss-20b')
 }
 
 async function callPollinations(payload) {
@@ -304,9 +307,7 @@ async function callPollinations(payload) {
     }
     throw new Error(`Keyless provider ${status}: ${detail}`)
   }
-  const text = json?.choices?.[0]?.message?.content?.trim()
-  if (!text) throw new Error('Keyless provider returned an empty response')
-  return { text, provider: 'pollinations' }
+  return compatibleReply(json, 'pollinations')
 }
 
 function sendJson(res, status, data) {
