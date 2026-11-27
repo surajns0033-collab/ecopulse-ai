@@ -3,9 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
-import { processMessage } from '../agent/agentOrchestrator';
-import { attendanceMessage, meetupErrorMessage } from '../services/meetups';
-import { tools } from '../services/agentTools';
+import { attendanceMessage, meetupErrorMessage } from '../services/meetupMessages';
 import Header from '../components/chat/Header';
 import MessageBubble from '../components/chat/MessageBubble';
 import QuickActions from '../components/chat/QuickActions';
@@ -181,7 +179,8 @@ export default function ChatPage() {
         setIsTyping(true);
         setTypingStatus('Publishing meetup...');
         try {
-          const result = await tools.createMeetup({
+          const { createMeetup } = await import('../services/meetups');
+          const result = await createMeetup({
             userId: user.uid,
             organizer: user.displayName || 'Guest Organizer',
             title: data.title,
@@ -225,7 +224,8 @@ export default function ChatPage() {
         if (!user || !data) break;
         let message;
         try {
-          const save = action === 'JOIN_MEETUP' ? tools.joinMeetup : tools.cancelMeetupRSVP;
+          const { joinMeetup, cancelMeetupRSVP } = await import('../services/meetups');
+          const save = action === 'JOIN_MEETUP' ? joinMeetup : cancelMeetupRSVP;
           const result = await save({ userId: user.uid, meetupDocId: data.id, meetupId: data.eventId });
           message = attendanceMessage(result);
         } catch (error) {
@@ -250,6 +250,7 @@ export default function ChatPage() {
         setIsTyping(true);
         setTypingStatus('Submitting report...');
         try {
+          const { tools } = await import('../services/agentTools');
           const result = await tools.createEnvironmentalReport({
             userId: user.uid,
             title: data.title,
@@ -294,6 +295,7 @@ export default function ChatPage() {
         setIsTyping(true);
         setTypingStatus('Saving email draft...');
         try {
+          const { tools } = await import('../services/agentTools');
           const result = await tools.createEmailDraft({
             userId: user.uid,
             reportId: data.reportId || null,
@@ -371,8 +373,14 @@ export default function ChatPage() {
       else if (lower.includes('report') || lower.includes('complaint')) setTypingStatus('Preparing report...');
       else if (lower.includes('map') || lower.includes('route') || lower.includes('location')) setTypingStatus('Loading Google Maps...');
 
+      const reply = import('../agent/agentOrchestrator').then(({ processMessage }) => {
+        controller.signal.throwIfAborted();
+        return processMessage(text, history, user, location, imageData, pendingAction, {
+          chosenLocation, photoLocation, planChoices, signal: controller.signal,
+        });
+      });
       const response = await Promise.race([
-        processMessage(text, history, user, location, imageData, pendingAction, { chosenLocation, photoLocation, planChoices, signal: controller.signal }),
+        reply,
         new Promise((_, reject) => {
           timeout = setTimeout(() => {
             reject(new Error('Request timed out'));
