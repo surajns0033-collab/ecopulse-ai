@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    // The browser reads Firebase configuration and optional public weather tokens.
+    // Model and search credentials belong exclusively to the server proxy.
+    envPrefix: ['VITE_FIREBASE_', 'VITE_WAQI_TOKEN', 'VITE_OPENWEATHER_'],
     plugins: [react(), aiPlugin],
     // Photo classification runs on WASM. Use the matching ONNX backend and
     // keep its cache independent of changes to the app's photo advice.
