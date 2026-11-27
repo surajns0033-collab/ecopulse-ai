@@ -22,13 +22,18 @@ function rounded(value) {
   return Number.isFinite(value) ? Math.round(value) : null;
 }
 
+function stationTimestamp(seconds) {
+  if (!Number.isFinite(seconds)) return null;
+  const time = new Date(seconds * 1000);
+  return Number.isFinite(time.getTime()) ? time.toISOString() : null;
+}
+
 function stationWeather(data) {
   if (!Number.isFinite(data?.main?.temp)) return null;
-  const time = Number.isFinite(data.dt) ? new Date(data.dt * 1000) : null;
   return {
     temp: Math.round(data.main.temp), feelsLike: rounded(data.main.feels_like), humidity: data.main.humidity ?? null,
     windSpeed: data.wind?.speed ?? null, description: data.weather?.[0]?.description || 'Unknown', icon: data.weather?.[0]?.icon || null,
-    timestamp: Number.isFinite(time?.getTime()) ? time.toISOString() : null, source: 'OpenWeatherMap', sourceUrl: 'https://openweathermap.org/current',
+    timestamp: stationTimestamp(data.dt), source: 'OpenWeatherMap', sourceUrl: 'https://openweathermap.org/current',
   };
 }
 
