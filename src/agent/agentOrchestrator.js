@@ -6,7 +6,7 @@ import { lookupPlace } from '../services/placeLookup.js';
 import { describesIssue } from './civicIssues.js';
 import { handleCreateReport, handleCreateEmail, handleAuthorityContacts } from './civicReports';
 import {
-  handleAirQuality, handleDailyPlan, handleHealthTips, handleRoutes, handleWasteTips, handleWaterQuality, handleWeather,
+  explainSmogChoices, handleAirQuality, handleDailyPlan, handleHealthTips, handleRoutes, handleWasteTips, handleWaterQuality, handleWeather,
 } from './environmentReplies';
 import {
   handleCommunityFeed, handleCreateEventPrompt, handleFindEvents, handleJoinEventPrompt, handleUserImpact,
@@ -14,10 +14,12 @@ import {
 import { handleGeneralQuestion } from './chatAnswers';
 import { logAction } from './activityLog';
 
-export async function processMessage(userMessage, conversationHistory, user, location, imageData, pendingAction, { chosenLocation, photoLocation, signal } = {}) {
+export async function processMessage(userMessage, conversationHistory, user, location, imageData, pendingAction, { chosenLocation, photoLocation, planChoices, signal } = {}) {
   const userId = user?.uid || 'anonymous';
 
   try {
+    // An explanation belongs to the plan the user clicked, even after a change of city.
+    if (planChoices?.length) return await explainSmogChoices(userMessage, planChoices, signal);
     if (imageData?.base64) {
       // The city in a different Chat turn needn't be where a photo was taken.
       // Keep the analysis useful, but don't prefill a recipient from that city.

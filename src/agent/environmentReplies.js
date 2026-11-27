@@ -4,6 +4,21 @@ import { isIndianPlace } from '../services/authorityDirectory.js';
 import { tools } from '../services/agentTools';
 import { logAction } from './activityLog';
 
+export async function explainSmogChoices(question, choices, signal) {
+  const selected = choices.map(({ advice, impact }) => `• ${advice} ${impact}`).join('\n');
+  const instructions = 'Using only the selected actions and their stated impacts, explain one way to reduce personal exposure and one way to reduce emissions at the source. Use plain language. Do not invent readings, quantities, savings or medical instructions.';
+  const answer = await getChatResponse([{ role: 'user', text: question + '\n\nSelected actions:\n' + selected }], instructions, { signal });
+  signal?.throwIfAborted();
+  if (isAIUnavailable(answer)) {
+    return {
+      text: 'The AI explanation is unavailable right now. These are the direct impacts recorded in your plan:\n\n' +
+        choices.map(({ impact }) => '• ' + impact).join('\n'),
+      cards: [], actions: [], status: 'unavailable',
+    };
+  }
+  return { text: answer, cards: [], actions: [], status: 'success' };
+}
+
 export async function handleAirQuality(lat, lng, city, userId, { signal, forecast = false } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {

@@ -163,6 +163,10 @@ export function buildSmogPlan(profile, { city, aqi, weather, forecast, now = Dat
     ].join('\n\n'),
     cards: current.reading ? [{ type: 'aqi', data: { ...current.reading, insight: getAQIInsight(current.reading) } }] : [],
     actions: [
+      {
+        label: 'Explain these choices with AI', action: 'EXPLAIN_SMOG_CHOICES', variant: 'primary',
+        data: { choices: sections.map(([, advice, impact]) => ({ advice, impact })) },
+      },
       { label: '💊 AQI Health Tips', action: 'QUICK_HEALTH_TIPS', variant: 'secondary' },
       { label: '📷 Report a Pollution Source', action: 'OPEN_IMAGE_PICKER', variant: 'secondary' },
     ],
