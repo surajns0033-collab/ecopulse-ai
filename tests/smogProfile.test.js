@@ -61,7 +61,7 @@ test('cooking advice uses appliances the household says it has', () => {
 });
 
 test('air-cleaning advice respects absent equipment and separately stated alternatives', () => {
-  for (const input of ['I don’t have HEPA.', 'HEPA filter nahi hai.', 'घर पर हेपा फ़िल्टर नहीं है।']) {
+  for (const input of ['I don’t have HEPA.', 'HEPA filter nahi hai.', 'घर पर हेपा फ़िल्टर नहीं है।', 'फ़िल्टर मेरे पास नहीं है।']) {
     assert.equal(parseSmogProfile(input).filtration, 'no purifier', input);
   }
   assert.equal(parseSmogProfile('No HEPA purifier, but I use a DIY filtered fan.').filtration, 'DIY filtered-air setup');

@@ -115,6 +115,21 @@ test('a natural-language winter smog request keeps its city and household detail
   }
 });
 
+test('a school-pickup question keeps a stated family detail without turning it into a complaint', () => {
+  const question = 'How do we lower air pollution exposure for our kids during school pickup in Pune, India?';
+  const route = routePlaceRequest(question);
+  assert.equal(route.intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(route.place, 'Pune, India');
+  const reading = { aqi: 170, timestamp: new Date(fixtureTime).toISOString(), sourceType: 'modeled' };
+  const makePlan = details => buildSmogPlan(parseSmogProfile(details), { city: route.place, aqi: reading, now: fixtureTime });
+  const personal = makePlan(route.smogDetails);
+  assert.match(personal.text, /household sensitivity: children/);
+  assert.match(personal.text, /household members you flagged as sensitive/);
+  const general = makePlan(routePlaceRequest(question.replace('our kids', 'children')).smogDetails);
+  assert.match(general.text, /household sensitivity: not stated/);
+  assert.doesNotMatch(general.text, /household members you flagged as sensitive/);
+});
+
 test('a complete smog plan refreshes its three data sources only after cache expiry', async (t) => {
   let now = fixtureTime;
   t.mock.method(Date, 'now', () => now);
