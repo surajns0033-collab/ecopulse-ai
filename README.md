@@ -294,15 +294,6 @@ Try in Guest Chat: “Make a smog action plan for Navi Mumbai, Maharashtra, Indi
 
 ---
 
-## 🤝 Contributors
-
-| Contributor | Role |
-| :--- | :--- |
-| **Suraj** ([@surajns0033-collab](https://github.com/surajns0033-collab)) | Creator & Lead Developer |
-| **Antigravity** *(Google DeepMind)* | AI Engineering & Architecture Contributor |
-
----
-
 ## 📄 License
 
 This project is open-source under the **MIT License** — see the repository for details.
