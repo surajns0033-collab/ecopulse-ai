@@ -11,7 +11,7 @@ const COMMUTES = [
 
 const ROUTINES = [
   ['outdoor work', /\b(?:outdoor work|work outdoors|field work|construction work|delivery|traffic police|street vendor)\b|बाहर काम|बाहेर काम/gu],
-  ['mostly home', /\b(?:mostly home|homemaker|at home|work from home)\b|घर से काम|घरून काम/gu],
+  ['mostly home', /\b(?:mostly (?:at )?home|homemaker|work from home|stay at home|based at home)\b|(?:^|[,;.]\s*)at home(?=\s*(?:[,;.!]|$))|घर से काम|घरून काम/gu],
   ['mixed', /\b(?:mixed|hybrid)\b/gu],
   ['office/school', /\b(?:office|school)\b|दफ़्तर|ऑफिस|शाळा/gu],
 ];
@@ -41,7 +41,7 @@ function statedValues(text, rules) {
     // Carry a denial across "neither gas nor induction", but allow a later
     // independent statement such as "no car, but I drive to school".
     const linked = denialEnd >= 0 && LIST_CONTINUATION.test(text.slice(denialEnd, start));
-    if (linked || NEGATION_BEFORE.test(text.slice(0, start)) || NEGATION_AFTER.test(text.slice(end))) {
+    if (linked || NEGATION_BEFORE.test(text.slice(Math.max(0, start - 64), start)) || NEGATION_AFTER.test(text.slice(end))) {
       denialEnd = end;
     } else {
       denialEnd = -1;
@@ -65,7 +65,7 @@ export function communitySetting(text) {
 }
 
 export function parseSmogProfile(message) {
-  const text = String(message || '').toLowerCase();
+  const text = String(message || '').toLowerCase().replace(/\s+/gu, ' ').trim();
   return {
     commute: statedValues(text, COMMUTES)[0] ?? null,
     routine: statedValues(text, ROUTINES)[0] ?? null,
