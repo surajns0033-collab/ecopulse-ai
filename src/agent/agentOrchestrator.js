@@ -305,7 +305,7 @@ async function handleFindEvents(city, category, userId) {
   }
 
   return {
-    text: `Here are upcoming events listed on EcoPulse.${city ? ` I can’t verify that they’re near **${city}**; check the venue before you go.` : ''}`,
+    text: `Upcoming EcoPulse meetups are listed by date. Check the venue${city ? ` for travel from **${city}**` : ''} before joining.`,
     cards: [{ type: 'meetup-list', data: { events } }],
     actions: [
       { label: '🗓️ See All Events', action: 'GOTO_MEETUPS', variant: 'secondary' },
