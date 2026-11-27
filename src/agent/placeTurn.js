@@ -74,6 +74,11 @@ async function locateTurn(turn, context, options, confirmed, pin) {
   return location ? selected(turn, location, context, pin) : defer(copy.city, context, turn, pinOnReply);
 }
 
+// Only an explicit city choice or a confirmation of a pinned request changes the home city.
+function pinsCity(turn, resumed, waiting) {
+  return turn.kind === 'city' || turn.pinLocation || resumed.kind === 'city' || waiting?.pinLocation;
+}
+
 export async function resolvePlaceTurn(text, context, route, { signal, lookup = lookupPlace, locateDevice = getDevicePlace } = {}) {
   if (!/[\p{L}\p{N}]/u.test(text)) return ask(copy.unclear, context);
   const input = text.trim();
@@ -84,6 +89,6 @@ export async function resolvePlaceTurn(text, context, route, { signal, lookup = 
   const answer = waiting ? waitingAnswer(input, turn, context) : null;
   if (answer?.reply) return answer.reply;
   const resumed = answer?.turn || turn;
-  const pin = Boolean(turn.kind === 'city' || turn.pinLocation || resumed.kind === 'city' || (answer && waiting.pinLocation));
+  const pin = pinsCity(turn, resumed, answer ? waiting : null);
   return locateTurn(resumed, context, { lookup, signal }, answer?.location, pin);
 }

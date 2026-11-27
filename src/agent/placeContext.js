@@ -62,6 +62,16 @@ function routeSmogPlan(text, profileReply = false) {
   };
 }
 
+function mapCommand(text, relative) {
+  const request = text.replace(/[.?!।]+$/u, '');
+  const map = request.match(MAP) || request.match(MAP_QUESTION) || request.match(ON_MAP);
+  if (map) {
+    const place = placeName(map[1]);
+    if (!map[1] || place || relative) return { kind: 'map', needsPlace: true, map: true, relative, place };
+  }
+  return null;
+}
+
 function explicitCommand(text, relative, smogRequest, profile) {
   const command = text.match(PLACE_COMMAND);
   if (command && profile?.pinLocation && profile.smogDetails) return profile;
@@ -69,12 +79,8 @@ function explicitCommand(text, relative, smogRequest, profile) {
     const city = correctedCity(command[1]) || placeName(command[1]);
     if (city) return { kind: 'city', needsPlace: true, place: city };
   }
-  const request = text.replace(/[.?!।]+$/u, '');
-  const map = request.match(MAP) || request.match(MAP_QUESTION) || request.match(ON_MAP);
-  if (map) {
-    const place = placeName(map[1]);
-    if (!map[1] || place || relative) return { kind: 'map', needsPlace: true, map: true, relative, place };
-  }
+  const map = mapCommand(text, relative);
+  if (map) return map;
   if (WEB_COMMAND.test(text)) return { kind: 'web', needsPlace: relative, relative, place: relative ? labeledCity(text) : '' };
   return null;
 }
