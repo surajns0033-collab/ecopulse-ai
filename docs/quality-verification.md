@@ -22,15 +22,27 @@ Use Node.js 24 LTS, version 24.12 or later, and install the lockfile with `npm c
 | --- | --- |
 | `npm run lint` | Oxlint checks the repository and treats warnings as failures. |
 | `npm run test:coverage` | Node tests exercise profile parsing, city corrections, environmental providers, the request cache, server request validation and AI responses. |
-| `npm run benchmark` | Eight fixed smog scenarios compare advice and impact explanations. A ninth check expects three environmental requests for the first plan, zero additional requests on repeat and three after cache expiry. These cases also run in the Node suite. |
+| `npm run benchmark` | Nine fixed smog scenarios compare advice and impact explanations, including a metro commuter who rules out a car and a bike. A separate cache test expects three environmental requests for the first plan, zero additional requests on repeat and three after cache expiry. These cases also run in the Node suite. |
 | `npm audit --audit-level=high` | Checks the locked dependency tree against published advisories. |
-| `npm run build` | Builds the production app. The photo workflow and on-device vision library load on demand. |
-| `npm run test:browser` | Tests a device-only production build with synthetic AQI, weather, geocoding and model responses. Covers Guest entry and exit, keyboard navigation, independent user sessions, private report links, AI plan selection and event registration across tabs. |
+| `npm run build` | Builds the production app. The Chat engine loads on the first request, and the on-device vision library loads when cloud photo analysis fails. |
+| `npm run test:browser` | Tests a device-only production build with synthetic AQI, weather, geocoding and model responses. Covers Guest entry and exit, keyboard navigation, independent user sessions, private report links, AI plan selection and event registration across tabs. It also enforces production bundle budgets and exercises local photo inference. |
 | `npm run test:rules` | Exercises owner-only report access, public post fields, organizer permissions, simultaneous event registration, last-seat contention and older private records in the emulators. |
 
 For the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` or start from a clean checkout with no Firebase client credentials. Run `npm run build` and then `npm run test:browser`. The tests create a local Vite preview and block external browser traffic except for the configured test fixtures.
 
-**Verified run.** All 73 Node tests, four Chrome tests and ten emulator tests passed. Lint reported zero warnings and zero errors. The dependency audit reported zero known vulnerabilities in the installed tree. The production build succeeded and Vite reported two minified JavaScript chunks over 500 kB. The automated accessibility scans covered sign-in, Chat at 320 pixels, the account menu, a private report and the meetup dialog. They check WCAG 2.0/2.1 A and AA rules supported by axe. Screen-reader usability also benefits from manual testing. [Verification run](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46068044074)
+The recorded run passed 78 Node tests, six Chrome and build checks, and ten Firebase rule tests. The dependency audit reported zero known vulnerabilities and lint reported zero errors and warnings. Automated accessibility scans covered sign-in, Chat at 320 pixels, the account menu, a private report and the meetup dialog using the WCAG 2.0/2.1 A and AA rules supported by axe. [Verification run](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46073209225)
+
+### Chat startup and photo fallback
+
+| Production-build measurement | Result |
+| --- | ---: |
+| Largest minified JavaScript file | 474,709 bytes |
+| JavaScript loaded on device-only Guest Chat entry | 434,047 bytes |
+| On-demand WebAssembly binary for photo inference | 14.26 MB |
+
+The first two measurements use uncompressed bytes. CI checks both against 500,000 bytes. Vite's default warning threshold stays enabled. Guest Chat entry loads neither the classifier nor its model weights.
+
+The photo regression uploads a synthetic image through Chat and simulates a cloud outage. Chrome executes the same WebAssembly runtime the app serves, using a small test model whose labels tie. The expected result asks the user to describe the image. This checks the fallback and its handling of uncertainty. Evaluating accuracy on real pollution photos requires labeled examples. The first use of the production fallback also fetches approximately 154 MB of quantized model weights, which the browser can cache for later photos. [Browser test](../tests/vision.browser.mjs) · [Production checkpoint](https://huggingface.co/Xenova/clip-vit-base-patch32/tree/main/onnx)
 
 ## Where to investigate a regression
 
@@ -39,7 +51,7 @@ For the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` or start from 
 | The city, routine or risk level is wrong | Reproduce the turn in `tests/chatPlaces.test.js` and the matching household or school in `tests/submissionScenarios.test.js`. Check the reading's timestamp and the forecast's time zone. |
 | Chat explains a different plan or an unrelated detail | The chosen plan supplies its own actions to the AI handler. The Chrome test selects an earlier school plan after creating a neighbourhood plan and checks the single outgoing message, a token-limited response and a provider outage. |
 | A private report fails to open | Check both its document ID and its public-facing code under the owner's account. Emulator tests also read these as a second user. Device-only checks include older saved records. |
-| Provider requests or load size increase | The benchmark counts environmental requests independently of network latency. The production build lists compressed asset sizes. |
+| Provider requests or load size increase | The benchmark counts environmental requests independently of network latency. The Chrome suite measures Guest Chat startup and the largest emitted JavaScript file. Its photo test records which assets load after upload. |
 | The keyboard loses focus or text becomes hard to read | Reproduce the screen in Chrome with reduced motion. The suite checks Escape, reverse Tab, focus return and every AQI badge's text contrast. |
 
 The chat router delegates to modules for environmental questions, general replies, civic reports, photos and community actions. Cloud and device report lookup share one service. The server checks request sizes, roles, options and photo signatures before forwarding requests. The Firestore SDK's gRPC dependency is pinned to a patched version, with its compatibility exercised by the emulator suite. [Chat router](../src/agent/agentOrchestrator.js) · [Report storage](../src/services/reportRecords.js) · [Request validation](../server/chatRequest.js)
