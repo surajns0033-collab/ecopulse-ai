@@ -13,6 +13,12 @@ import {
 import { auth, isFirebaseConfigured } from '../firebase/config';
 
 const AuthContext = createContext(null);
+const localSessionKey = 'ecopulse_device_session';
+
+function rememberLocalUser(user) {
+  try { sessionStorage.setItem(localSessionKey, JSON.stringify(user)); } catch { /* Storage can be disabled. */ }
+  return user;
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -34,7 +40,14 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!firebaseReady) {
-      // Firebase not configured — stay on landing (loading = false, user = null, authMode = null)
+      // Keep this device-only identity across a refresh of the same tab.
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(localSessionKey));
+        if (saved?.isLocal === true && typeof saved.uid === 'string') {
+          setUser(saved);
+          setAuthMode(saved.isAnonymous ? 'guest' : 'google');
+        }
+      } catch { /* A fresh local session starts on the landing page. */ }
       setLoading(false);
       return;
     }
@@ -88,7 +101,7 @@ export function AuthProvider({ children }) {
   async function signInWithGoogle() {
     if (!firebaseReady) {
       // Firebase not configured — create a local "signed-in" user placeholder
-      setUser({ uid: 'google-user-' + Date.now(), displayName: 'User', isAnonymous: false, isLocal: true });
+      setUser(rememberLocalUser({ uid: 'google-user-' + crypto.randomUUID(), displayName: 'User', isAnonymous: false, isLocal: true }));
       setAuthMode('google');
       return;
     }
@@ -134,7 +147,7 @@ export function AuthProvider({ children }) {
   async function continueAsGuest() {
     if (!firebaseReady) {
       // Firebase not configured — create local guest user
-      setUser({ uid: 'guest-' + Date.now(), isAnonymous: true, isLocal: true });
+      setUser(rememberLocalUser({ uid: 'guest-' + crypto.randomUUID(), isAnonymous: true, isLocal: true }));
       setAuthMode('guest');
       return;
     }
@@ -145,6 +158,7 @@ export function AuthProvider({ children }) {
 
   /** Sign out */
   async function signOut() {
+    try { sessionStorage.removeItem(localSessionKey); } catch { /* Storage can be disabled. */ }
     if (firebaseReady) {
       try { await firebaseSignOut(auth); } catch {}
     }

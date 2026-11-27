@@ -1,15 +1,18 @@
 // Agent Tools — all async tool implementations
 
 import {
-  collection, addDoc, getDocs, doc, updateDoc, deleteDoc,
-  query, where, orderBy, limit as fsLimit, Timestamp, increment, onSnapshot
+  collection, addDoc, getDocs, doc, deleteDoc,
+  query, where, orderBy, limit as fsLimit, Timestamp, onSnapshot
 } from 'firebase/firestore';
 import { isFirebaseConfigured } from '../firebase/config';
 import { db } from '../firebase/firestoreClient';
-import { COLLECTIONS, generateReportId, generateEventId } from '../firebase/collections';
+import { COLLECTIONS, generateReportId } from '../firebase/collections';
 import { getAirQuality, getWeather } from './environmentalData';
 import { analyzeEnvironmentalImage as geminiAnalyze } from './geminiService';
 import { getAuthorityBundle, isIndianPlace, matchesDirectoryCity } from './authorityDirectory';
+import { createMeetup, getNearbyMeetups, joinMeetup, cancelMeetupRSVP } from './meetups';
+import { readLocalAttendance } from './localMeetupAttendance.js';
+import { joinedMeetupIds } from './meetupAttendance.js';
 import { analyzeImageOnDevice } from './onDeviceVision';
 
 // Persistent localStorage fallback store for when Firebase isn't configured
@@ -29,8 +32,6 @@ function writeLocal(key, value) {
 }
 
 const STORAGE_KEYS = {
-  MEETUPS: 'echopulse_local_meetups',
-  RSVPS: 'echopulse_local_rsvps',
   POSTS: 'echopulse_local_posts',
   REPORTS: 'echopulse_local_reports',
   DRAFTS: 'echopulse_local_drafts',
@@ -63,28 +64,10 @@ export const tools = {
     return { aqi, weather };
   },
 
-  /**
-   * Get published meetups from Firestore (the listing isn't geospatial).
-   */
-  getNearbyMeetups: async ({ category, limit: lim = 10 }) => {
-    return firestoreOrLocal(
-      async () => {
-        let q = query(
-          collection(db, COLLECTIONS.MEETUPS),
-          where('status', '==', 'published'),
-          orderBy('date', 'asc'),
-          fsLimit(lim)
-        );
-        const snap = await getDocs(q);
-        let events = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (category) events = events.filter((e) => e.category === category);
-        return events;
-      },
-      () => readLocal(STORAGE_KEYS.MEETUPS)
-        .filter((e) => !category || e.category === category)
-        .slice(0, lim)
-    );
-  },
+  getNearbyMeetups,
+  createMeetup,
+  joinMeetup,
+  cancelMeetupRSVP,
 
   /**
    * Get community posts (public channel across all locations)
@@ -227,133 +210,6 @@ export const tools = {
     const cloudResult = await geminiAnalyze(base64, mimeType, contextHint || '');
     if (cloudResult) return { ...cloudResult, provider: cloudResult.provider || 'AI vision' };
     return analyzeImageOnDevice(base64, mimeType, contextHint || '');
-  },
-
-  /**
-   * Create a new meetup event
-   */
-  createMeetup: async ({ userId, organizer, title, description, category, location, date, time, capacity, lat, lng }) => {
-    const eventId = generateEventId();
-    const isoDate = date ? new Date(date).toISOString() : new Date().toISOString();
-    const eventData = {
-      eventId,
-      userId,
-      title,
-      description,
-      category,
-      location,
-      date: date ? Timestamp.fromDate(new Date(date)) : Timestamp.now(),
-      time,
-      capacity: Number(capacity) || 20,
-      participantCount: 0,
-      lat: lat || null,
-      lng: lng || null,
-      organizer: organizer || 'Community Member',
-      status: 'published',
-      isSeeded: false,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    };
-
-    return firestoreOrLocal(
-      async () => {
-        const docRef = await addDoc(collection(db, COLLECTIONS.MEETUPS), eventData);
-        return { eventId, docId: docRef.id };
-      },
-      () => {
-        const localEvent = {
-          ...eventData,
-          id: eventId,
-          date: isoDate,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        const existing = readLocal(STORAGE_KEYS.MEETUPS);
-        writeLocal(STORAGE_KEYS.MEETUPS, [localEvent, ...existing]);
-        return { eventId, docId: eventId, event: localEvent };
-      }
-    );
-  },
-
-  /**
-   * Join/RSVP to a meetup
-   */
-  joinMeetup: async ({ userId, meetupId }) => {
-    return firestoreOrLocal(
-      async () => {
-        // Check if already RSVP'd
-        const existing = await getDocs(
-          query(collection(db, COLLECTIONS.RSVPS), where('userId', '==', userId), where('meetupId', '==', meetupId))
-        );
-        if (!existing.empty) return { alreadyJoined: true };
-
-        await addDoc(collection(db, COLLECTIONS.RSVPS), {
-          userId,
-          meetupId,
-          createdAt: Timestamp.now(),
-        });
-
-        // Try to increment participant count (best effort)
-        const meetupDocs = await getDocs(
-          query(collection(db, COLLECTIONS.MEETUPS), where('eventId', '==', meetupId))
-        );
-        if (!meetupDocs.empty) {
-          await updateDoc(meetupDocs.docs[0].ref, { participantCount: increment(1) });
-        }
-
-        return { success: true, meetupId };
-      },
-      () => {
-        const rsvps = readLocal(STORAGE_KEYS.RSVPS);
-        const alreadyJoined = rsvps.some((r) => r.userId === userId && r.meetupId === meetupId);
-        if (!alreadyJoined) {
-          rsvps.push({ userId, meetupId });
-          writeLocal(STORAGE_KEYS.RSVPS, rsvps);
-          const meetups = readLocal(STORAGE_KEYS.MEETUPS).map((m) =>
-            (m.eventId === meetupId || m.id === meetupId)
-              ? { ...m, participantCount: (m.participantCount || 0) + 1 }
-              : m
-          );
-          writeLocal(STORAGE_KEYS.MEETUPS, meetups);
-        }
-        return { success: !alreadyJoined, alreadyJoined };
-      }
-    );
-  },
-
-  /**
-   * Cancel RSVP for a meetup
-   */
-  cancelMeetupRSVP: async ({ userId, meetupId }) => {
-    return firestoreOrLocal(
-      async () => {
-        const snap = await getDocs(
-          query(collection(db, COLLECTIONS.RSVPS), where('userId', '==', userId), where('meetupId', '==', meetupId))
-        );
-        for (const d of snap.docs) await deleteDoc(d.ref);
-
-        // Decrement participant count
-        const meetupDocs = await getDocs(
-          query(collection(db, COLLECTIONS.MEETUPS), where('eventId', '==', meetupId))
-        );
-        if (!meetupDocs.empty) {
-          await updateDoc(meetupDocs.docs[0].ref, { participantCount: increment(-1) });
-        }
-
-        return { success: true };
-      },
-      () => {
-        const rsvps = readLocal(STORAGE_KEYS.RSVPS).filter((r) => !(r.userId === userId && r.meetupId === meetupId));
-        writeLocal(STORAGE_KEYS.RSVPS, rsvps);
-        const meetups = readLocal(STORAGE_KEYS.MEETUPS).map((m) =>
-          (m.eventId === meetupId || m.id === meetupId)
-            ? { ...m, participantCount: Math.max(0, (m.participantCount || 1) - 1) }
-            : m
-        );
-        writeLocal(STORAGE_KEYS.MEETUPS, meetups);
-        return { success: true };
-      }
-    );
   },
 
   /**
@@ -743,30 +599,18 @@ export const tools = {
    * Get user's environmental impact stats
    */
   getUserImpact: async ({ userId }) => {
-    return firestoreOrLocal(
-      async () => {
-        const [reportsSnap, rsvpsSnap] = await Promise.all([
-          getDocs(query(collection(db, COLLECTIONS.REPORTS), where('userId', '==', userId))),
-          getDocs(query(collection(db, COLLECTIONS.RSVPS), where('userId', '==', userId))),
-        ]);
-        return {
-          reportsSubmitted: reportsSnap.size,
-          eventsJoined: rsvpsSnap.size,
-          carbonSaved: rsvpsSnap.size * 2.4, // approx kg CO2
-          treesPlanted: 0,
-        };
-      },
-      () => {
-        const reports = readLocal(STORAGE_KEYS.REPORTS);
-        const rsvps = readLocal(STORAGE_KEYS.RSVPS);
-        return {
-          reportsSubmitted: reports.filter((r) => r.userId === userId).length,
-          eventsJoined: rsvps.filter((r) => r.userId === userId).length,
-          carbonSaved: rsvps.filter((r) => r.userId === userId).length * 2.4,
-          treesPlanted: 0,
-        };
-      }
-    );
+    if (isFirebaseConfigured) {
+      const [reports, receipts] = await Promise.all([
+        getDocs(query(collection(db, COLLECTIONS.REPORTS), where('userId', '==', userId))),
+        getDocs(query(collection(db, COLLECTIONS.RSVPS), where('userId', '==', userId))),
+      ]);
+      return { reportsSubmitted: reports.size, eventsJoined: joinedMeetupIds(receipts.docs.map(row => row.data())).size };
+    }
+    const mine = (await readLocalAttendance()).filter(row => row.userId === userId);
+    return {
+      reportsSubmitted: readLocal(STORAGE_KEYS.REPORTS).filter(row => row.userId === userId).length,
+      eventsJoined: joinedMeetupIds(mine).size,
+    };
   },
 
   /**

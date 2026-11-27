@@ -12,7 +12,8 @@
     "benchmark": "node --test tests/submissionScenarios.test.js",
     "verify": "npm run lint && npm test && npm run build",
     "preview": "vite preview",
-    "test:rules": "npx --yes --package=firebase-tools@15.37.0 -- firebase emulators:exec --project demo-ecopulse --only auth,firestore \"node --test tests/firestoreRules.emulator.mjs\""
+    "test:rules": "npx --yes --package=firebase-tools@15.37.0 -- firebase emulators:exec --project demo-ecopulse --only auth,firestore \"node --test tests/firestoreRules.emulator.mjs\"",
+    "test:meetups-ui": "node --test tests/meetups.browser.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.90.0",
-    "vite": "^8.3.6"
+    "vite": "^8.3.6",
+    "playwright-core": "1.65.1"
   }
 }

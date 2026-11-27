@@ -51,3 +51,17 @@ Before the cooking correction, the published code at `3b758da8` passed five of t
 The deterministic plan and generative follow-up are separate paths. In a live Guest Chat check, the model-backed reply explained that damp dusting reduces indoor particle exposure and carpooling reduces travel emissions. The proxy identified its provider and the answer appeared in the chat log.
 
 Start with incorrect advice, private data access and broken checks when triaging a new revision. The longer-term cleanup is to separate photo and report handling from the main chat orchestrator.
+
+## Meetup registration
+
+In Events or a Chat event card, **Join event** reserves one place. **Cancel my place** releases it. The Firestore transaction updates the public count and the signed-in person's private registration together. A full or closed event gives an explicit result. An anonymous Firebase account can join. Publishing requires an email or Google account. In a build using device-only sign-in, the confirmation identifies local saves.
+
+- `npm run test:rules` exercises simultaneous joins, the last place, repeated requests, refresh reads, private receipts, rejected partial writes and reconciliation of older records.
+- `npm run build` followed by `npm run test:meetups-ui` runs Chrome on a 390-pixel viewport against a device-only build. It joins from Chat, refreshes Events, cancels and checks the count in a second tab. Use a build with `VITE_FIREBASE_API_KEY=demo-key` for this check.
+- The published-event query uses the collection index on `meetups.status` and `meetups.date` in `firestore.indexes.json`.
+
+### Existing Firestore installations
+
+Deploy this revision's Firestore rules and index to the app's Firebase project. A previous installation may contain duplicate private registrations or a count that differs from the number of people. Until reconciliation finishes, those older events display an attendance-update message when someone tries to change their place.
+
+With a short-lived Firestore administrator access token in `GOOGLE_OAUTH_ACCESS_TOKEN`, run `node server/migrateMeetupAttendance.mjs PROJECT_ID` to preview the number of older events and orphaned receipts. Add `--apply` to consolidate each person's records, preserve the earliest timestamp, rebuild the count and enable registration. Each event is committed atomically with preconditions. Running the command again skips completed events. Ambiguous public event codes require owner review. Orphaned receipts are reported and preserved. Keep administrator access on the maintenance machine.

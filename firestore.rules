@@ -53,17 +53,67 @@ service cloud.firestore {
       allow update: if ownsExisting() && ownsIncoming();
     }
 
-    match /meetupRSVPs/{rsvpId} {
-      allow create: if ownsIncoming();
-      allow read, delete: if ownsExisting();
-      allow update: if ownsExisting() && ownsIncoming();
+    function attendanceDocId(uid, eventId) {
+      return uid.toUtf8().toHexString().lower() + '!' + eventId;
     }
 
-    match /meetups/{meetupId} {
+    function publicEventId(eventId) {
+      let code = get(/databases/$(database)/documents/meetups/$(eventId)).data.get('eventId', '');
+      return code is string && code.size() > 0 ? code : eventId;
+    }
+
+    function countMoves(eventId, delta) {
+      let event = /databases/$(database)/documents/meetups/$(eventId);
+      return get(event).data.attendanceVersion == 2
+        && getAfter(event).data.participantCount == get(event).data.participantCount + delta;
+    }
+
+    match /meetupRSVPs/{receiptId} {
+      // The owner can also read their own missing receipt before joining.
+      allow get: if signedIn() && (exists(/databases/$(database)/documents/meetupRSVPs/$(receiptId))
+        ? ownsExisting()
+        : receiptId.matches(request.auth.uid.toUtf8().toHexString().lower() + '!.*'));
+      allow list: if ownsExisting();
+      allow create: if ownsIncoming()
+        && request.resource.data.keys().hasOnly(['userId', 'meetupDocId', 'meetupId', 'createdAt'])
+        && request.resource.data.meetupDocId is string
+        && receiptId == attendanceDocId(request.auth.uid, request.resource.data.meetupDocId)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.meetupId == publicEventId(request.resource.data.meetupDocId)
+        && countMoves(request.resource.data.meetupDocId, 1);
+      allow delete: if ownsExisting()
+        && receiptId == attendanceDocId(request.auth.uid, resource.data.meetupDocId)
+        && (!exists(/databases/$(database)/documents/meetups/$(resource.data.meetupDocId))
+          || countMoves(resource.data.meetupDocId, -1));
+    }
+
+    match /meetups/{eventId} {
+      function ownAttendanceChange() {
+        let receipt = /databases/$(database)/documents/meetupRSVPs/$(attendanceDocId(request.auth.uid, eventId));
+        let before = resource.data.participantCount;
+        let after = request.resource.data.participantCount;
+        return resource.data.attendanceVersion == 2 && before is int && before >= 0 && after is int && after >= 0
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantCount'])
+          && ((after == before + 1 && resource.data.status == 'published'
+              && (resource.data.get('capacity', null) == null || after <= resource.data.capacity)
+              && !exists(receipt) && existsAfter(receipt))
+            || (after == before - 1 && exists(receipt) && !existsAfter(receipt)));
+      }
+
+      function organizerEdit() {
+        let changes = request.resource.data.diff(resource.data).affectedKeys();
+        return isNonGuest() && ownsExisting() && ownsIncoming()
+          && !changes.hasAny(['eventId', 'participantCount', 'attendanceVersion'])
+          && (!changes.hasAny(['capacity']) || (request.resource.data.capacity is int
+              && request.resource.data.capacity > 0 && request.resource.data.capacity >= resource.data.get('participantCount', 0)));
+      }
+
       allow read: if signedIn();
-      allow create: if isNonGuest() && ownsIncoming();
-      allow update: if isNonGuest() && ownsExisting() && ownsIncoming();
-      allow delete: if isNonGuest() && ownsExisting();
+      allow create: if isNonGuest() && ownsIncoming() && request.resource.data.attendanceVersion == 2
+        && request.resource.data.participantCount is int && request.resource.data.participantCount == 0
+        && request.resource.data.capacity is int && request.resource.data.capacity > 0;
+      allow update: if organizerEdit() || (signedIn() && ownAttendanceChange());
+      allow delete: if isNonGuest() && ownsExisting() && resource.data.get('participantCount', 0) == 0;
     }
 
     match /{collectionName}/{documentId} {

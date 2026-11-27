@@ -182,6 +182,8 @@ export function routePlaceRequest(text, history = [], { awaitingSmogProfile = fa
   if (!definition && (air || weather)) {
     return { kind: 'tool', needsPlace: true, intent: air ? INTENTS.GET_AIR_QUALITY : INTENTS.GET_WEATHER, relative, place };
   }
+  // Published meetups can be listed before the user shares a location.
+  if (intent === INTENTS.FIND_EVENTS && !place) return { kind: 'tool', intent };
   if (PLACE_TOOLS.has(intent) && (place || relative ||
     /\b(?:report|complaint|eco.event|eco.meetup|cleanup|low.pollution route)\b/i.test(clean))) {
     return { kind: 'tool', needsPlace: true, intent, relative, place };
