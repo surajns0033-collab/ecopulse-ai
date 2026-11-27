@@ -1,17 +1,47 @@
-export function detectIssueCategory(text) {
-  const lower = (text || '').toLowerCase();
-  if (lower.includes('polluted naala') || lower.includes('polluted nala') || lower.includes('polluted drain')) return 'water';
-  if ((lower.includes('parking') || lower.includes('parked') || lower.includes('vehicle')) && (lower.includes('block') || lower.includes('obstruct') || lower.includes('road') || lower.includes('footpath'))) return 'road_obstruction';
-  if (lower.includes('water') || lower.includes('paani')) return 'water';
-  if (lower.includes('sewage') || lower.includes('drain') || lower.includes('nali') || lower.includes('naala') || lower.includes('nala')) return 'sewage';
-  if (lower.includes('tree')) return 'trees';
-  if (lower.includes('landfill') || lower.includes('land filling') || lower.includes('excavation material') || lower.includes('soil dumping')) return 'greenspace';
-  if (lower.includes('construction') || lower.includes('dust')) return 'construction';
-  if (lower.includes('burning') || lower.includes('burn') || lower.includes('jalana')) return 'burning';
-  if (lower.includes('industrial') || lower.includes('factory') || lower.includes('chemical')) return 'industrial';
-  if (lower.includes('air') || lower.includes('smoke') || lower.includes('smog')) return 'air';
-  if (lower.includes('garbage') || lower.includes('waste') || lower.includes('kachra') || lower.includes('plastic')) return 'garbage';
-  return 'default';
+function isRoadObstruction(text) {
+  return /parking|parked|vehicle/i.test(text) && /block|obstruct|road|footpath/i.test(text);
+}
+
+// Drafts and the contact directory use the authority's complaint categories.
+// For overlapping observations, earlier matches determine the recipient.
+const AUTHORITY_CATEGORIES = [
+  ['water', /water|paani/i],
+  ['sewage', /sewage|drain|nali|naala|nala/i],
+  ['trees', /tree/i],
+  ['greenspace', /landfill|land filling|excavation material|soil dumping/i],
+  ['construction', /construction|dust/i],
+  ['burning', /burn|jalana/i],
+  ['industrial', /industrial|factory|chemical/i],
+  ['air', /air|smoke|smog/i],
+  ['garbage', /garbage|waste|kachra|plastic/i],
+];
+
+export function detectIssueCategory(text = '') {
+  if (/polluted (?:naala|nala|drain)/i.test(text)) return 'water';
+  if (isRoadObstruction(text)) return 'road_obstruction';
+  return AUTHORITY_CATEGORIES.find(([, pattern]) => pattern.test(text))?.[0] ?? 'default';
+}
+
+// Saved reports have their own labels and priority. For example, a report about
+// smoke from burning plastic goes to open burning, and keeps that title offline.
+const REPORT_CATEGORIES = [
+  ['burning', /burning|buring|jalana|smoke/i, 'Open Burning Issue'],
+  ['greenspace', /landfill|land filling|excavation material|soil dumping|rubble dumping/i, 'Land Filling / Excavation Material Dumping'],
+  ['garbage', /garbage|kachra|dumping/i, 'Illegal Garbage Dumping'],
+  ['plastic', /plastic/i, 'Plastic Waste Issue'],
+  ['sewage', /sewage|nali|naala|nala|drain/i, 'Sewage / Polluted Drain Issue'],
+  ['water', /water/i, 'Water Pollution Issue'],
+  ['trees', /tree|mangrove/i, 'Tree / Mangrove Damage Issue'],
+  ['construction', /construction|dust/i, 'Construction Dust Issue'],
+  ['air', /air|pollution/i, 'Air Pollution Issue'],
+];
+
+export function classifyReport(text) {
+  if (isRoadObstruction(text)) return { category: 'road_obstruction', title: 'Road / Footpath Obstruction by Parked Vehicle' };
+  const match = REPORT_CATEGORIES.find(([, pattern]) => pattern.test(text));
+  if (!match) return { category: 'other', title: 'Environmental Issue Report' };
+  const [category, , title] = match;
+  return { category, title };
 }
 
 export const ISSUE_LABELS = {
