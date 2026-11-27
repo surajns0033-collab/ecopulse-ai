@@ -4,6 +4,7 @@
 // the browser. Model weights are never committed to this repository and the
 // user's photo is processed locally (it is not uploaded by this fallback).
 
+import { CLIPFeatureExtractor, CLIPModel, CLIPTokenizer, ZeroShotImageClassificationPipeline, env } from '@huggingface/transformers';
 import { extractVisibleText } from './imageOcr';
 
 const MODEL_ID = 'Xenova/clip-vit-base-patch32';
@@ -109,23 +110,28 @@ const LABELS = [
 
 let runtimePromise = null;
 
-async function getRuntime() {
+async function loadRuntime() {
+  env.allowLocalModels = false;
+  // Only this CLIP checkpoint is used by the on-device photo fallback.
+  const [tokenizer, processor] = await Promise.all([
+    CLIPTokenizer.from_pretrained(MODEL_ID),
+    CLIPFeatureExtractor.from_pretrained(MODEL_ID),
+  ]);
+  const model = await CLIPModel.from_pretrained(MODEL_ID, { dtype: 'q8' });
+  const classifier = new ZeroShotImageClassificationPipeline({
+    task: 'zero-shot-image-classification', model, tokenizer, processor,
+  });
+  const promptEntries = LABELS.flatMap(entry =>
+    [entry.prompt, ...(entry.aliases || [])].map(prompt => ({ entry, prompt })));
+  return { promptEntries, classifier };
+}
+
+function getRuntime() {
   if (!runtimePromise) {
-    runtimePromise = import('@huggingface/transformers')
-      .then(async ({ pipeline, env }) => {
-        env.allowLocalModels = false;
-        const promptEntries = LABELS.flatMap((entry) => (
-          [entry.prompt, ...(entry.aliases || [])].map((prompt) => ({ entry, prompt }))
-        ));
-        return {
-          promptEntries,
-          classifier: await pipeline('zero-shot-image-classification', MODEL_ID, { dtype: 'q8' }),
-        };
-      })
-      .catch((error) => {
-        runtimePromise = null; // allow a later retry after a network failure
-        throw error;
-      });
+    runtimePromise = loadRuntime().catch(error => {
+      runtimePromise = null; // Allow another photo to retry after a failed download.
+      throw error;
+    });
   }
   return runtimePromise;
 }
