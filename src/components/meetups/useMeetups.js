@@ -8,11 +8,10 @@ export function useMeetups(userId) {
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!userId) return;
-    setState(empty);
     return subscribeMeetups(userId,
-      data => setState({ ...data, userId, loading: false, error: '' }),
-      error => setState({ ...empty, userId, loading: false, error: meetupErrorMessage(error) }),
+      data => setState({ ...data, userId, attempt, loading: false, error: '' }),
+      error => setState({ ...empty, userId, attempt, loading: false, error: meetupErrorMessage(error) }),
     );
   }, [userId, attempt]);
-  return { ...(state.userId === userId ? state : empty), retry: () => setAttempt(n => n + 1) };
+  return { ...(state.userId === userId && state.attempt === attempt ? state : empty), retry: () => setAttempt(n => n + 1) };
 }
