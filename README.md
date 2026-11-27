@@ -36,6 +36,8 @@
     &nbsp;·&nbsp;
     <a href="#-quick-start">Quick Start</a>
     &nbsp;·&nbsp;
+    <a href="#verification">Verification</a>
+    &nbsp;·&nbsp;
     <a href="#-privacy--safety-model">Privacy & Safety</a>
     &nbsp;·&nbsp;
     <a href="FIREBASE_SETUP.md">Firebase Setup</a>
@@ -66,7 +68,8 @@ Instead of leaving users with generic chatbot replies or unverified contact deta
 | Area | What It Does | Powered By |
 | :--- | :--- | :--- |
 | **Conversational Assistant** | Natural-language chat in **English, Hindi, and Hinglish** with automatic language detection, daily-life civic guidance, and deterministic fallback responses. | Gemini AI, OpenRouter Free, `fallbackBrain.js` |
-| **Live AQI & Weather** | Real-time Air Quality Index (`PM2.5`, `PM10`, `NO₂`, `O₃`), weather conditions, and actionable health insights for any city worldwide. | Open-Meteo Air Quality & Forecast APIs |
+| **Personalized Smog Action Plan** | Combines a verified city and the user's commute, routine, cooking, and filtration details. Explains which steps reduce exposure and which reduce emissions. | `smogPlan.js`, city lookup, Open-Meteo AQI forecast |
+| **Air Quality & Weather** | Shows current modeled U.S. AQI, pollutant estimates, and weather. The smog plan displays the AQI source time and does not use stale or undated readings as current. | Open-Meteo Air Quality & Forecast APIs |
 | **Typo-Tolerant Global Maps** | Resolves misspelled or landmark-level locations (e.g., reserves, beaches, neighborhoods) into verified coordinates and Google Maps deep links. | Open-Meteo, Photon, Nominatim (OSM) |
 | **Civic Grievance & Email Routing** | Classifies incidents (tree cutting, mangrove dumping, open burning, sewage, waste), surfaces verified helplines/portals, and drafts formal complaints with **Forest Dept CC** and **1-click Gmail Compose**. | `authorityDirectory.js`, `agentTools.js` |
 | **Grounded Web Research** | Answers current-events and policy questions with cited, clickable official sources rather than ungrounded guesses. | Tavily Search API (`/api/ai/chat`) |
@@ -178,7 +181,7 @@ ecopulse-ai/
 
 ### Prerequisites
 - **Node.js 20+** and **npm**
-- A **Google Gemini API key** ([Google AI Studio](https://aistudio.google.com/apikey))
+- A **Google Gemini API key** ([Google AI Studio](https://aistudio.google.com/apikey)) is optional for model-powered replies. The smog plan and automated tests do not require one.
 - A **Firebase project** (optional for local UI testing; required for cloud auth & Firestore community)
 
 ### Installation
@@ -198,6 +201,8 @@ cp .env.example .env       # macOS / Linux
 # 4. Start the local dev server (with built-in /api/ai proxy)
 npm run dev
 ```
+
+To verify the exact code shown on GitHub, check out that revision after cloning, or use **Code → Download ZIP** from that revision.
 
 ### Environment Variables
 
@@ -258,6 +263,16 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run build` | Build optimized production bundle into `dist/` |
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run static checks with **Oxlint** |
+| `npm test` | Run the Node regression suite with mocked external services |
+
+---
+
+## Verification
+
+- **57 regression tests passed** (`npm test`), including city changes, stale AQI, severe-smog advice, Guest chat, photo request validation, and provider timeouts. The suite does not need API keys or a live database.
+- **Production build passed** (`npm run build`). An offline Chromium check also covered keyboard navigation, reduced motion, and switching cities in the smog-plan flow.
+
+Try in Guest Chat: “Make a smog action plan for Navi Mumbai, Maharashtra, India. I take the train and cook with gas.” See the [verification guide](docs/quality-verification.md) for more example prompts and the checks behind these results.
 
 ---
 
