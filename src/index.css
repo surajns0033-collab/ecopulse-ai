@@ -161,6 +161,8 @@ html, body {
   background: var(--bg);
 }
 
+.chat-scroll-area > [role='log'] { display: flex; flex-direction: column; gap: 14px; }
+
 .chat-scroll-area::-webkit-scrollbar { width: 3px; }
 .chat-scroll-area::-webkit-scrollbar-track { background: transparent; }
 .chat-scroll-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
@@ -1598,16 +1600,16 @@ html, body {
 
 
 /* ===== CREATE MEETUP MODAL ===== */
-.create-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 16px;
+.meetup-dialog {
+  width: min(390px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
 }
+
+.meetup-dialog::backdrop { background: rgba(15, 23, 42, 0.5); }
 
 .create-modal {
   width: 100%;
