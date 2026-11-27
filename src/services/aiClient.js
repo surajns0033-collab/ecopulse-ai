@@ -41,7 +41,8 @@ async function postJson(url, body, timeoutMs, signal) {
 
 /**
  * Ask the AI for a text completion.
- * @returns {Promise<{text: string, provider: string}|null>} null when no model is reachable.
+ * Set `truncated` only when the upstream provider reports its output limit.
+ * @returns {Promise<{text: string, provider: string, sources: Array<{title: string, url: string}>, truncated?: boolean}|null>}
  */
 export async function requestAI({
   system = '',
@@ -75,7 +76,10 @@ export async function requestAI({
       const { ok, status, json } = await postJson(PROXY, payload, Math.min(timeoutMs, 40_000) + 5_000, signal);
       if (ok && json?.text) {
         state.lastProvider = json.provider || 'proxy';
-        return { text: json.text, sources: json.sources || [], provider: state.lastProvider };
+        return {
+          text: json.text, sources: json.sources || [], provider: state.lastProvider,
+          ...(json.truncated === true ? { truncated: true } : {}),
+        };
       }
       if (status === 404 || status === 405) {
         // Static hosting / proxy not present — skip it for a while.

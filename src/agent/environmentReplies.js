@@ -1,4 +1,5 @@
 import { getCurrentAirQuality, getAQIInsight, getAQICategory, getWeather } from '../services/environmentalData.js';
+import { requestAI } from '../services/aiClient.js';
 import { getChatResponse, isAIUnavailable } from '../services/geminiService';
 import { isIndianPlace } from '../services/authorityDirectory.js';
 import { tools } from '../services/agentTools';
@@ -6,17 +7,24 @@ import { logAction } from './activityLog';
 
 export async function explainSmogChoices(question, choices, signal) {
   const selected = choices.map(({ advice, impact }) => `• ${advice} ${impact}`).join('\n');
-  const instructions = 'Using only the selected actions and their stated impacts, explain one way to reduce personal exposure and one way to reduce emissions at the source. Use plain language. Do not invent readings, quantities, savings or medical instructions.';
-  const answer = await getChatResponse([{ role: 'user', text: question + '\n\nSelected actions:\n' + selected }], instructions, { signal });
+  const result = await requestAI({
+    system: 'In two short sentences, explain one choice that reduces exposure and one that reduces emissions at the source. Use only the listed actions and impacts. Do not add readings, numerical savings or medical instructions.',
+    messages: [{ role: 'user', text: question + '\n\nSelected actions:\n' + selected }],
+    // Leave room for reasoning tokens as well as the two visible sentences.
+    maxTokens: 1400,
+    temperature: 0.3,
+    signal,
+  });
   signal?.throwIfAborted();
-  if (isAIUnavailable(answer)) {
+  if (!result?.text || result.truncated) {
+    const reason = result?.truncated ? 'The AI reply was cut short.' : 'The AI explanation is unavailable right now.';
     return {
-      text: 'The AI explanation is unavailable right now. These are the direct impacts recorded in your plan:\n\n' +
+      text: reason + ' These are the direct impacts recorded in your plan:\n\n' +
         choices.map(({ impact }) => '• ' + impact).join('\n'),
       cards: [], actions: [], status: 'unavailable',
     };
   }
-  return { text: answer, cards: [], actions: [], status: 'success' };
+  return { text: result.text, cards: [], actions: [], status: 'success' };
 }
 
 export async function handleAirQuality(lat, lng, city, userId, { signal, forecast = false } = {}) {
