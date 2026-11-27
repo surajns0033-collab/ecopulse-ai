@@ -44,7 +44,7 @@ function PostCard({ post, canDelete, onDelete }) {
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: identity.foreground }}>{post.author || 'Community Member'}</div>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>{formatDate(post.createdAt)}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{formatDate(post.createdAt)}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -229,7 +229,7 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      <div className="page-content" ref={messagesRef} style={{ paddingBottom: 12 }} onScroll={({ currentTarget: panel }) => {
+      <div className="page-content" role="region" aria-label="Community messages" tabIndex={0} ref={messagesRef} style={{ paddingBottom: 12 }} onScroll={({ currentTarget: panel }) => {
         followLatest.current = panel.scrollHeight - panel.clientHeight - panel.scrollTop < 64;
       }}>
         {user && !user.isAnonymous && (
@@ -267,7 +267,7 @@ export default function CommunityPage() {
               </span>
               <button
                 onClick={() => navigate('/meetups')}
-                style={{ background: 'none', border: 'none', color: '#16a34a', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: 'var(--green-dark)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
               >
                 See all →
               </button>

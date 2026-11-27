@@ -175,7 +175,7 @@ export default function MeetupsPage() {
       </div>
 
       {/* Events list */}
-      <div className="page-content">
+      <div className="page-content" role="region" aria-label="Meetup listings" tabIndex={0}>
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
             <div className="spinner" />
