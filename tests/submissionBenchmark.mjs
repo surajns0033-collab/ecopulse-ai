@@ -16,6 +16,7 @@ if (!unitTests.length) throw new Error('No unit test files were discovered.');
 
 const checks = [
   { id: 'lint', label: 'Lint and function complexity', args: [npm, 'run', 'lint'] },
+  { id: 'inventory', label: 'Source-wide maintainability scan', args: [npm, 'run', 'quality:inventory'] },
   { id: 'audit', label: 'Dependency advisories', args: [npm, 'audit', '--audit-level=moderate'] },
   { id: 'client', label: 'Browser credential isolation', args: ['--test', clientEnvironment] },
   { id: 'unit', label: 'Node regressions and source coverage', args: [
@@ -32,7 +33,7 @@ const checks = [
 ];
 
 const criteria = [
-  ['Code Quality', 'High', ['lint']],
+  ['Code Quality', 'High', ['lint', 'inventory']],
   ['Security', 'Medium', ['audit', 'client', 'rules']],
   ['Efficiency', 'Medium', ['plans', 'size']],
   ['Testing', 'Low', ['unit', 'plans', 'ui', 'client', 'rules', 'size']],
