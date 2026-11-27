@@ -162,10 +162,8 @@ export function AuthProvider({ children }) {
 
   /** Sign out */
   async function signOut() {
+    if (firebaseReady) await firebaseSignOut(auth);
     try { sessionStorage.removeItem(localSessionKey); } catch { /* Storage can be disabled. */ }
-    if (firebaseReady) {
-      try { await firebaseSignOut(auth); } catch {}
-    }
     resetUser();
   }
 
