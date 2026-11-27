@@ -6,14 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "oxlint",
+    "lint": "oxlint --deny-warnings",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
     "benchmark": "node --test tests/submissionScenarios.test.js",
     "verify": "npm run lint && npm test && npm run build",
     "preview": "vite preview",
     "test:rules": "npx --yes --package=firebase-tools@15.37.0 -- firebase emulators:exec --project demo-ecopulse --only auth,firestore \"node --test tests/firestoreRules.emulator.mjs\"",
-    "test:meetups-ui": "node --test tests/meetups.browser.mjs"
+    "test:meetups-ui": "node --test tests/meetups.browser.mjs",
+    "test:browser": "node --test tests/meetups.browser.mjs tests/cleanAir.browser.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -32,8 +33,9 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "axe-core": "4.14.1",
     "oxlint": "^1.90.0",
-    "vite": "^8.3.6",
-    "playwright-core": "1.65.1"
+    "playwright-core": "1.65.1",
+    "vite": "^8.3.6"
   }
 }
