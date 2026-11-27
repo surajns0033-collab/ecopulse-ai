@@ -183,7 +183,7 @@ export default function MeetupsPage() {
         )}
 
         {!loading && events.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
+          <div style={{ textAlign: 'center', padding: 40, color: '#475569' }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>🌱</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>No events yet</div>
             <div style={{ fontSize: 13, marginTop: 4, marginBottom: 14 }}>Be the first to organize a community eco-meetup!</div>
