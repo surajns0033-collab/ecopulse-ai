@@ -75,7 +75,10 @@ export async function requestAI({
       const { ok, status, json } = await postJson(PROXY, payload, Math.min(timeoutMs, 40_000) + 5_000, signal);
       if (ok && json?.text) {
         state.lastProvider = json.provider || 'proxy';
-        return { text: json.text, sources: json.sources || [], provider: state.lastProvider };
+        return {
+          text: json.text, sources: json.sources || [], provider: state.lastProvider,
+          ...(json.truncated === true ? { truncated: true } : {}),
+        };
       }
       if (status === 404 || status === 405) {
         // Static hosting / proxy not present — skip it for a while.
