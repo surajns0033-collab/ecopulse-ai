@@ -276,6 +276,12 @@ Try in Guest Chat: “Make a smog action plan for Navi Mumbai, Maharashtra, Indi
 
 ---
 
+## Credits
+
+**README design:** Google Antigravity.
+
+---
+
 <div align="center">
   <p>Built for cleaner cities, faster civic action, and privacy-respecting communities.</p>
 </div>
