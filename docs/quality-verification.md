@@ -12,7 +12,7 @@ Open the live app in a fresh browser session, select **Continue as Guest**, and 
 
 The household plan connects commute and cooking choices to their effects. The school plan addresses outdoor assembly, exercise and idling at pickup. The default source provides modeled U.S. AQI. The plan shows its source time in UTC and searches the next 24 hours for a lower-exposure window between 06:00 and 18:00 local time. It labels missing or stale readings and gives a warning if the lowest daytime forecast still poses a risk.
 
-Select **Explain these choices with AI** on either plan. The server-side AI proxy receives that plan's recommendations, their recorded impacts and the question. Each button remains attached to its original plan after another conversation turn. When the model is unavailable, Chat shows the recorded impacts. [Plan builder](../src/agent/smogPlan.js) · [AI explanation handler](../src/agent/environmentReplies.js)
+Select **Explain these choices with AI** on either plan. The server-side AI proxy receives that plan's recommendations, their recorded impacts and the question. Each button remains attached to its original plan after another conversation turn. When the model is unavailable or reaches its output limit, Chat shows the recorded impacts. The live school example uses a short model prompt that asks for one exposure choice and one emissions choice. [Plan builder](../src/agent/smogPlan.js) · [AI explanation handler](../src/agent/environmentReplies.js)
 
 ## Run the checks
 
@@ -30,14 +30,14 @@ Use Node.js 24 LTS, version 24.12 or later, and install the lockfile with `npm c
 
 For the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` or start from a clean checkout with no Firebase client credentials. Run `npm run build` and then `npm run test:browser`. The tests create a local Vite preview and block external browser traffic except for the configured test fixtures.
 
-**Verified run.** All 72 Node tests, four Chrome tests and ten emulator tests passed. Lint reported zero warnings and zero errors. The dependency audit reported zero known vulnerabilities in the installed tree. The production build succeeded and Vite reported two minified JavaScript chunks over 500 kB. The automated accessibility scans covered sign-in, Chat at 320 pixels, the account menu, a private report and the meetup dialog. They check WCAG 2.0/2.1 A and AA rules supported by axe. Screen-reader usability also benefits from manual testing. [Verification run](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46066554087)
+**Verified run.** All 73 Node tests, four Chrome tests and ten emulator tests passed. Lint reported zero warnings and zero errors. The dependency audit reported zero known vulnerabilities in the installed tree. The production build succeeded and Vite reported two minified JavaScript chunks over 500 kB. The automated accessibility scans covered sign-in, Chat at 320 pixels, the account menu, a private report and the meetup dialog. They check WCAG 2.0/2.1 A and AA rules supported by axe. Screen-reader usability also benefits from manual testing. [Verification run](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46068044074)
 
 ## Where to investigate a regression
 
 | Symptom | First checks |
 | --- | --- |
 | The city, routine or risk level is wrong | Reproduce the turn in `tests/chatPlaces.test.js` and the matching household or school in `tests/submissionScenarios.test.js`. Check the reading's timestamp and the forecast's time zone. |
-| Chat explains a different plan or an unrelated detail | The chosen plan supplies its own actions to the AI handler. The Chrome test selects an earlier school plan after creating a neighbourhood plan and checks the single outgoing message and offline response. |
+| Chat explains a different plan or an unrelated detail | The chosen plan supplies its own actions to the AI handler. The Chrome test selects an earlier school plan after creating a neighbourhood plan and checks the single outgoing message, a token-limited response and a provider outage. |
 | A private report fails to open | Check both its document ID and its public-facing code under the owner's account. Emulator tests also read these as a second user. Device-only checks include older saved records. |
 | Provider requests or load size increase | The benchmark counts environmental requests independently of network latency. The production build lists compressed asset sizes. |
 | The keyboard loses focus or text becomes hard to read | Reproduce the screen in Chrome with reduced motion. The suite checks Escape, reverse Tab, focus return and every AQI badge's text contrast. |
