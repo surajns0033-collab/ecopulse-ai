@@ -3,7 +3,7 @@ import { getJsonResponse } from '../services/geminiService';
 import { buildComplaintEmailTemplate } from './fallbackBrain.js';
 import { AWAITING_DRAFT_DETAILS, incidentCity } from './chatPlaces.js';
 import { resolveCity } from './placeContext.js';
-import { classifyReport, describesIssue, detectIssueCategory, ISSUE_LABELS, observationText } from './civicIssues.js';
+import { classifyReport, describesIssue, detectIssueCategory, mentionsForest, ISSUE_LABELS, observationText } from './civicIssues.js';
 
 import { reportContacts, reportFields, reportUrgency } from './civicReportDetails.js';
 export { handleAuthorityContacts } from './civicContacts.js';
@@ -45,7 +45,7 @@ export async function handleCreateReport(userMessage, userId, location) {
   const city = resolveCity(location?.city) || 'your area';
   const { category, title } = classifyReport(userMessage);
   const recipient = await tools.findVerifiedRecipient({ issueCategory: category, city });
-  const forest = /tree|mangrove|forest/i.test(userMessage);
+  const forest = mentionsForest(userMessage);
   if (asksWhereToReport(userMessage)) return reportingInstructions(city, category, recipient, forest);
 
   const structured = await extractObservation(userMessage, city);
@@ -82,8 +82,8 @@ function forestCopy(recipient, situationText, userMessage) {
   let cc = null;
   let ccLabel = null;
   const isTreeOrForestIssue =
-    /tree|mangrove|forest|jungle|wood|felling|cutting/i.test(situationText) ||
-    /tree|mangrove|forest|cc/i.test(userMessage);
+    mentionsForest(situationText) || /\b(?:jungle|wood|felling|cutting)\b/i.test(situationText) ||
+    mentionsForest(userMessage) || /\bcc\b/i.test(userMessage);
 
   if (isTreeOrForestIssue && recipient.forestEmail) {
     cc = recipient.forestEmail;

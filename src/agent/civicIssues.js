@@ -1,3 +1,7 @@
+export function mentionsForest(text) {
+  return /\b(?:trees?|mangroves?|forests?)\b/i.test(text);
+}
+
 function isRoadObstruction(text) {
   return /parking|parked|vehicle/i.test(text) && /block|obstruct|road|footpath/i.test(text);
 }
@@ -7,7 +11,7 @@ function isRoadObstruction(text) {
 const AUTHORITY_CATEGORIES = [
   ['water', /water|paani/i],
   ['sewage', /sewage|drain|nali|naala|nala/i],
-  ['trees', /tree/i],
+  ['trees', /\btrees?\b/i],
   ['greenspace', /landfill|land filling|excavation material|soil dumping/i],
   ['construction', /construction|dust/i],
   ['burning', /burn|jalana/i],
@@ -31,7 +35,7 @@ const REPORT_CATEGORIES = [
   ['plastic', /plastic/i, 'Plastic Waste Issue'],
   ['sewage', /sewage|nali|naala|nala|drain/i, 'Sewage / Polluted Drain Issue'],
   ['water', /water/i, 'Water Pollution Issue'],
-  ['trees', /tree|mangrove/i, 'Tree / Mangrove Damage Issue'],
+  ['trees', /\b(?:trees?|mangroves?)\b/i, 'Tree / Mangrove Damage Issue'],
   ['construction', /construction|dust/i, 'Construction Dust Issue'],
   ['air', /air|pollution/i, 'Air Pollution Issue'],
 ];
