@@ -22,7 +22,7 @@ export default function LandingPage() {
     setLoading('google');
     try {
       await signInWithGoogle();
-    } catch (err) {
+    } catch {
       setError('Google sign-in failed. Please try again.');
     } finally {
       setLoading(null);
@@ -34,7 +34,7 @@ export default function LandingPage() {
     setLoading('guest');
     try {
       await continueAsGuest();
-    } catch (err) {
+    } catch {
       setError('Could not start guest session. Please try again.');
     } finally {
       setLoading(null);
@@ -61,7 +61,7 @@ export default function LandingPage() {
 
   return (
     <div className="app-shell">
-      <div className="landing-container">
+      <main className="landing-container">
         {/* Logo */}
         <div className="landing-logo-wrap">
           <div className="landing-logo">
@@ -135,7 +135,7 @@ export default function LandingPage() {
           </form>
 
           {emailSent && (
-            <p className="landing-success">
+            <p className="landing-success" role="status">
               Check your inbox and open the EcoPulse sign-in link on this device. No password is required.
             </p>
           )}
@@ -161,13 +161,13 @@ export default function LandingPage() {
             Continue as Guest
           </button>
 
-          {error && <p className="landing-error">{error}</p>}
+          {error && <p className="landing-error" role="alert">{error}</p>}
 
           <p className="landing-note">
             Guest mode works without login. Signed-in community posts show only your chosen public name—your email is never displayed or written into a community post.
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

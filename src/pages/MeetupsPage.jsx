@@ -1,5 +1,6 @@
 // MeetupsPage — full meetups listing + Create Meetup modal
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { format } from 'date-fns';
 import { Plus, X } from 'lucide-react';
 import { tools } from '../services/agentTools';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,6 +17,13 @@ const FILTERS = [
   ...MEETUP_CATEGORIES,
 ];
 
+function emptyMeetupForm() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return { title: '', category: 'cleanup', location: null, date: format(tomorrow, 'yyyy-MM-dd'),
+    time: '7:00 AM', capacity: 25, description: '' };
+}
+
 export default function MeetupsPage() {
   const { user } = useAuth();
   const { location } = useApp();
@@ -24,37 +32,25 @@ export default function MeetupsPage() {
   const [activeFilter, setActiveFilter] = useState('all');
   const visibleEvents = events.filter(event => activeFilter === 'all' || event.category === activeFilter);
   const [toastMsg, setToastMsg] = useState('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const dialog = useRef(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [form, setForm] = useState({
-    title: '',
-    category: 'cleanup',
-    location: '',
-    date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-    time: '7:00 AM',
-    capacity: 25,
-    description: '',
-  });
-
-  useEffect(() => {
-    if (location?.city && !form.location) {
-      setForm((prev) => ({ ...prev, location: location.city }));
-    }
-  }, [location?.city]);
+  const [form, setForm] = useState(emptyMeetupForm);
+  const venue = form.location ?? location?.city ?? '';
 
   function openCreate() {
     if (user?.isAnonymous && !user.isLocal) {
-      showToast('Sign in with Google or email to publish a meetup.');
+      setToastMsg('Sign in with Google or email to publish a meetup.');
       return;
     }
-    setShowCreateModal(true);
+    dialog.current.showModal();
+    dialog.current.querySelector('#meetup-title').focus();
   }
 
   async function handleCreateSubmit(e) {
     e.preventDefault();
-    if (!form.title.trim() || !form.location.trim()) {
-      showToast('Please enter event title and location.');
+    if (!form.title.trim() || !venue.trim()) {
+      setToastMsg('Please enter event title and location.');
       return;
     }
     setSubmitting(true);
@@ -64,25 +60,17 @@ export default function MeetupsPage() {
         organizer: user?.displayName || 'Community Member',
         title: form.title.trim(),
         category: form.category,
-        location: form.location.trim(),
+        location: venue.trim(),
         date: form.date,
         time: form.time.trim() || '7:00 AM',
         capacity: Number(form.capacity) || 25,
-        description: form.description.trim() || `Community ${form.category} meetup in ${form.location.trim()}.`,
+        description: form.description.trim() || `Community ${form.category} meetup in ${venue.trim()}.`,
       });
-      setShowCreateModal(false);
-      setForm({
-        title: '',
-        category: 'cleanup',
-        location: location?.city || '',
-        date: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-        time: '7:00 AM',
-        capacity: 25,
-        description: '',
-      });
-      showToast(result.localOnly ? 'Meetup saved on this device.' : 'Meetup published.');
+      dialog.current.close();
+      setForm(emptyMeetupForm());
+      setToastMsg(result.localOnly ? 'Meetup saved on this device.' : 'Meetup published.');
     } catch (error) {
-      showToast(meetupErrorMessage(error));
+      setToastMsg(meetupErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -95,9 +83,9 @@ export default function MeetupsPage() {
     try {
       const save = joining ? tools.joinMeetup : tools.cancelMeetupRSVP;
       const result = await save({ userId: user.uid, meetupDocId: event.id, meetupId: event.eventId });
-      showToast(attendanceMessage(result));
+      setToastMsg(attendanceMessage(result));
     } catch (error) {
-      showToast(meetupErrorMessage(error));
+      setToastMsg(meetupErrorMessage(error));
     } finally {
       setPending(previous => {
         const next = new Set(previous);
@@ -105,11 +93,6 @@ export default function MeetupsPage() {
         return next;
       });
     }
-  }
-
-  function showToast(msg) {
-    setToastMsg(msg);
-
   }
 
   useEffect(() => {
@@ -149,7 +132,7 @@ export default function MeetupsPage() {
       </div>
 
       {/* Events list */}
-      <div className="page-content" role="region" aria-label="Meetup listings" tabIndex={0}>
+      <main className="page-content" aria-label="Meetup listings" tabIndex={0}>
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
             <div className="spinner" role="status" aria-label="Loading meetups" />
@@ -179,15 +162,15 @@ export default function MeetupsPage() {
             onLeave={e => changePlace(e, false)}
           />
         ))}
-      </div>
+      </main>
 
       {/* Create Meetup Modal */}
-      {showCreateModal && (
-        <div className="create-modal-backdrop" onClick={() => setShowCreateModal(false)}>
-          <form className="create-modal" onClick={(e) => e.stopPropagation()} onSubmit={handleCreateSubmit}>
+      <dialog ref={dialog} className="meetup-dialog" aria-labelledby="create-meetup-heading"
+        onClick={e => { if (e.target === e.currentTarget) dialog.current.close(); }}>
+          <form className="create-modal" onSubmit={handleCreateSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>🌱 Create Eco Meetup</h3>
-              <button type="button" aria-label="Close meetup form" onClick={() => setShowCreateModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+              <h2 id="create-meetup-heading" style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>🌱 Create Eco Meetup</h2>
+              <button type="button" aria-label="Close meetup form" onClick={() => dialog.current.close()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
                 <X size={18} />
               </button>
             </div>
@@ -216,7 +199,7 @@ export default function MeetupsPage() {
             <input id="meetup-location"
               className="modal-input"
               placeholder="e.g. Cubbon Park, Bengaluru"
-              value={form.location}
+              value={venue}
               onChange={(e) => setForm({ ...form, location: e.target.value })}
               required
             />
@@ -259,13 +242,12 @@ export default function MeetupsPage() {
               <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={submitting}>
                 {submitting ? 'Publishing...' : '✅ Publish Meetup'}
               </button>
-              <button type="button" className="btn-secondary" onClick={() => setShowCreateModal(false)}>
+              <button type="button" className="btn-secondary" onClick={() => dialog.current.close()}>
                 Cancel
               </button>
             </div>
           </form>
-        </div>
-      )}
+      </dialog>
 
       {/* Toast */}
       {toastMsg && (

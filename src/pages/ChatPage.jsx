@@ -235,6 +235,12 @@ export default function ChatPage() {
         break;
       }
 
+      case 'VIEW_REPORT': {
+        const id = data?.data?.id;
+        if (id) navigate('/report/' + encodeURIComponent(id));
+        break;
+      }
+
       case 'SUBMIT_REPORT': {
         if (!user || !data) break;
         setIsTyping(true);
@@ -255,13 +261,14 @@ export default function ChatPage() {
             cards: [{
               type: 'confirmation',
               data: {
-                title: 'Report Submitted! ✅',
-                message: 'Your environmental complaint has been recorded. Want to also send an email to authorities?',
+                title: result.localOnly ? 'Report saved on this device' : 'Report submitted',
+                message: 'Your report is ready to review. You can also draft an email to the relevant authority.',
                 id: result.reportId,
               }
             }],
             actions: [
-              { label: '📧 Draft Email', action: 'QUICK_DRAFT_EMAIL', variant: 'primary' },
+              { label: 'View my report', action: 'VIEW_REPORT', variant: 'primary', data: { id: result.docId } },
+              { label: '📧 Draft Email', action: 'QUICK_DRAFT_EMAIL', variant: 'secondary' },
               { label: '🏠 Done', action: 'CANCEL', variant: 'secondary' },
             ],
             timestamp: new Date().toISOString(),
@@ -416,7 +423,8 @@ export default function ChatPage() {
     <div className="app-shell">
       <Header onRefresh={handleRefresh} />
 
-      <div className="chat-scroll-area" ref={scrollRef} role="log" aria-label="Chat messages" aria-relevant="additions" tabIndex={0}>
+      <main className="chat-scroll-area" ref={scrollRef} aria-label="Chat" tabIndex={0}>
+        <div role="log" aria-label="Chat messages" aria-relevant="additions">
         {conversation.map((msg) => (
           <MessageBubble
             key={msg.id}
@@ -441,8 +449,9 @@ export default function ChatPage() {
           </div>
         )}
 
+        </div>
         <div ref={messagesEndRef} />
-      </div>
+      </main>
       <div className="chat-visually-hidden" role="status">{isTyping ? typingStatus : ''}</div>
 
       <QuickActions

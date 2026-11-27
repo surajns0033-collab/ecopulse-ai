@@ -94,12 +94,9 @@ export default function CommunityPage() {
   const sendLockRef = useRef(false);
   const messagesRef = useRef(null);
   const followLatest = useRef(true);
-  const [nameInput, setNameInput] = useState(communityName || '');
+  const [nameDraft, setNameDraft] = useState(null);
+  const nameInput = nameDraft ?? communityName ?? '';
   const [nameError, setNameError] = useState('');
-
-  useEffect(() => {
-    setNameInput(communityName || '');
-  }, [communityName]);
 
   const canPost = Boolean(user && !user.isAnonymous && communityNameConfirmed);
 
@@ -162,6 +159,7 @@ export default function CommunityPage() {
     setNameError('');
     try {
       saveCommunityName(nameInput);
+      setNameDraft(null);
       if (needsName) followLatest.current = true;
     } catch (err) {
       setNameError(err?.message || 'Choose another public name.');
@@ -213,6 +211,7 @@ export default function CommunityPage() {
         <div className="filter-bar">
           <button
             className={`filter-chip${locationFilter === 'all' ? ' active' : ''}`}
+            aria-pressed={locationFilter === 'all'}
             onClick={() => selectLocation('all')}
           >
             🌍 All Locations
@@ -221,6 +220,7 @@ export default function CommunityPage() {
             <button
               key={loc}
               className={`filter-chip${locationFilter === loc ? ' active' : ''}`}
+              aria-pressed={locationFilter === loc}
               onClick={() => selectLocation(loc)}
             >
               📍 {loc}
@@ -229,7 +229,7 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      <div className="page-content" role="region" aria-label="Community messages" tabIndex={0} ref={messagesRef} style={{ paddingBottom: 12 }} onScroll={({ currentTarget: panel }) => {
+      <main className="page-content" aria-label="Community messages" tabIndex={0} ref={messagesRef} style={{ paddingBottom: 12 }} onScroll={({ currentTarget: panel }) => {
         followLatest.current = panel.scrollHeight - panel.clientHeight - panel.scrollTop < 64;
       }}>
         {user && !user.isAnonymous && (
@@ -241,14 +241,14 @@ export default function CommunityPage() {
             <div className="community-name-controls">
               <input
                 value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
+                onChange={(e) => setNameDraft(e.target.value)}
                 placeholder="Choose a name"
                 maxLength={24}
                 aria-label="Public community name"
               />
               <button type="submit" disabled={!nameInput.trim()}>{communityNameConfirmed ? 'Update' : 'Save'}</button>
             </div>
-            {nameError && <div className="community-name-error">{nameError}</div>}
+            {nameError && <div className="community-name-error" role="alert">{nameError}</div>}
           </form>
         )}
 
@@ -304,7 +304,7 @@ export default function CommunityPage() {
             )}
           </div>
         )}
-      </div>
+      </main>
 
       {/* Public Channel Message Composer */}
       {user?.isAnonymous ? (
