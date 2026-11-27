@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
 import { processMessage } from '../agent/agentOrchestrator';
+import { attendanceMessage, meetupErrorMessage } from '../services/meetups';
 import { tools } from '../services/agentTools';
 import Header from '../components/chat/Header';
 import MessageBubble from '../components/chat/MessageBubble';
@@ -195,18 +196,18 @@ export default function ChatPage() {
             cards: [{
               type: 'confirmation',
               data: {
-                title: 'Meetup Published! 🎉',
-                message: `"${data.title}" at ${data.location} is now live on the Events page!`,
+                title: result.localOnly ? 'Meetup saved on this device' : 'Meetup published',
+                message: `"${data.title}" at ${data.location} is on your Events page.`,
                 id: result.eventId,
               },
             }],
             actions: [{ label: '🗓️ View Events', action: 'GOTO_MEETUPS', variant: 'primary' }],
             timestamp: new Date().toISOString(),
           });
-        } catch {
+        } catch (error) {
           addMessage({
             role: 'ai',
-            text: 'Could not publish the meetup right now. Please try again.',
+            text: user.isAnonymous ? 'Sign in with Google or email to publish a meetup.' : meetupErrorMessage(error),
             cards: [], actions: [], timestamp: new Date().toISOString(),
           });
         } finally {
@@ -215,42 +216,22 @@ export default function ChatPage() {
         break;
       }
 
-      case 'JOIN_MEETUP': {
+      case 'JOIN_MEETUP':
+      case 'CANCEL_MEETUP': {
         if (!user || !data) break;
-        const eventId = data.eventId || data.id;
+        let message;
         try {
-          const result = await tools.joinMeetup({ userId: user.uid, meetupId: eventId });
-          if (result.alreadyJoined) {
-            addMessage({
-              role: 'ai',
-              text: `You're already registered for **${data.title}**! 🎉`,
-              cards: [],
-              actions: [],
-              timestamp: new Date().toISOString(),
-            });
-          } else {
-            addMessage({
-              role: 'ai',
-              text: '',
-              cards: [{
-                type: 'confirmation',
-                data: {
-                  title: 'Successfully Joined! 🎉',
-                  message: `You're registered for "${data.title}". See you there!`,
-                  id: eventId,
-                }
-              }],
-              actions: [{ label: '🗓️ View All Events', action: 'GOTO_MEETUPS', variant: 'secondary' }],
-              timestamp: new Date().toISOString(),
-            });
-          }
-        } catch {
-          addMessage({
-            role: 'ai',
-            text: 'Could not process your RSVP right now. Please try again.',
-            cards: [], actions: [], timestamp: new Date().toISOString(),
-          });
+          const save = action === 'JOIN_MEETUP' ? tools.joinMeetup : tools.cancelMeetupRSVP;
+          const result = await save({ userId: user.uid, meetupDocId: data.id, meetupId: data.eventId });
+          message = attendanceMessage(result);
+        } catch (error) {
+          message = meetupErrorMessage(error);
         }
+        addMessage({
+          role: 'ai', text: `**${data.title}** — ${message}`, cards: [],
+          actions: [{ label: 'View events', action: 'GOTO_MEETUPS', variant: 'secondary' }],
+          timestamp: new Date().toISOString(),
+        });
         break;
       }
 

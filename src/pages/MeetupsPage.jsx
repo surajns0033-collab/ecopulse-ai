@@ -4,6 +4,8 @@ import { Plus, X } from 'lucide-react';
 import { tools } from '../services/agentTools';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
+import { attendanceMessage, meetupErrorMessage } from '../services/meetups';
+import { useMeetups } from '../components/meetups/useMeetups';
 import EventCard from '../components/meetups/EventCard';
 import Header from '../components/chat/Header';
 import BottomNav from '../components/BottomNav';
@@ -17,10 +19,10 @@ const FILTERS = [
 export default function MeetupsPage() {
   const { user } = useAuth();
   const { location } = useApp();
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { events, joinedIds, loading, error, retry } = useMeetups(user?.uid);
+  const [pending, setPending] = useState(new Set());
   const [activeFilter, setActiveFilter] = useState('all');
-  const [joinedIds, setJoinedIds] = useState(new Set());
+  const visibleEvents = events.filter(event => activeFilter === 'all' || event.category === activeFilter);
   const [toastMsg, setToastMsg] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -36,36 +38,17 @@ export default function MeetupsPage() {
   });
 
   useEffect(() => {
-    loadEvents();
-    try {
-      const savedRsvps = JSON.parse(localStorage.getItem('echopulse_local_rsvps') || '[]');
-      if (user?.uid) {
-        setJoinedIds(new Set(savedRsvps.filter((r) => r.userId === user.uid).map((r) => r.meetupId)));
-      }
-    } catch {}
-  }, [activeFilter, user?.uid]);
-
-  useEffect(() => {
     if (location?.city && !form.location) {
       setForm((prev) => ({ ...prev, location: location.city }));
     }
   }, [location?.city]);
 
-  async function loadEvents() {
-    setLoading(true);
-    try {
-      const data = await tools.getNearbyMeetups({
-        lat: null,
-        lng: null,
-        category: activeFilter === 'all' ? null : activeFilter,
-        limit: 30,
-      });
-      setEvents(data);
-    } catch (err) {
-      console.error('Failed to load events:', err);
-    } finally {
-      setLoading(false);
+  function openCreate() {
+    if (user?.isAnonymous && !user.isLocal) {
+      showToast('Sign in with Google or email to publish a meetup.');
+      return;
     }
+    setShowCreateModal(true);
   }
 
   async function handleCreateSubmit(e) {
@@ -76,7 +59,7 @@ export default function MeetupsPage() {
     }
     setSubmitting(true);
     try {
-      await tools.createMeetup({
+      const result = await tools.createMeetup({
         userId: user?.uid || 'guest',
         organizer: user?.displayName || 'Community Member',
         title: form.title.trim(),
@@ -97,53 +80,43 @@ export default function MeetupsPage() {
         capacity: 25,
         description: '',
       });
-      showToast('🎉 Meetup created and published!');
-      await loadEvents();
-    } catch {
-      showToast('Could not create meetup. Please try again.');
+      showToast(result.localOnly ? 'Meetup saved on this device.' : 'Meetup published.');
+    } catch (error) {
+      showToast(meetupErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleJoin(event) {
+  async function changePlace(event, joining) {
     if (!user) return;
-    const eventId = event.eventId || event.id;
+    const id = event.id || event.eventId;
+    setPending(previous => new Set(previous).add(id));
     try {
-      const result = await tools.joinMeetup({ userId: user.uid, meetupId: eventId });
-      if (result.alreadyJoined) {
-        showToast('You are already registered for this event!');
-      } else {
-        setJoinedIds((prev) => new Set([...prev, eventId]));
-        showToast('🎉 Successfully joined! See you there!');
-        await loadEvents();
-      }
-    } catch {
-      showToast('Could not join event. Please try again.');
-    }
-  }
-
-  async function handleLeave(event) {
-    if (!user) return;
-    const eventId = event.eventId || event.id;
-    try {
-      await tools.cancelMeetupRSVP({ userId: user.uid, meetupId: eventId });
-      setJoinedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(eventId);
+      const save = joining ? tools.joinMeetup : tools.cancelMeetupRSVP;
+      const result = await save({ userId: user.uid, meetupDocId: event.id, meetupId: event.eventId });
+      showToast(attendanceMessage(result));
+    } catch (error) {
+      showToast(meetupErrorMessage(error));
+    } finally {
+      setPending(previous => {
+        const next = new Set(previous);
+        next.delete(id);
         return next;
       });
-      showToast('RSVP cancelled.');
-      await loadEvents();
-    } catch {
-      showToast('Could not cancel RSVP. Please try again.');
     }
   }
 
   function showToast(msg) {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 3000);
+
   }
+
+  useEffect(() => {
+    if (!toastMsg) return;
+    const timer = setTimeout(() => setToastMsg(''), 6000);
+    return () => clearTimeout(timer);
+  }, [toastMsg]);
 
   return (
     <div className="app-shell">
@@ -156,7 +129,7 @@ export default function MeetupsPage() {
           <button
             className="btn-primary"
             style={{ padding: '6px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-            onClick={() => setShowCreateModal(true)}
+            onClick={openCreate}
           >
             <Plus size={14} /> Create Meetup
           </button>
@@ -166,6 +139,7 @@ export default function MeetupsPage() {
             <button
               key={f.id}
               className={`filter-chip${activeFilter === f.id ? ' active' : ''}`}
+              aria-pressed={activeFilter === f.id}
               onClick={() => setActiveFilter(f.id)}
             >
               {f.icon && `${f.icon} `}{f.label}
@@ -178,28 +152,31 @@ export default function MeetupsPage() {
       <div className="page-content" role="region" aria-label="Meetup listings" tabIndex={0}>
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
-            <div className="spinner" />
+            <div className="spinner" role="status" aria-label="Loading meetups" />
           </div>
         )}
 
-        {!loading && events.length === 0 && (
+        {error && <div role="alert">{error} <button className="btn-secondary" onClick={retry}>Retry</button></div>}
+
+        {!error && !loading && visibleEvents.length === 0 && (
           <div style={{ textAlign: 'center', padding: 40, color: '#475569' }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>🌱</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>No events yet</div>
             <div style={{ fontSize: 13, marginTop: 4, marginBottom: 14 }}>Be the first to organize a community eco-meetup!</div>
-            <button className="btn-primary" onClick={() => setShowCreateModal(true)}>
+            <button className="btn-primary" onClick={openCreate}>
               + Create Meetup
             </button>
           </div>
         )}
 
-        {!loading && events.map((event) => (
+        {!error && !loading && visibleEvents.map((event) => (
           <EventCard
             key={event.id || event.eventId}
             event={event}
-            isJoined={joinedIds.has(event.eventId || event.id)}
-            onJoin={handleJoin}
-            onLeave={handleLeave}
+            isJoined={joinedIds.has(event.id || event.eventId)}
+            pending={pending.has(event.id || event.eventId)}
+            onJoin={e => changePlace(e, true)}
+            onLeave={e => changePlace(e, false)}
           />
         ))}
       </div>
@@ -210,13 +187,13 @@ export default function MeetupsPage() {
           <form className="create-modal" onClick={(e) => e.stopPropagation()} onSubmit={handleCreateSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>🌱 Create Eco Meetup</h3>
-              <button type="button" onClick={() => setShowCreateModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+              <button type="button" aria-label="Close meetup form" onClick={() => setShowCreateModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
                 <X size={18} />
               </button>
             </div>
 
-            <label className="modal-label">Event Title *</label>
-            <input
+            <label className="modal-label" htmlFor="meetup-title">Event Title *</label>
+            <input id="meetup-title"
               className="modal-input"
               placeholder="e.g. Cubbon Park Morning Clean-Up"
               value={form.title}
@@ -224,8 +201,8 @@ export default function MeetupsPage() {
               required
             />
 
-            <label className="modal-label">Category</label>
-            <select
+            <label className="modal-label" htmlFor="meetup-category">Category</label>
+            <select id="meetup-category"
               className="modal-input"
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
@@ -235,8 +212,8 @@ export default function MeetupsPage() {
               ))}
             </select>
 
-            <label className="modal-label">Location / City *</label>
-            <input
+            <label className="modal-label" htmlFor="meetup-location">Location / City *</label>
+            <input id="meetup-location"
               className="modal-input"
               placeholder="e.g. Cubbon Park, Bengaluru"
               value={form.location}
@@ -246,8 +223,8 @@ export default function MeetupsPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <div>
-                <label className="modal-label">Date</label>
-                <input
+                <label className="modal-label" htmlFor="meetup-date">Date</label>
+                <input id="meetup-date"
                   type="date"
                   className="modal-input"
                   value={form.date}
@@ -255,8 +232,8 @@ export default function MeetupsPage() {
                 />
               </div>
               <div>
-                <label className="modal-label">Time</label>
-                <input
+                <label className="modal-label" htmlFor="meetup-time">Time</label>
+                <input id="meetup-time"
                   className="modal-input"
                   placeholder="7:00 AM"
                   value={form.time}
@@ -265,8 +242,12 @@ export default function MeetupsPage() {
               </div>
             </div>
 
-            <label className="modal-label">Description</label>
-            <textarea
+            <label className="modal-label" htmlFor="meetup-capacity">Places available</label>
+            <input id="meetup-capacity" className="modal-input" type="number" min="1" step="1" required
+              value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} />
+
+            <label className="modal-label" htmlFor="meetup-description">Description</label>
+            <textarea id="meetup-description"
               className="modal-input"
               rows={3}
               placeholder="What will participants do? Gloves/bags provided?"
@@ -288,11 +269,11 @@ export default function MeetupsPage() {
 
       {/* Toast */}
       {toastMsg && (
-        <div style={{
+        <div role="status" style={{
           position: 'fixed', bottom: 72, left: '50%', transform: 'translateX(-50%)',
           background: '#1e293b', color: '#fff', padding: '10px 20px', borderRadius: 24,
           fontSize: 13, fontWeight: 600, zIndex: 999, boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-          whiteSpace: 'nowrap',
+          width: 'max-content', maxWidth: '90vw',
         }}>
           {toastMsg}
         </div>
