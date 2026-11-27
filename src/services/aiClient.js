@@ -41,7 +41,8 @@ async function postJson(url, body, timeoutMs, signal) {
 
 /**
  * Ask the AI for a text completion.
- * @returns {Promise<{text: string, provider: string}|null>} null when no model is reachable.
+ * Set `truncated` only when the upstream provider reports its output limit.
+ * @returns {Promise<{text: string, provider: string, sources: Array<{title: string, url: string}>, truncated?: boolean}|null>}
  */
 export async function requestAI({
   system = '',
