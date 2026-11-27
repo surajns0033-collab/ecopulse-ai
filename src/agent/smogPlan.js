@@ -1,4 +1,4 @@
-import { getAirQuality, getAirQualityForecast, getAQICategory, getAQIInsight, getWeather } from '../services/environmentalData.js';
+import { getAirQuality, getAirQualityForecast, getAQICategory, getAQIInsight, getWeather, isRecentAirQuality } from '../services/environmentalData.js';
 import { AWAITING_SMOG_PROFILE, parseSmogProfile } from './smogProfile.js';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -19,7 +19,7 @@ function currentReading(reading, now) {
   }
 
   const time = Date.parse(reading.timestamp);
-  if (!Number.isFinite(time) || time < now - 2 * HOUR_MS || time > now + HOUR_MS / 4) {
+  if (!isRecentAirQuality(reading, now)) {
     return { text: '**Current AQI:** no recent timestamp could be verified. The older or undated value is not used for advice.' };
   }
 
@@ -31,7 +31,7 @@ function currentReading(reading, now) {
   };
 }
 
-function forecastWindow(forecast, now) {
+function forecastWindow(forecast, now, sensitive) {
   const unavailable = '**Daytime AQI forecast:** no upcoming daytime forecast is available. Check a fresh reading before going out.';
   if (!forecast?.timeZone || !forecast.hours?.length) return unavailable;
 
@@ -54,7 +54,9 @@ function forecastWindow(forecast, now) {
   const label = new Intl.DateTimeFormat('en-IN', {
     weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: forecast.timeZone,
   }).format(best.time);
-  const caution = best.aqi >= 151 ? ' Even the lowest forecast is unhealthy; consider postponing optional outdoor exertion.' : '';
+  let caution = '';
+  if (best.aqi >= 151) caution = ' Even the lowest forecast is unhealthy; consider postponing optional outdoor exertion.';
+  else if (sensitive && best.aqi >= 101) caution = ' This hour is still unhealthy for sensitive groups. Shorten strenuous outdoor play or choose an indoor activity.';
   return `**Lowest modeled daytime AQI in the next 24 hours:** ${label} (${forecast.timeZone}), forecast U.S. AQI ${best.aqi}. [Open-Meteo forecast](https://open-meteo.com/en/docs/air-quality-api). Lower does not mean safe.${caution} Check local advisories and the latest reading before going out.`;
 }
 
@@ -101,6 +103,37 @@ function indoorAirAdvice(filtration, aqi) {
   return `${setup} ${ventilation}`;
 }
 
+function cookingAdvice(fuel) {
+  if (fuel === 'gas stove') return [
+    'Use an exhaust hood that vents outdoors while the gas stove runs. Cover the pot when boiling water to shorten burner time.',
+    'Venting carries cooking pollutants outside. A shorter burner time uses less gas and reduces combustion emissions.',
+  ];
+  if (fuel === 'induction/electric') return [
+    'Use a vented hood when frying or cooking at high heat, even on an electric hob.',
+    'Induction avoids gas combustion at the stove. A vented hood removes particles produced by cooking the food.',
+  ];
+  return [
+    'Use lids when practical and run a hood that vents outdoors if one is available.',
+    'A lid can shorten cooking time. Removing cooking fumes lowers exposure in the kitchen.',
+  ];
+}
+
+function communityAdvice(setting, aqi) {
+  if (setting === 'school') return [
+    aqi >= 151 ? 'Move outdoor assembly and strenuous sports indoors while readings remain unhealthy. Ask drivers to switch off engines at the school gate.'
+      : 'Check a fresh AQI reading before school assembly or sports. Ask drivers to switch off engines at the school gate.',
+    'Moving activities indoors can reduce exposure. Switching off waiting vehicles cuts emissions near pupils.',
+  ];
+  if (setting === 'neighbourhood') return [
+    'Coordinate shared trips with neighbours, ask drivers to avoid idling at the gate, and arrange collection or composting for garden waste.',
+    'Sharing a trip can remove one vehicle journey. Keeping leaves out of open fires prevents smoke at its source.',
+  ];
+  return [
+    'Avoid burning leaves or waste, discourage idling, and report recurring smoke or dust with a location and observation.',
+    'Avoiding burning and idling cuts emissions at the source.',
+  ];
+}
+
 export function buildSmogPlan(profile, { city, aqi, weather, forecast, now = Date.now() }) {
   const current = currentReading(aqi, now);
   const index = current.reading?.aqi;
@@ -109,21 +142,12 @@ export function buildSmogPlan(profile, { city, aqi, weather, forecast, now = Dat
   const commuteImpact = profile.commute === 'walk/cycle'
     ? 'Walking and cycling have no tailpipe emissions. Quieter routes or less-polluted times can reduce exposure.'
     : 'Fewer solo vehicle kilometres and less idling reduce tailpipe emissions. Quieter routes may reduce roadside exposure.';
-  const cooking = profile.cooking === 'gas stove'
-    ? [
-      'Use an exhaust hood that vents outdoors while the gas stove runs. Cover the pot when boiling water to shorten burner time.',
-      'Venting carries cooking pollutants outside. A shorter burner time uses less gas and reduces combustion emissions.',
-    ]
-    : [
-      'Run an exhaust fan that vents outdoors when cooking, especially when frying or using high heat.',
-      'Exhaust removes cooking pollutants from the room. Induction avoids gas combustion at the stove.',
-    ];
   const sections = [
     ['🛡️ 1. Exposure routine', exposureAdvice(index, profile), 'Shorter outdoor exposure can reduce the amount of particles you breathe; it does not reduce emissions.'],
     ['🚌 2. Lower-emission commute', commuteAdvice(profile.commute, index), commuteImpact],
     ['🏠 3. Indoor air', indoorAirAdvice(profile.filtration, index), 'Source control prevents new indoor particles; filtration removes particles already in the air.'],
-    ['🍳 4. Cooking', ...cooking],
-    ['🌿 5. Community choice', 'Avoid burning leaves or waste, discourage idling, and report recurring smoke or dust with a location and observation.', 'Avoiding burning and idling cuts emissions at the source.'],
+    ['🍳 4. Cooking', ...cookingAdvice(profile.cooking)],
+    ['🌿 5. Community choice', ...communityAdvice(profile.community, index)],
   ];
   const lowWind = Number.isFinite(weather?.windSpeed) && weather.windSpeed < 2
     ? ` Wind is low (${weather.windSpeed} m/s), so dispersion may be slow.` : '';
@@ -134,7 +158,7 @@ export function buildSmogPlan(profile, { city, aqi, weather, forecast, now = Dat
       current.text + lowWind,
       `**Profile provided:** ${routine}; household sensitivity: ${household}.`,
       ...sections.map(([title, advice, impact]) => `**${title}**\n${advice}\n**Direct impact:** ${impact}`),
-      `🕒 ${forecastWindow(forecast, now)}`,
+      `🕒 ${forecastWindow(forecast, now, profile.vulnerable.length > 0 || profile.community === 'school')}`,
       '_General exposure guidance, not medical advice. Follow local advisories and consult a clinician for individual health decisions._ [U.S. AQI health guidance](https://www.airnow.gov/aqi/aqi-basics/)',
     ].join('\n\n'),
     cards: current.reading ? [{ type: 'aqi', data: { ...current.reading, insight: getAQIInsight(current.reading) } }] : [],

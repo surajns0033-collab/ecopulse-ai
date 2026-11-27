@@ -1,5 +1,5 @@
 import { asksForSmogPlan, detectIntent, INTENTS } from './intentEngine.js';
-import { isSmogProfile } from './smogProfile.js';
+import { communitySetting, isSmogProfile } from './smogProfile.js';
 import { getDevicePlace, lookupPlace } from '../services/placeLookup.js';
 
 const WEATHER = /\b(?:weather|temperature|forecast|rain(?:ing)?|mausam|baarish|havaman)\b|मौसम|बारिश|हवामान|तापमान|पाऊस/iu;
@@ -28,6 +28,11 @@ const PLACE_TOOLS = new Set([
   INTENTS.GET_HEALTH_TIPS, INTENTS.FIND_EVENTS, INTENTS.CREATE_EVENT, INTENTS.GET_ROUTES,
   INTENTS.CREATE_REPORT, INTENTS.CREATE_EMAIL, INTENTS.GET_AUTHORITY_CONTACTS, INTENTS.GET_WATER_QUALITY,
 ]);
+
+export function resolveCity(city) {
+  if (city && city !== 'your city' && city !== 'Unknown') return city;
+  return null; // null = location unknown
+}
 
 export function placeName(value) {
   const name = String(value || '').trim()
@@ -83,7 +88,7 @@ function routeSmogPlan(text, { profileReply = false } = {}) {
   const requestedCity = explicitPlace(request, true);
   let declaredCity = '';
   let pinLocation = false;
-  const details = [];
+  const details = communitySetting(request) ? [request] : [];
   for (const clause of clauses) {
     if (clause === request) continue;
     const command = clause.match(PLACE_COMMAND);
