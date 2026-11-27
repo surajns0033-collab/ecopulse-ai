@@ -1,4 +1,3 @@
-// ChatPage — main chat interface matching reference screenshot + Google Maps location support
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,18 +9,31 @@ import QuickActions from '../components/chat/QuickActions';
 import ChatInput from '../components/chat/ChatInput';
 import BottomNav from '../components/BottomNav';
 
+const ACTION_PROMPTS = {
+  REQUEST_LOCATION: 'Use my location',
+  QUICK_AQI: 'What is the air quality right now?',
+  QUICK_WEATHER_PRECAUTIONS: 'What is the current weather and what precautions should I take?',
+  QUICK_SMOG_PLAN: 'Create my personalized winter smog and clean-air action plan',
+  QUICK_HEALTH_TIPS: 'Give me health tips for today\'s air quality',
+  QUICK_REPORT: 'I want to file an environmental complaint',
+  QUICK_WATER_REPORT: 'I want to report a water pollution issue',
+  QUICK_FIND_EVENTS: 'Find eco-meetups near me',
+  QUICK_DRAFT_EMAIL: 'Draft a complaint email to municipal corporation',
+  CREATE_EVENT: 'I want to create a community eco-event',
+};
+
 function createWelcomeMessage(user) {
   const name = user?.displayName ? ` ${user.displayName}` : '';
   return {
     id: 'welcome',
     role: 'ai',
-    text: `👋 Hi${name}! I'm **EcoPulse AI**, your everyday environment and civic-help companion. 🌱\n\nChoose a feature or ask anything. Type a city name for a snapshot, or say **“Set my city to…”** to choose the city for local questions.`,
+    text: `👋 Hi${name}! I'm **EcoPulse AI**, I can help your household or community plan for smog. Choose **Smog Action Plan** for commute and indoor-air advice and the impact of each choice.\n\nType a city name for a local snapshot, or say **“Set my city to…”** to save your choice.`,
     cards: [],
     actions: [
-      { label: '📍 Share My Location', action: 'REQUEST_LOCATION', variant: 'primary' },
+      { label: '🌫️ Smog Action Plan', action: 'QUICK_SMOG_PLAN', variant: 'primary' },
+      { label: '📍 Share My Location', action: 'REQUEST_LOCATION', variant: 'secondary' },
       { label: '🌬️ Check AQI', action: 'QUICK_AQI', variant: 'secondary' },
       { label: '🌦️ Weather & Precautions', action: 'QUICK_WEATHER_PRECAUTIONS', variant: 'secondary' },
-      { label: '🌫️ Smog Action Plan', action: 'QUICK_SMOG_PLAN', variant: 'secondary' },
       { label: '📣 Make a Complaint', action: 'START_COMPLAINT', variant: 'secondary' },
       { label: '📷 Understand a Photo', action: 'OPEN_IMAGE_PICKER', variant: 'secondary' },
       { label: '📇 Authority Contacts', action: 'QUICK_ALL_CONTACTS', variant: 'secondary' },
@@ -38,7 +50,6 @@ export default function ChatPage() {
 
   const [isTyping, setIsTyping] = useState(false);
   const [typingStatus, setTypingStatus] = useState('Thinking...');
-  const scrollRef = useRef(null);
   const messagesEndRef = useRef(null);
   const requestRef = useRef(null);
 
@@ -52,20 +63,16 @@ export default function ChatPage() {
     scrollToBottom();
   }, [conversation, isTyping, scrollToBottom]);
 
-  // Device location is only requested after an explicit action.
   useEffect(() => {
     if (conversation.length === 0) {
       addMessage(createWelcomeMessage(user));
     }
   }, [conversation.length, user, addMessage]);
 
-  // Handle card/button actions
   async function handleAction(action, data) {
-    switch (action) {
-      case 'REQUEST_LOCATION':
-        await sendMessage('Use my location', null);
-        break;
+    if (Object.hasOwn(ACTION_PROMPTS, action)) return sendMessage(ACTION_PROMPTS[action], null);
 
+    switch (action) {
       case 'GOTO_MEETUPS':
         navigate('/meetups');
         break;
@@ -74,24 +81,12 @@ export default function ChatPage() {
         navigate('/community');
         break;
 
-      case 'QUICK_AQI':
-        await sendMessage('What is the air quality right now?', null);
-        break;
-
-      case 'QUICK_WEATHER_PRECAUTIONS':
-        await sendMessage('What is the current weather and what precautions should I take?', null);
-        break;
-
       case 'START_MAP_SEARCH':
         addMessage({
           role: 'ai',
           text: '🗺️ Type any city, area, or landmark like **“show map of Udaipur”**, **“map Vashi station”**, or **“Tokyo”**. I’ll resolve the real coordinates and open it on the map.',
           cards: [], actions: [], timestamp: new Date().toISOString(),
         });
-        break;
-
-      case 'QUICK_SMOG_PLAN':
-        await sendMessage('Create my personalized winter smog and clean-air action plan', null);
         break;
 
       case 'EXPLAIN_SMOG_CHOICES':
@@ -123,26 +118,6 @@ export default function ChatPage() {
         window.dispatchEvent(new Event('ecopulse:open-image-picker'));
         break;
 
-      case 'QUICK_HEALTH_TIPS':
-        await sendMessage('Give me health tips for today\'s air quality', null);
-        break;
-
-      case 'QUICK_REPORT':
-        await sendMessage('I want to file an environmental complaint', null);
-        break;
-
-      case 'QUICK_WATER_REPORT':
-        await sendMessage('I want to report a water pollution issue', null);
-        break;
-
-      case 'QUICK_FIND_EVENTS':
-        await sendMessage('Find eco-meetups near me', null);
-        break;
-
-      case 'QUICK_DRAFT_EMAIL':
-        await sendMessage('Draft a complaint email to municipal corporation', null);
-        break;
-
       case 'QUICK_ALL_CONTACTS':
         await sendMessage(
           data?.data?.category === 'road_obstruction'
@@ -168,10 +143,6 @@ export default function ChatPage() {
         await sendMessage(`Draft a complaint email. I observed ${data.data.issue.toLowerCase()} and have a photo.`, null, {
           photoLocation: data.data.photoLocation ?? null,
         });
-        break;
-
-      case 'CREATE_EVENT':
-        await sendMessage('I want to create a community eco-event', null);
         break;
 
       case 'PUBLISH_MEETUP': {
@@ -345,7 +316,6 @@ export default function ChatPage() {
     }
   }
 
-  // Main send handler
   async function sendMessage(text, imageData, { photoLocation, planChoices } = {}) {
     if (isTyping || requestRef.current || (!text && !imageData)) return;
     const controller = new AbortController();
@@ -438,7 +408,7 @@ export default function ChatPage() {
     <div className="app-shell">
       <Header onRefresh={handleRefresh} />
 
-      <main className="chat-scroll-area" ref={scrollRef} aria-label="Chat" tabIndex={0}>
+      <main className="chat-scroll-area" aria-label="Chat" tabIndex={0}>
         <div role="log" aria-label="Chat messages" aria-relevant="additions">
         {conversation.map((msg) => (
           <MessageBubble
