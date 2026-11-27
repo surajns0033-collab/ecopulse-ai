@@ -197,7 +197,7 @@ ecopulse-ai/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- **Node.js 20+** and **npm**
+- **Node.js 22.12 or later on a supported LTS release** and **npm**
 - A **Google Gemini API key** ([Google AI Studio](https://aistudio.google.com/apikey)) is optional for model-powered replies. The smog plan and automated tests do not require one.
 - A **Firebase project** (optional for local UI testing; required for cloud auth & Firestore community)
 
@@ -209,7 +209,7 @@ git clone https://github.com/surajns0033-collab/ecopulse-ai.git
 cd ecopulse-ai
 
 # 2. Install dependencies
-npm install
+npm ci
 
 # 3. Create your local environment file
 cp .env.example .env       # macOS / Linux
@@ -282,12 +282,16 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run static checks with **Oxlint** |
 | `npm test` | Run the Node regression suite with mocked external services |
+| `npm run benchmark` | Check six smog scenarios and the environmental request count with fixed inputs |
+| `npm run test:coverage` | Measure Node test coverage |
+| `npm run test:rules` | Check authenticated access in local Firebase Auth and Firestore emulators (Java 21 required) |
+| `npm run verify` | Run lint, Node tests and the production build |
 
 ---
 
 ## Verification
 
-- **57 regression tests passed** (`npm test`), including city changes, stale AQI, severe-smog advice, Guest chat, photo request validation, and provider timeouts. The suite does not need API keys or a live database.
+- `npm test` covers city changes, stale AQI, severe-smog advice, Guest chat, photo request validation, and provider timeouts. It runs with mocked providers and requires no API keys.
 - **Production build passed** (`npm run build`). An offline Chromium check also covered keyboard navigation, reduced motion, and switching cities in the smog-plan flow.
 
 Try in Guest Chat: “Make a smog action plan for Navi Mumbai, Maharashtra, India. I take the train and cook with gas.” See the [verification guide](docs/quality-verification.md) for more example prompts and the checks behind these results.
