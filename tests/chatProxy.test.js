@@ -216,3 +216,32 @@ test('supported image headers retain their original bytes', async () => {
     assert.deepEqual(request.images, [image]);
   }
 });
+
+test('the proxy distinguishes token-limited output from a complete Gemini or compatible reply', async t => {
+  let limited = true;
+  t.mock.method(globalThis, 'fetch', async url => {
+    if (url.endsWith('models?pageSize=1000')) {
+      return Response.json({ models: [{ name: 'models/gemini-example-flash', supportedGenerationMethods: ['generateContent'] }] });
+    }
+    if (url.includes(':generateContent')) {
+      return Response.json({ candidates: [{
+        finishReason: limited ? 'MAX_TOKENS' : 'STOP', content: { parts: [{ text: 'School advice' }] },
+      }] });
+    }
+    assert.equal(url, 'https://example.invalid/v1/chat/completions');
+    return Response.json({ choices: [{
+      finish_reason: limited ? 'length' : 'stop', message: { content: 'School advice' },
+    }] });
+  });
+  const compatible = makeAiHandler({ OPENAI_BASE_URL: 'https://example.invalid/v1', OPENAI_API_KEY: 'test-provider-key' });
+  for (const serve of [handler, compatible]) {
+    limited = true;
+    const partial = await chat({ messages: shortHistory }, serve);
+    assert.equal(partial.status, 200);
+    assert.equal(partial.result.truncated, true);
+    limited = false;
+    const complete = await chat({ messages: shortHistory }, serve);
+    assert.equal(complete.result.text, 'School advice');
+    assert.equal(complete.result.truncated, undefined);
+  }
+});

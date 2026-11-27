@@ -123,9 +123,9 @@ test('AI explains the selected plan in isolation and returns its recorded impact
   const explanation = 'Moving assembly indoors reduces exposure. Switching off waiting engines cuts emissions at the school gate.';
   await context.route('**/api/ai/chat', route => {
     requests.push(route.request().postDataJSON());
-    return requests.length === 1
-      ? route.fulfill({ json: { text: explanation, provider: 'fixture' } })
-      : route.fulfill({ status: 503, json: { error: 'Offline fixture' } });
+    if (requests.length === 1) return route.fulfill({ json: { text: explanation, provider: 'fixture' } });
+    if (requests.length === 2) return route.fulfill({ json: { text: 'Fixture fragment with no ending', provider: 'fixture', truncated: true } });
+    return route.fulfill({ status: 503, json: { error: 'Offline fixture' } });
   });
 
   const page = await context.newPage();
@@ -150,10 +150,16 @@ test('AI explains the selected plan in isolation and returns its recorded impact
   assert.match(sent, /school gate/i);
   assert.doesNotMatch(sent, /housing society|shared trips with neighbours|Delhi|208|household sensitivity/i);
 
+  await explain.first().click();
+  const limited = log.locator('.chat-bubble-ai').filter({ hasText: 'The AI reply was cut short' });
+  await limited.waitFor();
+  assert.match(await limited.innerText(), /switching off waiting vehicles cuts emissions near pupils/i);
+  assert.doesNotMatch(await log.innerText(), /fixture fragment/i);
+
   await explain.last().click();
   const offline = log.locator('.chat-bubble-ai').filter({ hasText: 'The AI explanation is unavailable' });
   await offline.waitFor();
   assert.match(await offline.innerText(), /keeping leaves out of open fires/i);
   assert.doesNotMatch(await offline.innerText(), /school gate/i);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
 });
