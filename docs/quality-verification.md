@@ -46,7 +46,7 @@ Use Node.js 24 LTS, version 24.12 or later, and install the lockfile with `npm c
 
 For the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` or start from a clean checkout with no Firebase client credentials. Run `npm run build` and then `npm run test:browser`. The tests create a local Vite preview and block external browser traffic except for the configured test fixtures.
 
-The recorded run passed 71 unit tests, one browser-configuration test, 12 smog benchmark checks, six browser/build checks, and ten Firebase rule tests. In the unit suite, exercised application and server modules reached 81.79% line, 76.90% branch and 86.32% function coverage. The dependency audit reported zero known vulnerabilities and lint reported zero errors and warnings. The accessibility suite applies the WCAG 2.0/2.1 A and AA rules supported by axe to sign-in, Chat at 320 pixels, the account menu, private report details and the meetup dialog. [Verified benchmark](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46080671787)
+The recorded run passed 71 unit tests, one browser-configuration test, 12 smog benchmark checks, six browser/build checks, and ten Firebase rule tests. In the unit suite, exercised application and server modules reached 81.79% line, 76.92% branch and 86.38% function coverage. The dependency audit reported zero known vulnerabilities and lint reported zero errors and warnings. The accessibility suite applies the WCAG 2.0/2.1 A and AA rules supported by axe to sign-in, Chat at 320 pixels, the account menu, private report details and the meetup dialog. [Verified benchmark](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46081062379)
 
 ### Chat startup and photo fallback
 
