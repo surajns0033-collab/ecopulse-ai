@@ -1,0 +1,131 @@
+/* ===== CHAT INPUT BAR — matches reference: image icon, placeholder, green mic ===== */
+.chat-input-bar {
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.input-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #888;
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border-radius: 50%;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.input-icon-btn:hover { background: #f0f0f0; color: #555; }
+
+.input-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.image-preview-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--green-dark);
+  font-weight: 500;
+}
+
+.image-preview-chip img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.image-preview-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--green-dark);
+  display: flex;
+  padding: 0;
+}
+
+/* Text input — rounded pill matching reference "Ask anything about environment..." */
+.chat-text-input {
+  width: 100%;
+  background: #f3f4f6;
+  border: 1.5px solid transparent;
+  border-radius: 24px;
+  padding: 11px 18px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  resize: none;
+  outline: none;
+  line-height: 1.4;
+  max-height: 120px;
+  overflow-y: auto;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.chat-text-input:focus { border-color: var(--green); background: #fff; }
+.chat-text-input::placeholder { color: #9ca3af; }
+
+/* Green microphone button — large circle matching reference */
+.mic-btn {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 3px 12px rgba(34,197,94,0.4);
+  transition: all 0.15s;
+}
+
+.mic-btn:hover { transform: scale(1.05); box-shadow: 0 4px 16px rgba(34,197,94,0.5); }
+.mic-btn:active { transform: scale(0.95); }
+.mic-btn.listening {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  animation: micPulse 1s ease-in-out infinite;
+  box-shadow: 0 3px 16px rgba(239,68,68,0.5);
+}
+
+@keyframes micPulse {
+  0%, 100% { box-shadow: 0 3px 12px rgba(239,68,68,0.4); }
+  50% { box-shadow: 0 3px 24px rgba(239,68,68,0.7); }
+}
+
+.send-btn {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 3px 12px rgba(34,197,94,0.4);
+  transition: all 0.15s;
+}
+.send-btn:disabled { background: #d1d5db; box-shadow: none; cursor: not-allowed; }
+.send-btn:hover:not(:disabled) { transform: scale(1.05); }

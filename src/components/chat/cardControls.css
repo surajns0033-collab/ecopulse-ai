@@ -1,0 +1,134 @@
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(135deg, var(--green-dark), #166534);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 2px 8px rgba(34,197,94,0.25);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(34,197,94,0.35); }
+
+.btn-secondary {
+  background: none;
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-secondary:hover { background: #f9fafb; border-color: #ccc; }
+
+.btn-danger {
+  background: none;
+  color: #ef4444;
+  border: 1.5px solid #fecaca;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-danger:hover { background: #fef2f2; }
+
+/* ===== EMAIL PREVIEW ===== */
+.email-preview-body { padding: 12px 16px; }
+
+.email-field { margin-bottom: 10px; }
+.email-field-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 2px; }
+.email-field-value { font-size: 13px; color: var(--text); line-height: 1.45; }
+
+.email-draft-edit {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  resize: vertical;
+}
+
+.email-body-preview {
+  font-size: 12px;
+  color: #555;
+  background: #fafafa;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 4px;
+  max-height: 100px;
+  overflow-y: auto;
+  line-height: 1.55;
+  border: 1px solid var(--border);
+}
+
+/* ===== CONFIRMATION CARD ===== */
+.confirmation-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px;
+  gap: 10px;
+  text-align: center;
+}
+
+.confirmation-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #dcfce7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--green);
+}
+
+.confirmation-id {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  border: 1px solid var(--border);
+  letter-spacing: 0.5px;
+}
+
+/* ===== COMMUNITY FEED ===== */
+.community-post-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.community-post-item:last-child { border-bottom: none; }
+
+.community-post-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.community-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #dcfce7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green-dark);
+}
+
+.community-post-author { font-size: 13px; font-weight: 700; color: var(--text); }
+.community-post-time { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+.community-post-text { font-size: 13px; color: #555; line-height: 1.5; }
