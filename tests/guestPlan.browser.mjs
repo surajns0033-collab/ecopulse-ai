@@ -1,0 +1,94 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { auditAccessibility, openBrowser } from './browserSupport.mjs';
+import { mockDelhi, ask } from './cleanAirFixtures.mjs';
+
+test('a Guest can plan a school smog day with a keyboard and stale readings stay out of Chat', { timeout: 90000 }, async t => {
+  const { context, origin } = await openBrowser(t);
+  const { counts, data } = await mockDelhi(context);
+  const page = await context.newPage();
+  await page.goto(origin);
+  const guest = page.getByRole('button', { name: 'Continue as Guest' });
+  await guest.waitFor();
+  await auditAccessibility(page, 'Sign-in choices');
+  await guest.press('Enter');
+  const toolbar = page.getByRole('toolbar', { name: 'Quick actions' });
+  const shortcuts = toolbar.getByRole('button');
+  const first = shortcuts.first();
+  const last = shortcuts.last();
+  await first.focus();
+  await page.keyboard.press('ArrowLeft');
+  assert.ok(await last.evaluate(button => button === document.activeElement));
+  await page.keyboard.press('ArrowRight');
+  assert.ok(await first.evaluate(button => button === document.activeElement));
+  await page.keyboard.press('End');
+  assert.ok(await last.evaluate(button => button === document.activeElement));
+  await page.keyboard.press('Tab');
+  assert.equal(await toolbar.evaluate(element => element.contains(document.activeElement)), false);
+  await page.keyboard.press('Shift+Tab');
+  assert.ok(await last.evaluate(button => button === document.activeElement));
+  await page.keyboard.press('Home');
+  assert.ok(await first.evaluate(button => button === document.activeElement));
+  assert.equal(await toolbar.locator('button[tabindex="0"]').count(), 1);
+  await ask(page, 'Can you make a plan for severe winter smog in Delhi, India? Our school needs to plan its assembly.');
+  const log = page.getByRole('log', { name: 'Chat messages' });
+  await log.getByText(/switch off engines at the school gate/i).waitFor();
+  const answer = await log.innerText();
+  assert.match(answer, /AQI: 208/);
+  assert.match(answer, /still unhealthy for sensitive groups/);
+  assert.match(answer, /Move outdoor assembly/);
+  await log.getByRole('img', { name: 'U.S. AQI 208' }).waitFor();
+  assert.deepEqual(counts, { aqi: 1, weather: 1, forecast: 1 });
+  await page.setViewportSize({ width: 320, height: 800 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await auditAccessibility(page, 'Chat smog plan at 320 pixels');
+
+  data.ageHours = 4;
+  await page.reload();
+  await ask(page, 'Check AQI in Delhi, India.');
+  await log.getByText(/couldn't verify the air-quality reading/i).waitFor();
+  assert.doesNotMatch(await log.innerText(), /208/);
+
+  const menu = page.getByRole('button', { name: 'User menu' });
+  const exit = page.getByRole('button', { name: 'Exit Guest Mode' });
+  await menu.press('Enter');
+  assert.equal(await menu.getAttribute('aria-expanded'), 'true');
+  await page.keyboard.press('Tab');
+  assert.equal(await exit.evaluate(el => el === document.activeElement), true);
+  await auditAccessibility(page, 'Account menu');
+  await page.keyboard.press('Escape');
+  assert.equal(await menu.getAttribute('aria-expanded'), 'false');
+  assert.equal(await menu.evaluate(el => el === document.activeElement), true);
+  await menu.press('Enter');
+  await exit.press('Enter');
+  await guest.waitFor();
+  await page.reload();
+  await guest.waitFor();
+});
+
+test('a Guest gets kitchen advice without a purifier and society advice with stale AQI', { timeout: 90000 }, async t => {
+  const { context, origin } = await openBrowser(t);
+  const { counts, data } = await mockDelhi(context);
+  const page = await context.newPage();
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  const log = page.getByRole('log', { name: 'Chat messages' });
+
+  await ask(page, 'I live in Delhi, India. We cook with gas and have no purifier. How can we keep our kitchen air cleaner during smog?');
+  const kitchen = log.locator('.message-row.ai').filter({ hasText: 'exhaust hood that vents outdoors' });
+  await kitchen.waitFor();
+  assert.match(await kitchen.innerText(), /damp-clean/i);
+  assert.doesNotMatch(await kitchen.innerText(), /run HEPA in/i);
+  await kitchen.getByRole('button', { name: 'Explain these choices with AI' }).waitFor();
+
+  data.ageHours = 4;
+  await page.reload();
+  await ask(page, 'How can our housing society cut emissions during winter smog in Delhi, India?');
+  const society = log.locator('.chat-bubble-ai').filter({ hasText: 'avoid idling at the gate' });
+  await society.waitFor();
+  const plan = await society.innerText();
+  assert.match(plan, /no recent timestamp/i);
+  assert.match(plan, /composting for garden waste/i);
+  assert.doesNotMatch(plan, /Current AQI: 208/i);
+  assert.equal(counts.aqi, 2);
+});

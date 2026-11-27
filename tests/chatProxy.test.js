@@ -3,25 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import { makeAiHandler } from '../server/aiCore.js';
-import { readChatRequest } from '../server/chatRequest.js';
-
-const handler = makeAiHandler({ GEMINI_API_KEY: 'test-gemini-key', TAVILY_API_KEY: 'test-search-key' });
-
-const chatHeaders = { 'content-type': 'application/json; charset=utf-8' };
-const shortHistory = [{ role: 'user', text: 'How can I reduce indoor smoke?' }];
-
-async function runRequest(req, serve = handler, res = new EventEmitter()) {
-  const headers = {};
-  let result;
-  res.setHeader = (name, value) => { headers[name] = value; };
-  res.end = (text) => { result = JSON.parse(text); };
-  await serve(req, res, () => assert.fail('Chat request was not handled'));
-  return { status: res.statusCode, headers, result };
-}
-
-function chat(body, serve = handler, headers = chatHeaders, res) {
-  return runRequest({ url: '/api/ai/chat', method: 'POST', body, headers }, serve, res);
-}
+import { handler, chatHeaders, shortHistory, runRequest, chat } from './proxyFixtures.mjs';
 
 test('retired Talk and Bot clients cannot forward requests to any provider', async (t) => {
   const fetch = t.mock.method(globalThis, 'fetch', assert.fail);
@@ -101,54 +83,6 @@ test('streamed same-origin Guest chat forwards its validated JSON without an acc
   assert.equal(fetch.mock.callCount(), 1);
 });
 
-test('a valid photo is attached exactly once, to the latest user turn', async (t) => {
-  const base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jx2kAAAAASUVORK5CYII=';
-  const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {
-    assert.equal(url, 'https://example.invalid/v1/chat/completions');
-    const { model, messages } = JSON.parse(options.body);
-    assert.equal(model, 'configured-test-model');
-    assert.deepEqual(messages, [
-      { role: 'user', content: 'First turn' },
-      { role: 'assistant', content: 'First reply' },
-      { role: 'user', content: [
-        { type: 'text', text: 'Describe this photo' },
-        { type: 'image_url', image_url: { url: `data:image/png;base64,${base64}` } },
-      ] },
-    ]);
-    return Response.json({ choices: [{ message: { content: 'Photo checked.' } }] });
-  });
-  const response = await chat({
-    model: 'client-model-field',
-    messages: [{ role: 'user', text: 'First turn' }, { role: 'ai', text: 'First reply' }, { role: 'user', text: 'Describe this photo' }],
-    images: [{ mimeType: 'image/png', base64 }],
-  }, makeAiHandler({ OPENAI_BASE_URL: 'https://example.invalid/v1', OPENAI_API_KEY: 'test-provider-key', OPENAI_MODEL: 'configured-test-model' }));
-  assert.equal(response.status, 200);
-  assert.equal(fetch.mock.callCount(), 1);
-});
-
-test('search fallback forwards the latest question without private history or system context', async (t) => {
-  const query = 'Find the Open-Meteo air quality reference';
-  const source = 'https://open-meteo.com/en/docs/air-quality-api';
-  const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {
-    if (url === 'https://api.tavily.com/search') return Response.json({}, { status: 503 });
-    if (url.endsWith('models?pageSize=1000')) {
-      return Response.json({ models: [{ name: 'models/gemini-example-flash', supportedGenerationMethods: ['generateContent'] }] });
-    }
-    const body = JSON.parse(options.body);
-    assert.deepEqual(body.contents, [{ role: 'user', parts: [{ text: query }] }]);
-    assert.equal(body.systemInstruction, undefined);
-    return Response.json({ candidates: [{
-      content: { parts: [{ text: 'Open-Meteo publishes the reference.' }] },
-      groundingMetadata: { groundingChunks: [{ web: { uri: source, title: 'Air quality reference' } }] },
-    }] });
-  });
-  const response = await chat({ useSearch: true, system: 'Private system context', messages: [
-    { role: 'user', text: 'Earlier private question' }, { role: 'user', text: query },
-  ] });
-  assert.equal(response.status, 200);
-  assert.equal(response.result.sources[0].url, source);
-  assert.equal(fetch.mock.callCount(), 3);
-});
 
 test('the shared deadline stops fallback attempts and caps client timeout requests', async (t) => {
   const deadline = new AbortController();
@@ -189,87 +123,4 @@ test('upstream errors are not exposed in chat responses or health checks', async
   const health = await runRequest({ url: '/api/ai/health', method: 'GET' }, serve);
   assert.equal(health.status, 200);
   assert.deepEqual(health.result, { status: 'ok' });
-});
-
-test('photo headers must match their declared media type before anything is sent upstream', async t => {
-  const calls = t.mock.method(globalThis, 'fetch', assert.fail);
-  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jx2kAAAAASUVORK5CYII=';
-  for (const mimeType of ['image/jpeg', 'image/webp', 'image/heic', 'image/heif']) {
-    const reply = await chat({ messages: shortHistory, images: [{ mimeType, base64: png }] });
-    assert.equal(reply.status, 400);
-  }
-  assert.equal(calls.mock.callCount(), 0);
-});
-
-test('supported image headers retain their original bytes', async () => {
-  const headers = {
-    'image/jpeg': Buffer.from([255, 216, 255, 224]),
-    'image/webp': Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')]),
-    'image/heic': Buffer.from('00000018667479706d69663100000000686569636d696631', 'hex'),
-    'image/heif': Buffer.from('00000010667479706d69663100000000', 'hex'),
-  };
-  for (const [mimeType, data] of Object.entries(headers)) {
-    const image = { mimeType, base64: data.toString('base64') };
-    const request = await readChatRequest({ headers: chatHeaders, body: { messages: shortHistory, images: [image] } });
-    assert.deepEqual(request.images, [image]);
-  }
-});
-
-test('the proxy distinguishes token-limited output from a complete Gemini or compatible reply', async t => {
-  let limited = true;
-  t.mock.method(globalThis, 'fetch', async url => {
-    if (url.endsWith('models?pageSize=1000')) {
-      return Response.json({ models: [{ name: 'models/gemini-example-flash', supportedGenerationMethods: ['generateContent'] }] });
-    }
-    if (url.includes(':generateContent')) {
-      return Response.json({ candidates: [{
-        finishReason: limited ? 'MAX_TOKENS' : 'STOP', content: { parts: [{ text: 'School advice' }] },
-      }] });
-    }
-    assert.equal(url, 'https://example.invalid/v1/chat/completions');
-    return Response.json({ choices: [{
-      finish_reason: limited ? 'length' : 'stop', message: { content: 'School advice' },
-    }] });
-  });
-  const compatible = makeAiHandler({ OPENAI_BASE_URL: 'https://example.invalid/v1', OPENAI_API_KEY: 'test-provider-key' });
-  for (const serve of [handler, compatible]) {
-    limited = true;
-    const partial = await chat({ messages: shortHistory }, serve);
-    assert.equal(partial.status, 200);
-    assert.equal(partial.result.truncated, true);
-    limited = false;
-    const complete = await chat({ messages: shortHistory }, serve);
-    assert.equal(complete.result.text, 'School advice');
-    assert.equal(complete.result.truncated, undefined);
-  }
-});
-
-test('a slow known Gemini model leaves the remaining time for the configured text fallback', async t => {
-  const primary = new AbortController();
-  const deadline = new AbortController();
-  const attempts = [primary.signal, new AbortController().signal];
-  t.mock.method(AbortSignal, 'timeout', ms => ms === 30_000 ? deadline.signal : attempts.shift());
-  const endpoints = [];
-  t.mock.method(globalThis, 'fetch', async (url, options) => {
-    endpoints.push(new URL(url).pathname);
-    if (endpoints.length === 1) {
-      assert.match(url, /models\/gemini-configured:generateContent$/);
-      primary.abort();
-      assert.equal(options.signal.aborted, true);
-      throw primary.signal.reason;
-    }
-    // The next provider receives a separate attempt signal.
-    assert.equal(new URL(url).hostname, 'example.invalid');
-    assert.equal(options.signal.aborted, false);
-    return Response.json({ choices: [{ message: { content: 'Group deliveries to avoid extra trips.' } }] });
-  });
-  const serve = makeAiHandler({
-    GEMINI_API_KEY: 'test-gemini-key', GEMINI_MODEL: 'gemini-configured',
-    OPENAI_BASE_URL: 'https://example.invalid/v1', OPENAI_API_KEY: 'test-backup-key', OPENAI_MODEL: 'test-backup',
-  });
-  const response = await chat({ messages: shortHistory }, serve);
-  assert.equal(deadline.signal.aborted, false);
-  assert.equal(response.status, 200);
-  assert.equal(response.result.provider, 'openai:test-backup');
-  assert.equal(endpoints.length, 2);
 });

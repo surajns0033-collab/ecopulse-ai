@@ -16,6 +16,8 @@ if (!unitTests.length) throw new Error('No unit test files were discovered.');
 
 const checks = [
   { id: 'lint', label: 'Lint and function complexity', args: [npm, 'run', 'lint'] },
+  { id: 'modules', label: 'Physical module length', args: [npm, 'run', 'quality:modules'] },
+  { id: 'types', label: 'Strict chat contract', args: [npm, 'run', 'typecheck'] },
   { id: 'inventory', label: 'Source-wide maintainability scan', args: [npm, 'run', 'quality:inventory'] },
   { id: 'audit', label: 'Dependency advisories', args: [npm, 'audit', '--audit-level=moderate'] },
   { id: 'client', label: 'Browser credential isolation', args: ['--test', clientEnvironment] },
@@ -33,7 +35,7 @@ const checks = [
 ];
 
 const criteria = [
-  ['Code Quality', 'High', ['lint', 'inventory']],
+  ['Code Quality', 'High', ['lint', 'modules', 'types', 'inventory']],
   ['Security', 'Medium', ['audit', 'client', 'rules']],
   ['Efficiency', 'Medium', ['plans', 'size']],
   ['Testing', 'Low', ['unit', 'plans', 'ui', 'client', 'rules', 'size']],
