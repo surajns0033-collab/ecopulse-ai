@@ -1,3 +1,4 @@
+import { emailPreviewData } from './civicReportDetails.js';
 import { tools } from '../services/agentTools';
 import { buildComplaintEmailTemplate } from './fallbackBrain.js';
 import { AWAITING_DRAFT_DETAILS, incidentCity } from './chatPlaces.js';
@@ -66,20 +67,7 @@ export async function handleCreateEmail(userMessage, conversationHistory, city, 
     hasPhoto: /\b(?:i have|i took|and have|attached|attaching)\b.*\b(?:photo|picture|image)\b/i.test(situationText),
   });
 
-  const draftData = {
-    to: recipient.email,
-    recipientName: recipient.name,
-    organization: recipient.organization,
-    location: city,
-    cc,
-    ccLabel,
-    portalUrl: recipient.portalUrl,
-    sourceUrl: recipient.sourceUrl,
-    helpline: recipient.helpline,
-    subject,
-    body,
-    disclaimer: recipient.disclaimer,
-  };
+  const draftData = emailPreviewData(recipient, city, { subject, body }, { cc, ccLabel });
 
   return {
     text: recipient.email

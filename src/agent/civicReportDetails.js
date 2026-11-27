@@ -54,3 +54,11 @@ export function reportUrgency(recipient, forest, preview) {
     ? '🚨 If there is fire, a hazardous leak, or immediate danger to life, call **112**; otherwise review the written complaint below.'
     : 'If there is fire or immediate danger to life, call **112**; otherwise use the official portal for a tracked complaint.';
 }
+
+export function emailPreviewData(recipient, location, { subject, body }, { cc = null, ccLabel = null, disclaimer = recipient.disclaimer } = {}) {
+  return {
+    to: recipient.email, recipientName: recipient.name, organization: recipient.organization,
+    location, cc, ccLabel, portalUrl: recipient.portalUrl, sourceUrl: recipient.sourceUrl,
+    helpline: recipient.helpline, subject, body, disclaimer,
+  };
+}

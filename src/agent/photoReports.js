@@ -1,3 +1,4 @@
+import { emailPreviewData } from './civicReportDetails.js';
 import { tools } from '../services/agentTools';
 import { buildComplaintEmailTemplate, contactLines } from './fallbackBrain.js';
 import { detectIssueCategory, hasConcreteIssue, ISSUE_LABELS } from './civicIssues.js';
@@ -67,20 +68,7 @@ export async function handleImageAnalysis(imageData, userMessage, userId, locati
         text: `I couldn't analyze the photo automatically. I prepared a draft from your description instead. Review it and verify the recipient before sending.\n\n${contactLines(recipient).join('\n')}`,
         cards: [{
           type: 'email-preview',
-          data: {
-            to: recipient.email,
-            recipientName: recipient.name,
-            organization: recipient.organization,
-            location: city,
-            cc,
-            ccLabel,
-            portalUrl: recipient.portalUrl,
-            sourceUrl: recipient.sourceUrl,
-            helpline: recipient.helpline,
-            subject: template.subject,
-            body: template.body,
-            disclaimer: recipient.disclaimer,
-          },
+          data: emailPreviewData(recipient, city, template, { cc, ccLabel }),
         }],
         actions: [{
           label: '📋 Also file a report',

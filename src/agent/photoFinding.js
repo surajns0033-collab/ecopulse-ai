@@ -1,3 +1,4 @@
+import { emailPreviewData } from './civicReportDetails.js';
 import { tools } from '../services/agentTools';
 import { buildComplaintEmailTemplate, contactLines } from './fallbackBrain.js';
 import { ISSUE_LABELS } from './civicIssues.js';
@@ -77,20 +78,10 @@ export async function photoFinding({ result, userMessage, city, photoLocation, i
       },
       {
         type: 'email-preview',
-        data: {
-          to: recipient.email,
-          recipientName: recipient.name,
-          organization: recipient.organization,
-          location: city,
-          cc: draftCc,
-          ccLabel: draftCcLabel,
-          portalUrl: recipient.portalUrl,
-          sourceUrl: recipient.sourceUrl,
-          helpline: recipient.helpline,
-          subject: emailTemplate.subject,
-          body: emailTemplate.body,
+        data: emailPreviewData(recipient, city, emailTemplate, {
+          cc: draftCc, ccLabel: draftCcLabel,
           disclaimer: `${recipient.disclaimer} Automated photo classification — verify the description before sending.`,
-        },
+        }),
       },
     ],
     actions: [
