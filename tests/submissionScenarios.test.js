@@ -62,6 +62,14 @@ const scenarios = [
     expected: ["Current AQI:** unavailable", "shared trips with neighbours", "collection or composting", "if one is available"],
     excluded: ["Induction avoids", "gas stove runs", "Move outdoor assembly"],
   },
+  {
+    name: "Hyderabad metro commuter who rules out a car, bike and household sensitivities",
+    city: "Hyderabad",
+    message: "I don’t have a car or a bike. I take the metro to the office and cook at home. No kids or asthma.",
+    aqi: 172,
+    expected: ["public transport; office/school; household sensitivity: not stated", "Keep the long leg on transit", "recheck AQI before both legs"],
+    excluded: ["carpool", "Bundle errands", "household members you flagged as sensitive", "gas stove runs"],
+  },
 ];
 
 for (const scenario of scenarios) {
