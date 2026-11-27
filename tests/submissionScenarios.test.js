@@ -107,6 +107,9 @@ test('a natural-language winter smog request keeps its city and household detail
   assert.match(plan.text, /Keep the long leg on transit/);
   assert.match(plan.text, /existing filtered-air setup/);
   assert.doesNotMatch(plan.text, /Run HEPA in one cleaner-air room|Bundle errands/);
+  const withoutHepa = buildSmogPlan(parseSmogProfile('I don’t have HEPA.'), { city: route.place, aqi: reading, now: fixtureTime });
+  assert.match(withoutHepa.text, /without HEPA purifier/);
+  assert.doesNotMatch(withoutHepa.text, /Run HEPA in one cleaner-air room|no purifier/);
   const choices = plan.actions.find(action => action.action === 'EXPLAIN_SMOG_CHOICES').data.choices;
   assert.equal(choices.length, 5);
   for (const { advice, impact } of choices) {
