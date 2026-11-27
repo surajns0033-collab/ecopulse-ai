@@ -109,14 +109,20 @@ export function buildSmogPlan(profile, { city, aqi, weather, forecast, now = Dat
   const commuteImpact = profile.commute === 'walk/cycle'
     ? 'Walking and cycling have no tailpipe emissions. Quieter routes or less-polluted times can reduce exposure.'
     : 'Fewer solo vehicle kilometres and less idling reduce tailpipe emissions. Quieter routes may reduce roadside exposure.';
-  const cookingAdvice = profile.cooking === 'gas stove'
-    ? 'Use an exhaust hood that vents outdoors while the gas stove runs. Use induction when practical if you have it.'
-    : 'Run an exhaust fan that vents outdoors when cooking, especially when frying or using high heat.';
+  const cooking = profile.cooking === 'gas stove'
+    ? [
+      'Use an exhaust hood that vents outdoors while the gas stove runs. Cover the pot when boiling water to shorten burner time.',
+      'Venting carries cooking pollutants outside. A shorter burner time uses less gas and reduces combustion emissions.',
+    ]
+    : [
+      'Run an exhaust fan that vents outdoors when cooking, especially when frying or using high heat.',
+      'Exhaust removes cooking pollutants from the room. Induction avoids gas combustion at the stove.',
+    ];
   const sections = [
     ['🛡️ 1. Exposure routine', exposureAdvice(index, profile), 'Shorter outdoor exposure can reduce the amount of particles you breathe; it does not reduce emissions.'],
     ['🚌 2. Lower-emission commute', commuteAdvice(profile.commute, index), commuteImpact],
     ['🏠 3. Indoor air', indoorAirAdvice(profile.filtration, index), 'Source control prevents new indoor particles; filtration removes particles already in the air.'],
-    ['🍳 4. Cooking', cookingAdvice, 'Exhaust removes cooking pollutants from the room; induction avoids gas combustion at the stove.'],
+    ['🍳 4. Cooking', ...cooking],
     ['🌿 5. Community choice', 'Avoid burning leaves or waste, discourage idling, and report recurring smoke or dust with a location and observation.', 'Avoiding burning and idling cuts emissions at the source.'],
   ];
   const lowWind = Number.isFinite(weather?.windSpeed) && weather.windSpeed < 2

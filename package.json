@@ -8,7 +8,11 @@
     "build": "vite build",
     "lint": "oxlint",
     "test": "node --test",
-    "preview": "vite preview"
+    "test:coverage": "node --test --experimental-test-coverage",
+    "benchmark": "node --test tests/submissionScenarios.test.js",
+    "verify": "npm run lint && npm test && npm run build",
+    "preview": "vite preview",
+    "test:rules": "npx --yes --package=firebase-tools@15.37.0 -- firebase emulators:exec --project demo-ecopulse --only auth,firestore \"node --test tests/firestoreRules.emulator.mjs\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

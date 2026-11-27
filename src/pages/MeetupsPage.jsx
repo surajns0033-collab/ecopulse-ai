@@ -175,7 +175,7 @@ export default function MeetupsPage() {
       </div>
 
       {/* Events list */}
-      <div className="page-content">
+      <div className="page-content" role="region" aria-label="Meetup listings" tabIndex={0}>
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
             <div className="spinner" />
@@ -183,7 +183,7 @@ export default function MeetupsPage() {
         )}
 
         {!loading && events.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: '#64748b' }}>
+          <div style={{ textAlign: 'center', padding: 40, color: '#475569' }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>🌱</div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>No events yet</div>
             <div style={{ fontSize: 13, marginTop: 4, marginBottom: 14 }}>Be the first to organize a community eco-meetup!</div>

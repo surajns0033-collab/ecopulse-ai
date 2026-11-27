@@ -1,9 +1,31 @@
 export const AWAITING_SMOG_PROFILE = 'SMOG_PLAN_AWAITING_PROFILE';
 
-function hasHouseholdSignal(text, pattern) {
-  // A negative mention does not cancel a separate affirmative detail (e.g. no asthma, but a heart condition).
-  const denial = /\b(?:no|without|don['’]?t have|do not have)(?:\s+(?:an?|any))?\s+$/u;
-  return Array.from(text.matchAll(pattern)).some(({ index }) => !denial.test(text.slice(0, index)));
+function detailIsDenied(text, match) {
+  const deniedBefore = /\b(?:no|not|never|neither|without|don['’]?t|doesn['’]?t)(?:\s+(?:have|own|use|cook(?:\s+(?:on|with))?))?(?:\s+(?:an?|any))?\s+$/u;
+  const deniedAfter = /^\s+(?:नहीं|नाही)(?=\s|[।.!?,]|$)/u;
+  return deniedBefore.test(text.slice(0, match.index)) || deniedAfter.test(text.slice(match.index + match[0].length));
+}
+
+function hasAffirmedDetail(text, pattern) {
+  return Array.from(text.matchAll(pattern)).some((match) => !detailIsDenied(text, match));
+}
+
+function cookingFuel(text) {
+  const fuels = /(?<electric>\b(?:induction(?: stove| cooktop)?|electric cook(?:ing|top)?|electric stove)\b|इंडक्शन|इंडक्‍शन)|\b(?:gas(?: stove| cook(?:ing|top)?)?|lpg(?: stove)?)\b|गैस|गॅस/gu;
+  let gas = null;
+  let lastDenialEnd = -1;
+  for (const match of text.matchAll(fuels)) {
+    // Keep a denial across an appliance list, as in "neither gas nor induction".
+    const linked = lastDenialEnd >= 0 && /^\s*(?:,\s*)?(?:or|nor)\s+(?:an?\s+)?$/u.test(text.slice(lastDenialEnd, match.index));
+    if (linked || detailIsDenied(text, match)) {
+      lastDenialEnd = match.index + match[0].length;
+      continue;
+    }
+    lastDenialEnd = -1;
+    if (match.groups.electric) return 'induction/electric';
+    gas = 'gas stove';
+  }
+  return gas;
 }
 
 // Only use details the user actually provided. Missing fields aren't lifestyle facts.
@@ -21,17 +43,16 @@ export function parseSmogProfile(message) {
       : /\b(mixed|hybrid)\b/.test(text) ? 'mixed'
         : /\b(office|school)\b|दफ़्तर|ऑफिस|शाळा/u.test(text) ? 'office/school' : null;
 
-  const cooking = /\b(induction|electric cook(?:ing|top)?|electric stove)\b|इंडक्शन|इंडक्‍शन/u.test(text) ? 'induction/electric'
-    : /\b(gas(?: stove| cook(?:ing|top)?)?|lpg)\b|गैस|गॅस/u.test(text) ? 'gas stove' : null;
+  const cooking = cookingFuel(text);
 
   const filtration = /\b(?:no|without|don['’]?t have an?|do not have an?)\s+(?:air |hepa )?(?:purifier|filter)\b|(?:फ़िल्टर|फिल्टर|प्यूरिफायर)(?:\s+.{0,12})?\s+(?:नहीं|नाही)/u.test(text) ? 'no purifier'
     : /\bhepa\b|हेपा/u.test(text) ? 'HEPA purifier'
       : /\b(diy|filter fan|filtered fan)\b/.test(text) ? 'DIY filtered-air setup' : null;
 
   const vulnerable = [
-    hasHouseholdSignal(text, /\b(?:child|children|kids?|baby)\b|बच्च[ेा]|मुल[ंे]/gu) && 'children',
-    hasHouseholdSignal(text, /\b(?:older adult|elderly|senior|grandparent)s?\b|बुज़ुर्ग|बुजुर्ग|वृद्ध/gu) && 'older adults',
-    hasHouseholdSignal(text, /\b(?:asthma|lung condition|heart condition|respiratory condition|copd)\b|अस्थमा|दमा/gu) && 'heart/lung sensitivity',
+    hasAffirmedDetail(text, /\b(?:child|children|kids?|baby)\b|बच्च[ेा]|मुल[ंे]/gu) && 'children',
+    hasAffirmedDetail(text, /\b(?:older adult|elderly|senior|grandparent)s?\b|बुज़ुर्ग|बुजुर्ग|वृद्ध/gu) && 'older adults',
+    hasAffirmedDetail(text, /\b(?:asthma|lung condition|heart condition|respiratory condition|copd)\b|अस्थमा|दमा/gu) && 'heart/lung sensitivity',
   ].filter(Boolean);
   return { commute, routine, cooking, filtration, vulnerable };
 }

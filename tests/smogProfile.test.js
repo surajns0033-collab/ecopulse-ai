@@ -25,3 +25,14 @@ test('negative household details do not hide a separate sensitivity the user dis
   assert.deepEqual(result.vulnerable, ['heart/lung sensitivity']);
   assert.deepEqual(parseSmogProfile('No baby; no grandparents; no lung condition.').vulnerable, []);
 });
+
+test('cooking advice uses appliances the household says it has', () => {
+  assert.equal(parseSmogProfile('I cook with gas and do not have an induction stove.').cooking, 'gas stove');
+  assert.equal(parseSmogProfile('No gas stove. We cook with induction.').cooking, 'induction/electric');
+  assert.equal(parseSmogProfile('I don’t cook with gas.').cooking, null);
+  assert.equal(parseSmogProfile('We use neither gas nor an induction stove.').cooking, null);
+  assert.equal(parseSmogProfile('I do not have an induction stove or a gas stove.').cooking, null);
+  assert.equal(parseSmogProfile('No induction at work, but I cook with gas at home.').cooking, 'gas stove');
+  assert.equal(parseSmogProfile('No induction at work, but I use induction at home.').cooking, 'induction/electric');
+  assert.equal(parseSmogProfile('घर पर गैस है, इंडक्शन नहीं है।').cooking, 'gas stove');
+});

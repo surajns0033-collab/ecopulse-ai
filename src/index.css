@@ -2,7 +2,7 @@
 
 :root {
   --green: #22c55e;
-  --green-dark: #16a34a;
+  --green-dark: #15803d;
   --green-light: #dcfce7;
   --bg: #f5f5f5;
   --card: #ffffff;
@@ -166,6 +166,7 @@ html, body {
 .chat-scroll-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
 
 .chat-scroll-area:focus-visible,
+.page-content[tabindex]:focus-visible,
 .chat-input-bar :is(button, textarea):focus-visible,
 .quick-actions-bar button:focus-visible {
   outline: 2px solid #126332;
@@ -762,7 +763,7 @@ html, body {
 
 /* Buttons */
 .btn-primary {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
+  background: linear-gradient(135deg, var(--green-dark), #166534);
   color: white;
   border: none;
   border-radius: 10px;
@@ -972,7 +973,7 @@ html, body {
 }
 
 .event-card-top {
-  background: linear-gradient(135deg, #22c55e, #15803d);
+  background: linear-gradient(135deg, var(--green-dark), #166534);
   padding: 16px 18px;
   color: white;
 }
@@ -981,7 +982,7 @@ html, body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: rgba(255,255,255,0.2);
+  background: rgba(0,0,0,0.15);
   border-radius: 20px;
   padding: 3px 10px;
   font-size: 10px;
@@ -1131,8 +1132,8 @@ html, body {
 }
 
 .filter-chip.active {
-  background: var(--green);
-  border-color: var(--green);
+  background: var(--green-dark);
+  border-color: var(--green-dark);
   color: white;
 }
 
@@ -1393,7 +1394,7 @@ html, body {
 .landing-email-hint { color: var(--text-muted); }
 
 .landing-btn-guest {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
+  background: linear-gradient(135deg, var(--green-dark), #166534);
   color: white;
   box-shadow: 0 4px 16px rgba(34,197,94,0.3);
 }
@@ -1460,7 +1461,7 @@ html, body {
   border: none;
   border-radius: 9px;
   padding: 8px 12px;
-  background: var(--green);
+  background: var(--green-dark);
   color: #fff;
   font-weight: 700;
   cursor: pointer;
