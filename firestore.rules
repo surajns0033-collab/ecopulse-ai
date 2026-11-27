@@ -54,7 +54,7 @@ service cloud.firestore {
     }
 
     function attendanceDocId(uid, eventId) {
-      return uid.toUtf8().toHexString() + '!' + eventId;
+      return uid.toUtf8().toHexString().lower() + '!' + eventId;
     }
 
     function publicEventId(eventId) {
@@ -70,9 +70,9 @@ service cloud.firestore {
 
     match /meetupRSVPs/{receiptId} {
       // The owner can also read their own missing receipt before joining.
-      allow get: if signedIn() && (
-        (resource == null && receiptId.split('!').size() > 1 && receiptId.split('!')[0] == request.auth.uid.toUtf8().toHexString())
-        || ownsExisting());
+      allow get: if signedIn() && (exists(/databases/$(database)/documents/meetupRSVPs/$(receiptId))
+        ? ownsExisting()
+        : receiptId.matches(request.auth.uid.toUtf8().toHexString().lower() + '!.*'));
       allow list: if ownsExisting();
       allow create: if ownsIncoming()
         && request.resource.data.keys().hasOnly(['userId', 'meetupDocId', 'meetupId', 'createdAt'])
