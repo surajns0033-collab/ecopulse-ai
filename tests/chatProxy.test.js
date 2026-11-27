@@ -152,10 +152,8 @@ test('search fallback forwards the latest question without private history or sy
 
 test('the shared deadline stops fallback attempts and caps client timeout requests', async (t) => {
   const deadline = new AbortController();
-  const timer = t.mock.method(AbortSignal, 'timeout', (ms) => {
-    assert.equal(ms, 40_000);
-    return deadline.signal;
-  });
+  const timer = t.mock.method(AbortSignal, 'timeout', ms =>
+    ms === 40_000 ? deadline.signal : new AbortController().signal);
   const fetch = t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, 'https://api.tavily.com/search');
     deadline.abort();
@@ -165,7 +163,7 @@ test('the shared deadline stops fallback attempts and caps client timeout reques
   const response = await chat({ useSearch: true, timeoutMs: 90_000, messages: shortHistory });
   assert.equal(response.status, 504);
   assert.equal(fetch.mock.callCount(), 1);
-  assert.equal(timer.mock.callCount(), 1);
+  assert.equal(timer.mock.calls[0].arguments[0], 40_000);
 });
 
 test('disconnecting from Chat cancels the provider call without starting fallback', async (t) => {
@@ -244,4 +242,34 @@ test('the proxy distinguishes token-limited output from a complete Gemini or com
     assert.equal(complete.result.text, 'School advice');
     assert.equal(complete.result.truncated, undefined);
   }
+});
+
+test('a slow known Gemini model leaves the remaining time for the configured text fallback', async t => {
+  const primary = new AbortController();
+  const deadline = new AbortController();
+  const attempts = [primary.signal, new AbortController().signal];
+  t.mock.method(AbortSignal, 'timeout', ms => ms === 30_000 ? deadline.signal : attempts.shift());
+  const endpoints = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    endpoints.push(new URL(url).pathname);
+    if (endpoints.length === 1) {
+      assert.match(url, /models\/gemini-configured:generateContent$/);
+      primary.abort();
+      assert.equal(options.signal.aborted, true);
+      throw primary.signal.reason;
+    }
+    // The next provider receives a separate attempt signal.
+    assert.equal(new URL(url).hostname, 'example.invalid');
+    assert.equal(options.signal.aborted, false);
+    return Response.json({ choices: [{ message: { content: 'Group deliveries to avoid extra trips.' } }] });
+  });
+  const serve = makeAiHandler({
+    GEMINI_API_KEY: 'test-gemini-key', GEMINI_MODEL: 'gemini-configured',
+    OPENAI_BASE_URL: 'https://example.invalid/v1', OPENAI_API_KEY: 'test-backup-key', OPENAI_MODEL: 'test-backup',
+  });
+  const response = await chat({ messages: shortHistory }, serve);
+  assert.equal(deadline.signal.aborted, false);
+  assert.equal(response.status, 200);
+  assert.equal(response.result.provider, 'openai:test-backup');
+  assert.equal(endpoints.length, 2);
 });

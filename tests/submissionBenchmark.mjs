@@ -6,11 +6,11 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const npm = process.env.npm_execpath;
 if (!npm) throw new Error('Run the submission benchmark with npm run benchmark:submission.');
 
-const scenarios = 'tests/submissionScenarios.test.js';
+const scenarios = new Set(['tests/submissionScenarios.test.js', 'tests/routineQuestions.test.js']);
 const clientEnvironment = 'tests/clientEnvironment.test.js';
 const unitTests = globSync('tests/**/*.test.{js,cjs,mjs}', { cwd: root })
   .map(path => path.replaceAll('\\', '/'))
-  .filter(path => path !== scenarios && path !== clientEnvironment)
+  .filter(path => !scenarios.has(path) && path !== clientEnvironment)
   .sort();
 if (!unitTests.length) throw new Error('No unit test files were discovered.');
 
