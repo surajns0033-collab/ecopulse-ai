@@ -14,133 +14,99 @@ import {
 import { handleGeneralQuestion } from './chatAnswers';
 import { logAction } from './activityLog';
 
-export async function processMessage(userMessage, conversationHistory, user, location, imageData, pendingAction, { chosenLocation, photoLocation, planChoices, signal } = {}) {
+// Each intent owns one reply. Place resolution and pending conversation state
+// are handled once, before and after dispatch.
+const replies = {
+  [INTENTS.GET_AIR_QUALITY]: ({ lat, lng, city, userId, message, signal }) =>
+    handleAirQuality(lat, lng, city, userId, { signal, forecast: asksForForecast(message) }),
+  [INTENTS.GET_WEATHER]: ({ lat, lng, city, userId, message, signal }) =>
+    handleWeather(lat, lng, city, userId, { signal, forecast: asksForForecast(message) }),
+  [INTENTS.GET_WATER_QUALITY]: ({ city }) => handleWaterQuality(city),
+  [INTENTS.FIND_EVENTS]: ({ city, category, userId }) => handleFindEvents(city, category, userId),
+  [INTENTS.JOIN_EVENT]: () => handleJoinEventPrompt(),
+  [INTENTS.CREATE_EVENT]: ({ message, city, lat, lng }) => handleCreateEventPrompt(message, city, lat, lng),
+  [INTENTS.CREATE_REPORT]: ({ message, userId, city, lat, lng }) => handleCreateReport(message, userId, { lat, lng, city }),
+  [INTENTS.CREATE_EMAIL]: ({ message, history, city, turn }) => handleCreateEmail(message, history, city, turn),
+  [INTENTS.GET_AUTHORITY_CONTACTS]: ({ message, city }) => handleAuthorityContacts(message, { city }),
+  [INTENTS.GET_COMMUNITY]: () => handleCommunityFeed(),
+  [INTENTS.GET_DAILY_PLAN]: ({ lat, lng }) => handleDailyPlan(lat, lng),
+  [INTENTS.GET_HEALTH_TIPS]: ({ lat, lng, city, signal }) => handleHealthTips(lat, lng, city, signal),
+  [INTENTS.GET_ROUTES]: ({ city, lat, lng }) => handleRoutes(city, lat, lng),
+  [INTENTS.GET_USER_IMPACT]: ({ userId }) => handleUserImpact(userId),
+  [INTENTS.GET_WASTE_TIPS]: ({ city, lat, lng }) => handleWasteTips(city, lat, lng),
+  [INTENTS.GET_SMOG_PLAN]: ({ turn, city, lat, lng, signal }) => turn?.smogDetails
+    ? getSmogPlan(turn.smogDetails, { city, lat, lng }, signal) : startSmogPlan(city),
+};
+
+function generalReply({ message, history, city, lat, lng, userId, turn, signal }) {
+  return handleGeneralQuestion(message, history, { lat, lng, city }, userId, {
+    snapshot: turn?.snapshot, web: turn?.kind === 'web', webLocation: turn?.location, signal,
+  });
+}
+
+function placeChanges(context, location, chosenLocation) {
+  const update = {};
+  if (context?.location && context.location !== location) update.resolvedLocation = context.location;
+  if (context?.chosenLocation && context.chosenLocation !== chosenLocation) update.chosenLocation = context.chosenLocation;
+  return update;
+}
+
+function locationReply(turn, update) {
+  if (turn.selected) return { ...chatMap(turn.selected, true), ...update };
+  const { waiting } = turn.context;
+  return {
+    text: waiting?.turn?.draftDetails ? turn.text + ' I’ll keep these details for the draft.' : turn.text,
+    cards: [],
+    actions: [{ label: '📍 Share My Location', action: 'REQUEST_LOCATION', variant: 'secondary' }],
+    status: 'needs_location',
+    ...(waiting ? { pending: AWAITING_CHAT_PLACE, pendingData: { waiting } } : {}),
+  };
+}
+
+async function photoReply(image, message, userId, signal) {
+  const candidate = incidentCity(message || '');
+  const location = candidate ? (await lookupPlace(candidate, { signal })).location : null;
+  const { handleImageAnalysis } = await import('./photoReports');
+  return handleImageAnalysis(image, message, userId, location);
+}
+
+async function textReply(input, history, userId, location, pending, { chosenLocation, photoLocation, signal }) {
+  // A photo action keeps its incident location independent of the current city in Chat.
+  const fromPhoto = photoLocation !== undefined;
+  const chatLocation = fromPhoto ? photoLocation : location;
+  const draftDetails = !fromPhoto && pending?.type === AWAITING_DRAFT_DETAILS &&
+    (describesIssue(input) || isDraftDetailFragment(input));
+  const turn = await resolveChatPlace(input, history, chatLocation, fromPhoto ? null : pending, {
+    chosenLocation: fromPhoto ? null : chosenLocation, draftDetails, fromPhoto, signal,
+  });
+  const update = fromPhoto ? {} : placeChanges(turn?.context, location, chosenLocation);
+  if (turn?.kind === 'reply') return locationReply(turn, update);
+  if (turn?.kind === 'map') return { ...chatMap(turn.location), ...update };
+  const active = turn?.location || chatLocation;
+  const result = await answerTurn(turn, input, history, userId, active, signal);
+  if (result.pending && active) return { ...result, pendingData: { ...result.pendingData, location: active }, ...update };
+  return { ...result, ...update };
+}
+
+async function answerTurn(turn, input, history, userId, active, signal) {
+  const message = turn?.message || input;
+  const detected = detectIntent(message, history);
+  const intent = turn?.intent || (turn?.kind === 'web' ? INTENTS.ASK_QUESTION : detected.intent);
+  logAction(userId, 'intent_detected', { intent, confidence: detected.confidence });
+  const reply = replies[intent] ?? generalReply;
+  return reply({
+    message, history, userId, turn, signal, category: detected.entities?.category,
+    lat: active?.lat, lng: active?.lng, city: resolveCity(active?.city),
+  });
+}
+
+export async function processMessage(message, history, user, location, image, pending, options = {}) {
   const userId = user?.uid || 'anonymous';
-
+  const { planChoices, signal } = options;
   try {
-    // An explanation belongs to the plan the user clicked, even after a change of city.
-    if (planChoices?.length) return await explainSmogChoices(userMessage, planChoices, signal);
-    if (imageData?.base64) {
-      // The city in a different Chat turn needn't be where a photo was taken.
-      // Keep the analysis useful, but don't prefill a recipient from that city.
-      const candidate = incidentCity(userMessage || '');
-      const verifiedLocation = candidate ? (await lookupPlace(candidate, { signal })).location : null;
-      const { handleImageAnalysis } = await import('./photoReports');
-      return await handleImageAnalysis(imageData, userMessage, userId, verifiedLocation);
-    }
-
-    // Photo actions must not inherit the city being discussed elsewhere in Chat.
-    const fromPhoto = photoLocation !== undefined;
-    const chatLocation = fromPhoto ? photoLocation : location;
-    const draftDetails = !fromPhoto && pendingAction?.type === AWAITING_DRAFT_DETAILS &&
-      (describesIssue(userMessage) || isDraftDetailFragment(userMessage));
-    const placeTurn = await resolveChatPlace(userMessage, conversationHistory, chatLocation, fromPhoto ? null : pendingAction, {
-      chosenLocation: fromPhoto ? null : chosenLocation, draftDetails, fromPhoto, signal,
-    });
-    const contextUpdate = placeTurn?.context;
-    const placeUpdate = {
-      ...(!fromPhoto && contextUpdate?.location && contextUpdate.location !== location ? { resolvedLocation: contextUpdate.location } : {}),
-      ...(!fromPhoto && contextUpdate?.chosenLocation && contextUpdate.chosenLocation !== chosenLocation ? { chosenLocation: contextUpdate.chosenLocation } : {}),
-    };
-    if (placeTurn?.kind === 'reply') {
-      const { waiting } = placeTurn.context;
-      if (placeTurn.selected) return { ...chatMap(placeTurn.selected, true), ...placeUpdate };
-      return {
-        text: waiting?.turn?.draftDetails ? `${placeTurn.text} I’ll keep these details for the draft.` : placeTurn.text,
-        cards: [],
-        actions: [{ label: '📍 Share My Location', action: 'REQUEST_LOCATION', variant: 'secondary' }],
-        status: 'needs_location',
-        ...(waiting ? { pending: AWAITING_CHAT_PLACE, pendingData: { waiting } } : {}),
-      };
-    }
-    if (placeTurn?.kind === 'map') return { ...chatMap(placeTurn.location), ...placeUpdate };
-
-    const active = placeTurn?.location || chatLocation;
-    const { lat, lng } = active || {};
-    const city = resolveCity(active?.city);
-    const message = placeTurn?.message || userMessage;
-    const { intent: detectedIntent, confidence, entities } = detectIntent(message, conversationHistory);
-    const intent = placeTurn?.intent || (placeTurn?.kind === 'web' ? INTENTS.ASK_QUESTION : detectedIntent);
-    logAction(userId, 'intent_detected', { intent, confidence });
-
-    let result;
-
-    switch (intent) {
-      case INTENTS.GET_AIR_QUALITY:
-        result = await handleAirQuality(lat, lng, city, userId, { signal, forecast: asksForForecast(message) });
-        break;
-
-      case INTENTS.GET_WATER_QUALITY:
-        result = await handleWaterQuality(city);
-        break;
-
-      case INTENTS.GET_WEATHER:
-        result = await handleWeather(lat, lng, city, userId, { signal, forecast: asksForForecast(message) });
-        break;
-
-      case INTENTS.FIND_EVENTS:
-        result = await handleFindEvents(city, entities?.category, userId);
-        break;
-
-      case INTENTS.JOIN_EVENT:
-        result = handleJoinEventPrompt();
-        break;
-
-      case INTENTS.CREATE_EVENT:
-        result = await handleCreateEventPrompt(message, city, lat, lng);
-        break;
-
-      case INTENTS.CREATE_REPORT:
-        result = await handleCreateReport(message, userId, { lat, lng, city });
-        break;
-
-      case INTENTS.CREATE_EMAIL:
-        result = await handleCreateEmail(message, conversationHistory, city, placeTurn);
-        break;
-
-      case INTENTS.GET_AUTHORITY_CONTACTS:
-        result = await handleAuthorityContacts(message, { city });
-        break;
-
-      case INTENTS.GET_COMMUNITY:
-        result = await handleCommunityFeed();
-        break;
-
-      case INTENTS.GET_DAILY_PLAN:
-        result = await handleDailyPlan(lat, lng);
-        break;
-
-      case INTENTS.GET_HEALTH_TIPS:
-        result = await handleHealthTips(lat, lng, city, signal);
-        break;
-
-      case INTENTS.GET_ROUTES:
-        result = await handleRoutes(city, lat, lng);
-        break;
-
-      case INTENTS.GET_USER_IMPACT:
-        result = await handleUserImpact(userId);
-        break;
-
-      case INTENTS.GET_WASTE_TIPS:
-        result = await handleWasteTips(city, lat, lng);
-        break;
-
-      case INTENTS.GET_SMOG_PLAN:
-        result = placeTurn?.smogDetails
-          ? await getSmogPlan(placeTurn.smogDetails, { city, lat, lng }, signal)
-          : startSmogPlan(city);
-        break;
-
-      default:
-        result = await handleGeneralQuestion(message, conversationHistory, { lat, lng, city }, userId, {
-          snapshot: placeTurn?.snapshot, web: placeTurn?.kind === 'web', webLocation: placeTurn?.location, signal,
-        });
-        break;
-    }
-
-    if (result.pending && active) result.pendingData = { ...result.pendingData, location: active };
-    return { ...result, ...placeUpdate };
+    if (planChoices?.length) return await explainSmogChoices(message, planChoices, signal);
+    if (image?.base64) return await photoReply(image, message, userId, signal);
+    return await textReply(message, history, userId, location, pending, options);
   } catch (err) {
     signal?.throwIfAborted();
     console.error('Orchestrator error:', err);
