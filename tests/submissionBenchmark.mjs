@@ -7,17 +7,20 @@ const npm = process.env.npm_execpath;
 if (!npm) throw new Error('Run the submission benchmark with npm run benchmark:submission.');
 
 const scenarios = 'tests/submissionScenarios.test.js';
+const clientEnvironment = 'tests/clientEnvironment.test.js';
 const unitTests = globSync('tests/**/*.test.{js,cjs,mjs}', { cwd: root })
   .map(path => path.replaceAll('\\', '/'))
-  .filter(path => path !== scenarios)
+  .filter(path => path !== scenarios && path !== clientEnvironment)
   .sort();
 if (!unitTests.length) throw new Error('No unit test files were discovered.');
 
 const checks = [
   { id: 'lint', label: 'Lint and function complexity', args: [npm, 'run', 'lint'] },
   { id: 'audit', label: 'Dependency advisories', args: [npm, 'audit', '--audit-level=moderate'] },
+  { id: 'client', label: 'Browser credential isolation', args: ['--test', clientEnvironment] },
   { id: 'unit', label: 'Node regressions and source coverage', args: [
-    '--test', '--experimental-test-coverage', '--test-coverage-include=src/**', '--test-coverage-include=server/**', ...unitTests,
+    '--test', '--experimental-test-coverage', '--test-coverage-include=src/**', '--test-coverage-include=server/**',
+    '--test-coverage-lines=80', '--test-coverage-branches=75', '--test-coverage-functions=85', ...unitTests,
   ] },
   { id: 'plans', label: 'Smog scenarios and request counts', args: [npm, 'run', 'benchmark'] },
   { id: 'build', label: 'Production build', args: [npm, 'run', 'build'] },
@@ -30,9 +33,9 @@ const checks = [
 
 const criteria = [
   ['Code Quality', 'High', ['lint']],
-  ['Security', 'Medium', ['audit', 'rules']],
+  ['Security', 'Medium', ['audit', 'client', 'rules']],
   ['Efficiency', 'Medium', ['plans', 'size']],
-  ['Testing', 'Low', ['unit', 'plans', 'ui', 'rules', 'size']],
+  ['Testing', 'Low', ['unit', 'plans', 'ui', 'client', 'rules', 'size']],
   ['Accessibility', 'Low', ['ui']],
   ['Problem Statement Alignment', 'High', ['plans', 'ui']],
 ];
