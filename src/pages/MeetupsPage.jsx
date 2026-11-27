@@ -24,6 +24,18 @@ function emptyMeetupForm() {
     time: '7:00 AM', capacity: 25, description: '' };
 }
 
+function keepTabInDialog(event) {
+  if (event.key !== 'Tab') return;
+  const controls = event.currentTarget.querySelectorAll('button:enabled, input:enabled, select:enabled, textarea:enabled');
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  const edge = event.shiftKey ? first : last;
+  if (event.target === edge) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  }
+}
+
 export default function MeetupsPage() {
   const { user } = useAuth();
   const { location } = useApp();
@@ -33,6 +45,7 @@ export default function MeetupsPage() {
   const visibleEvents = events.filter(event => activeFilter === 'all' || event.category === activeFilter);
   const [toastMsg, setToastMsg] = useState('');
   const dialog = useRef(null);
+  const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const [form, setForm] = useState(emptyMeetupForm);
@@ -43,14 +56,16 @@ export default function MeetupsPage() {
       setToastMsg('Sign in with Google or email to publish a meetup.');
       return;
     }
+    setFormError('');
     dialog.current.showModal();
     dialog.current.querySelector('#meetup-title').focus();
   }
 
   async function handleCreateSubmit(e) {
     e.preventDefault();
+    setFormError('');
     if (!form.title.trim() || !venue.trim()) {
-      setToastMsg('Please enter event title and location.');
+      setFormError('Please enter event title and location.');
       return;
     }
     setSubmitting(true);
@@ -70,7 +85,9 @@ export default function MeetupsPage() {
       setForm(emptyMeetupForm());
       setToastMsg(result.localOnly ? 'Meetup saved on this device.' : 'Meetup published.');
     } catch (error) {
-      setToastMsg(meetupErrorMessage(error));
+      const message = meetupErrorMessage(error);
+      if (dialog.current?.open) setFormError(message);
+      else setToastMsg(message);
     } finally {
       setSubmitting(false);
     }
@@ -165,7 +182,7 @@ export default function MeetupsPage() {
       </main>
 
       {/* Create Meetup Modal */}
-      <dialog ref={dialog} className="meetup-dialog" aria-labelledby="create-meetup-heading"
+      <dialog ref={dialog} className="meetup-dialog" aria-labelledby="create-meetup-heading" onKeyDown={keepTabInDialog}
         onClick={e => { if (e.target === e.currentTarget) dialog.current.close(); }}>
           <form className="create-modal" onSubmit={handleCreateSubmit}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -238,6 +255,7 @@ export default function MeetupsPage() {
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
 
+            {formError && <p role="alert">{formError}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={submitting}>
                 {submitting ? 'Publishing...' : '✅ Publish Meetup'}
