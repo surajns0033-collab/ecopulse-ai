@@ -41,7 +41,7 @@ export function useEmailSignIn({ firebaseReady, setLoading, setUser, setAuthMode
     setAuthMode('email');
     window.history.replaceState({}, document.title, window.location.pathname);
     return credential.user;
-  }, [firebaseReady]);
+  }, [firebaseReady, setUser, setAuthMode]);
 
   useEffect(() => {
     const link = window.location.href;
@@ -53,7 +53,7 @@ export function useEmailSignIn({ firebaseReady, setLoading, setUser, setAuthMode
       setEmailLinkNeedsEmail(true);
       setLoading(false);
     });
-  }, [firebaseReady, completeEmailSignIn]);
+  }, [firebaseReady, completeEmailSignIn, setLoading]);
 
   return { sendEmailLink, completeEmailSignIn, emailLinkNeedsEmail };
 }
