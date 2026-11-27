@@ -10,6 +10,8 @@ import {
 
 import { attendanceId, joinedMeetupIds, saveMeetupAttendance } from '../src/services/meetupAttendance.js';
 
+import { migrateAttendance } from '../server/migrateMeetupAttendance.mjs';
+
 const clients = [];
 let owner;
 let neighbour;
@@ -185,5 +187,36 @@ test('organizers and attendees cannot write the count or a private receipt in is
   await assert.rejects(deleteDoc(member), permissionDenied);
   await assert.rejects(updateDoc(member, { userId: owner.uid }), permissionDenied);
   await assert.rejects(deleteDoc(event), permissionDenied);
+  assert.equal(await count(event), 1);
+});
+
+test('owner reconciliation keeps legacy participants, repairs the count and can be rerun', async () => {
+  const event = doc(owner.db, 'meetups', randomUUID());
+  const code = randomUUID();
+  const admin = localEmulator('FIRESTORE_EMULATOR_HOST').origin;
+  const root = 'projects/demo-ecopulse/databases/(default)/documents';
+  const fields = { userId: { stringValue: owner.uid }, eventId: { stringValue: code }, status: { stringValue: 'published' },
+    participantCount: { integerValue: '0' }, capacity: { integerValue: '5' } };
+  const updates = [{ name: root + '/' + event.path, fields }];
+  for (const person of [guest, guest, neighbour]) {
+    updates.push({ name: root + '/meetupRSVPs/' + randomUUID(),
+      fields: { userId: { stringValue: person.uid }, meetupId: { stringValue: code } } });
+  }
+  const seed = await fetch(admin + '/v1/' + root + ':commit', { method: 'POST',
+    headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ writes: updates.map(update => ({ update })) }) });
+  assert.equal(seed.status, 200);
+  await assert.rejects(attend(guest, event), /older meetup/);
+  assert.equal((await migrateAttendance('demo-ecopulse')).legacyMeetups, 1);
+  assert.equal(await count(event), 0);
+  assert.equal((await migrateAttendance('demo-ecopulse', true)).applied, 1);
+  assert.equal(await count(event), 2);
+  for (const person of [guest, neighbour]) {
+    assert.equal((await getDocFromServer(receipt(person, event))).exists(), true);
+    const saved = await getDocsFromServer(query(collection(person.db, 'meetupRSVPs'), where('userId', '==', person.uid)));
+    assert.equal(saved.docs.filter(row => row.data().meetupId === code).length, 1);
+  }
+  assert.equal((await migrateAttendance('demo-ecopulse', true)).applied, 0);
+  await attend(guest, event, false);
   assert.equal(await count(event), 1);
 });
