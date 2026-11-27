@@ -1,16 +1,52 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "oxc"],
+  "plugins": [
+    "react",
+    "oxc",
+    "typescript"
+  ],
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+    "react/only-export-components": [
+      "warn",
+      {
+        "allowConstantExport": true
+      }
+    ]
   },
   "overrides": [
     {
-      "files": ["src/agent/agentOrchestrator.js", "src/agent/intentEngine.js", "src/agent/place*.js", "src/agent/smog*.js"],
+      "files": [
+        "src/agent/agentOrchestrator.js",
+        "src/agent/intentEngine.js",
+        "src/agent/place*.js",
+        "src/agent/smog*.js",
+        "src/agent/civic*.js"
+      ],
       "rules": {
-        "complexity": ["error", { "max": 15 }],
-        "max-lines-per-function": ["error", { "max": 60, "skipBlankLines": true, "skipComments": true }]
+        "complexity": [
+          "error",
+          {
+            "max": 15
+          }
+        ],
+        "max-lines-per-function": [
+          "error",
+          {
+            "max": 60,
+            "skipBlankLines": true,
+            "skipComments": true
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "**/*.ts",
+        "**/*.tsx"
+      ],
+      "rules": {
+        "typescript/no-explicit-any": "error"
       }
     }
   ]
