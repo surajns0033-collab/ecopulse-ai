@@ -1,18 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  signInAnonymously,
-  signInWithRedirect,
-  getRedirectResult,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signOut as firebaseSignOut,
-  sendSignInLinkToEmail,
-  isSignInWithEmailLink,
-  signInWithEmailLink,
-} from 'firebase/auth';
+import { logFailure } from '../services/diagnostics.js';
+import { useCallback, useEffect, useState } from 'react';
+import { signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../firebase/config';
-
 import { AuthContext } from './AuthContext';
+import { useEmailSignIn } from './useEmailSignIn.js';
 
 const localSessionKey = 'ecopulse_device_session';
 
@@ -29,18 +20,11 @@ function restoreDeviceUser() {
   } catch { return null; }
 }
 
-const emailKey = 'echopulse_email_link_address';
-function pendingEmail() {
-  try { return sessionStorage.getItem(emailKey); } catch { return null; }
-}
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(restoreDeviceUser);
   const [loading, setLoading] = useState(isFirebaseConfigured);
   const [authMode, setAuthMode] = useState(() => user && (user.isAnonymous ? 'guest' : 'google'));
-  const [emailLinkNeedsEmail, setEmailLinkNeedsEmail] = useState(() =>
-    isFirebaseConfigured && isSignInWithEmailLink(auth, window.location.href) && !pendingEmail());
-  const attemptedEmailLink = useRef(null);
+
   const [communityName, setCommunityName] = useState('');
   const [communityNameConfirmed, setCommunityNameConfirmed] = useState(false);
 
@@ -83,11 +67,14 @@ export function AuthProvider({ children }) {
     if (!firebaseReady) return;
     // Completes a Google same-tab redirect. onAuthStateChanged updates the UI;
     // this call also consumes and clears Firebase's pending redirect state.
-    getRedirectResult(auth).catch((error) => {
-      console.warn('Google redirect sign-in could not be completed:', error?.message || error);
+    getRedirectResult(auth).catch(() => {
+      logFailure('auth.redirect');
       setLoading(false);
     });
   }, [firebaseReady]);
+
+
+  const { sendEmailLink, completeEmailSignIn, emailLinkNeedsEmail } = useEmailSignIn({ firebaseReady, setLoading, setUser, setAuthMode });
 
   /** Sign in with Google */
   async function signInWithGoogle() {
@@ -103,49 +90,6 @@ export function AuthProvider({ children }) {
     await signInWithRedirect(auth, provider);
   }
 
-  /** Send a passwordless Firebase email sign-in link. */
-  async function sendEmailLink(email) {
-    if (!firebaseReady) {
-      throw new Error('Firebase is not configured yet. Add Firebase environment values first.');
-    }
-    const normalizedEmail = String(email || '').trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) throw new Error('Enter a valid email address.');
-    await sendSignInLinkToEmail(auth, normalizedEmail, {
-      url: `${window.location.origin}/?emailSignIn=1`,
-      handleCodeInApp: true,
-    });
-    // Temporary browser-session storage only; never written to Firestore.
-    try { sessionStorage.setItem(emailKey, normalizedEmail); } catch { /* The recipient can re-enter their email. */ }
-    return { sent: true };
-  }
-
-  /** Complete a passwordless sign-in after the user returns through the email link. */
-  const completeEmailSignIn = useCallback(async (email) => {
-    if (!firebaseReady || !isSignInWithEmailLink(auth, window.location.href)) {
-      throw new Error('This email sign-in link is invalid or has expired.');
-    }
-    const normalizedEmail = String(email || '').trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) throw new Error('Enter the email that received the link.');
-    const credential = await signInWithEmailLink(auth, normalizedEmail, window.location.href);
-    try { sessionStorage.removeItem(emailKey); } catch { /* Optional session storage. */ }
-    setEmailLinkNeedsEmail(false);
-    setUser(credential.user);
-    setAuthMode('email');
-    window.history.replaceState({}, document.title, window.location.pathname);
-    return credential.user;
-  }, [firebaseReady]);
-
-  useEffect(() => {
-    const link = window.location.href;
-    if (!firebaseReady || !isSignInWithEmailLink(auth, link)) return;
-    const email = pendingEmail();
-    if (!email || attemptedEmailLink.current === link) return;
-    attemptedEmailLink.current = link;
-    completeEmailSignIn(email).catch(() => {
-      setEmailLinkNeedsEmail(true);
-      setLoading(false);
-    });
-  }, [firebaseReady, completeEmailSignIn]);
 
   /** Continue as guest (anonymous) */
   async function continueAsGuest() {
