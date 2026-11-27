@@ -38,78 +38,37 @@ export async function callTavilySearch(payload, env) {
   return { text, sources, provider: 'tavily-search' }
 }
 
-export async function callLlm7(payload) {
-  if (Array.isArray(payload.images) && payload.images.length) {
-    throw new Error('LLM7 text model does not support images')
-  }
-  if (Date.now() < state.llm7DisabledUntil) throw new Error('LLM7 provider cooling down')
+const llm7 = {
+  name: 'llm7:gpt-oss-20b', model: 'gpt-oss:20b', url: 'https://api.llm7.io/v1/chat/completions',
+  cooldown: 'llm7DisabledUntil', minTokens: 1000, maxTokens: 2400, defaultTokens: 600, retrySeconds: 30,
+};
+const pollinations = {
+  name: 'pollinations', model: 'openai', url: 'https://text.pollinations.ai/openai',
+  cooldown: 'pollinationsDisabledUntil', minTokens: 64, maxTokens: 1200, defaultTokens: 500, retrySeconds: 15,
+};
 
+async function requestText(payload, provider) {
+  if (payload.images.length) throw new Error('Text provider cannot read photos');
+  if (Date.now() < state[provider.cooldown]) throw new Error('Text provider cooling down');
   const messages = [
     ...(payload.system ? [{ role: 'system', content: payload.system }] : []),
-    ...(payload.messages || []).map((m) => ({
-      role: m.role === 'ai' ? 'assistant' : m.role,
-      content: m.text,
-    })),
-  ]
-  const { ok, status, json, raw } = await fetchJson(
-    'https://api.llm7.io/v1/chat/completions',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: payload.signal,
-      body: JSON.stringify({
-        model: 'gpt-oss:20b',
-        messages,
-        temperature: typeof payload.temperature === 'number' ? payload.temperature : 0.7,
-        // This endpoint's reasoning can consume part of the output allowance.
-        max_tokens: Math.min(Math.max(payload.maxTokens || 600, 1000), 2400),
-      }),
-    },
-  )
+    ...payload.messages.map(({ role, text }) => ({ role: role === 'ai' ? 'assistant' : role, content: text })),
+  ];
+  const { ok, status, json, raw } = await fetchJson(provider.url, {
+    method: 'POST', signal: payload.signal, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: provider.model, messages, temperature: payload.temperature,
+      max_tokens: Math.min(Math.max(payload.maxTokens || provider.defaultTokens, provider.minTokens), provider.maxTokens) }),
+  });
   if (!ok) {
-    const detail = geminiErrorText(json, raw)
-    if (status === 402 || status === 403 || status === 429) {
-      const retryMatch = detail.match(/retry (?:after|in) (\d+)\s*(?:s|seconds?)/i)
-      state.llm7DisabledUntil = Date.now() + Math.max(Number(retryMatch?.[1] || 30), 15) * 1000
+    const detail = geminiErrorText(json, raw);
+    if ([402, 403, 429].includes(status)) {
+      const retry = detail.match(/retry (?:after|in) (\d+)\s*(?:s|seconds?)/i);
+      state[provider.cooldown] = Date.now() + Math.max(Number(retry?.[1] || provider.retrySeconds), 15) * 1000;
     }
-    throw new Error(`LLM7 ${status}: ${detail}`)
+    throw new Error(`${provider.name} ${status}: ${detail}`);
   }
-  return compatibleReply(json, 'llm7:gpt-oss-20b')
+  return compatibleReply(json, provider.name);
 }
 
-export async function callPollinations(payload) {
-  if (Array.isArray(payload.images) && payload.images.length) {
-    // The keyless endpoint is text-only. Refuse rather than hallucinate a photo description.
-    throw new Error('Keyless provider does not support images')
-  }
-  if (Date.now() < state.pollinationsDisabledUntil) throw new Error('Keyless provider cooling down')
-
-  const messages = [
-    ...(payload.system ? [{ role: 'system', content: payload.system }] : []),
-    ...(payload.messages || []).map((m) => ({ role: m.role === 'ai' ? 'assistant' : m.role, content: m.text })),
-  ]
-  const { ok, status, json, raw } = await fetchJson(
-    'https://text.pollinations.ai/openai',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: payload.signal,
-      body: JSON.stringify({
-        model: 'openai',
-        messages,
-        temperature: typeof payload.temperature === 'number' ? payload.temperature : 0.7,
-        max_tokens: Math.min(Math.max(payload.maxTokens || 500, 64), 1200),
-      }),
-    },
-  )
-  if (!ok) {
-    const detail = geminiErrorText(json, raw)
-    const retryMatch = detail.match(/retry after (\d+)\s*s/i)
-    const retrySeconds = retryMatch ? Number(retryMatch[1]) : 0
-    if (status === 402 || status === 429 || status === 403) {
-      state.pollinationsDisabledUntil = Date.now() + Math.max(retrySeconds, 15) * 1000
-    }
-    throw new Error(`Keyless provider ${status}: ${detail}`)
-  }
-  return compatibleReply(json, 'pollinations')
-}
+export const callLlm7 = payload => requestText(payload, llm7);
+export const callPollinations = payload => requestText(payload, pollinations);
