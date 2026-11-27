@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, limit, query, runTransaction, serverTimestamp, where } from 'firebase/firestore';
+import { collection, doc, getDocFromServer, getDocs, limit, query, runTransaction, serverTimestamp, where } from 'firebase/firestore';
 import { COLLECTIONS } from '../firebase/collections.js';
 
 // Hex keeps the owner prefix unambiguous even when an auth UID contains punctuation.
@@ -23,31 +23,53 @@ export async function saveMeetupAttendance(db, { userId, meetupDocId, meetupId, 
     eventRef = matches.docs[0]?.ref || doc(db, COLLECTIONS.MEETUPS, meetupId);
   }
   const receipt = doc(db, COLLECTIONS.RSVPS, attendanceId(userId, eventRef.id));
-  return runTransaction(db, async tx => {
+  let observed;
+  const attempt = () => runTransaction(db, async tx => {
     const [event, member] = await Promise.all([tx.get(eventRef), tx.get(receipt)]);
-    if (!event.exists()) {
-      if (joining) throw new Error('This meetup is no longer available.');
-      if (member.exists()) tx.delete(receipt);
-      return { joined: false, changed: member.exists(), participantCount: 0 };
-    }
-    const data = event.data();
-    if (data.attendanceVersion !== 2) throw new Error('Attendance for this older meetup is being updated.');
-    const count = data.participantCount;
-    if (!Number.isSafeInteger(count) || count < 0) throw new Error('The attendance count needs to be checked.');
-    if (member.exists() === joining) return { joined: joining, changed: false, participantCount: count };
-    if (joining && data.status !== 'published') throw new Error('This meetup is closed for registration.');
-    if (joining && Number.isInteger(data.capacity) && count >= data.capacity) {
-      return { joined: false, changed: false, full: true, participantCount: count };
-    }
-
-    const nextCount = count + (joining ? 1 : -1);
-    if (nextCount < 0) throw new Error('The attendance count needs to be checked.');
-    if (joining) {
-      tx.set(receipt, { userId, meetupDocId: eventRef.id, meetupId: typeof data.eventId === 'string' && data.eventId ? data.eventId : eventRef.id, createdAt: serverTimestamp() });
-    } else {
-      tx.delete(receipt);
-    }
-    tx.update(eventRef, { participantCount: nextCount });
-    return { joined: joining, changed: true, participantCount: nextCount };
+    observed = { count: event.data()?.participantCount, joined: member.exists() };
+    return updatePlace(tx, event, member, joining, userId);
   });
+
+  // Rules can see a competing commit before Firestore checks the transaction
+  // version. Retry a denial only when a server read confirms attendance changed.
+  for (let retry = 0; ; retry++) {
+    observed = undefined;
+    try {
+      return await attempt();
+    } catch (error) {
+      if (error.code !== 'permission-denied' || !observed || retry >= 3) throw error;
+      const [latest, member] = await Promise.all([getDocFromServer(eventRef), getDocFromServer(receipt)]);
+      if (latest.data()?.participantCount === observed.count && member.exists() === observed.joined) throw error;
+    }
+  }
+}
+
+function updatePlace(tx, event, member, joining, userId) {
+  const eventRef = event.ref;
+  const receipt = member.ref;
+  if (!event.exists()) {
+    if (joining) throw new Error('This meetup is no longer available.');
+    if (member.exists()) tx.delete(receipt);
+    return { joined: false, changed: member.exists(), participantCount: 0 };
+  }
+  const data = event.data();
+  if (data.attendanceVersion !== 2) throw new Error('Attendance for this older meetup is being updated.');
+  const count = data.participantCount;
+  if (!Number.isSafeInteger(count) || count < 0) throw new Error('The attendance count needs to be checked.');
+  if (member.exists() === joining) return { joined: joining, changed: false, participantCount: count };
+  if (joining && data.status !== 'published') throw new Error('This meetup is closed for registration.');
+  if (joining && Number.isInteger(data.capacity) && count >= data.capacity) {
+    return { joined: false, changed: false, full: true, participantCount: count };
+  }
+
+  const nextCount = count + (joining ? 1 : -1);
+  if (nextCount < 0) throw new Error('The attendance count needs to be checked.');
+  if (joining) {
+    const code = typeof data.eventId === 'string' && data.eventId ? data.eventId : eventRef.id;
+    tx.set(receipt, { userId, meetupDocId: eventRef.id, meetupId: code, createdAt: serverTimestamp() });
+  } else {
+    tx.delete(receipt);
+  }
+  tx.update(eventRef, { participantCount: nextCount });
+  return { joined: joining, changed: true, participantCount: nextCount };
 }
