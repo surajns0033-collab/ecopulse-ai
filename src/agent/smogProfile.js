@@ -7,7 +7,10 @@ function detailIsDenied(text, match) {
 }
 
 function hasAffirmedDetail(text, pattern) {
-  return Array.from(text.matchAll(pattern)).some((match) => !detailIsDenied(text, match));
+  for (const match of text.matchAll(pattern)) {
+    if (!detailIsDenied(text, match)) return true;
+  }
+  return false;
 }
 
 function cookingFuel(text) {
@@ -26,6 +29,12 @@ function cookingFuel(text) {
     gas = 'gas stove';
   }
   return gas;
+}
+
+export function communitySetting(text) {
+  if (/\b(?:our school|school community|school assembly|for (?:the |a )?school)\b|हमारा स्कूल|आमची शाळा/iu.test(text)) return 'school';
+  if (/\b(?:housing society|residents['’]? association|apartment community|our neighbou?rhood|community (?:smog|clean.air) plan)\b|हमारी सोसाइटी|आमची सोसायटी/iu.test(text)) return 'neighbourhood';
+  return null;
 }
 
 // Only use details the user actually provided. Missing fields aren't lifestyle facts.
@@ -54,12 +63,12 @@ export function parseSmogProfile(message) {
     hasAffirmedDetail(text, /\b(?:older adult|elderly|senior|grandparent)s?\b|बुज़ुर्ग|बुजुर्ग|वृद्ध/gu) && 'older adults',
     hasAffirmedDetail(text, /\b(?:asthma|lung condition|heart condition|respiratory condition|copd)\b|अस्थमा|दमा/gu) && 'heart/lung sensitivity',
   ].filter(Boolean);
-  return { commute, routine, cooking, filtration, vulnerable };
+  return { commute, routine, cooking, filtration, vulnerable, community: communitySetting(text) };
 }
 
 export function isSmogProfile(message) {
   if (/^(?:skip|not sure|(?:i )?don['’]?t know|give me a general plan)[.!?]*$/i.test(message.trim())) return true;
   if (/^(?:how|what|why|when|where|can you|could you|do i|should i)\b/i.test(message.trim())) return false;
-  const { commute, routine, cooking, filtration, vulnerable } = parseSmogProfile(message);
-  return Boolean(commute || routine || cooking || filtration || vulnerable.length);
+  const { commute, routine, cooking, filtration, vulnerable, community } = parseSmogProfile(message);
+  return Boolean(commute || routine || cooking || filtration || vulnerable.length || community);
 }

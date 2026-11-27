@@ -1,19 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chromium } from 'playwright-core';
-import { preview } from 'vite';
+import { auditAccessibility, openBrowser } from './browserSupport.mjs';
 
 test('Chat and Events share device-only attendance across tabs and refresh', { timeout: 90000 }, async t => {
-  const server = await preview({ preview: { host: '127.0.0.1', port: 0 }, logLevel: 'error' });
-  t.after(() => server.close());
-  const origin = 'http://127.0.0.1:' + server.httpServer.address().port;
-  const browser = await chromium.launch({ channel: 'chrome', headless: true });
-  t.after(() => browser.close());
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
-  await context.route('**/*', route => {
-    const url = new URL(route.request().url());
-    return url.origin === origin ? route.continue() : route.abort();
-  });
+  const { context, origin } = await openBrowser(t);
   async function openGuest() {
     const page = await context.newPage();
     await page.goto(origin + '/meetups');
@@ -22,7 +12,19 @@ test('Chat and Events share device-only attendance across tabs and refresh', { t
   }
 
   const first = await openGuest();
-  await first.getByRole('button', { name: 'Create Meetup', exact: true }).first().click();
+  const create = first.getByRole('button', { name: 'Create Meetup', exact: true }).first();
+  await create.click();
+  const dialog = first.getByRole('dialog', { name: /Create Eco Meetup/ });
+  await dialog.waitFor();
+  assert.equal(await first.getByLabel('Event Title').evaluate(el => el === document.activeElement), true);
+  await first.keyboard.press('Shift+Tab');
+  await first.keyboard.press('Shift+Tab');
+  assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true);
+  await first.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'hidden' });
+  assert.equal(await create.evaluate(el => el === document.activeElement), true);
+  await create.press('Enter');
+  await auditAccessibility(first, 'Create meetup dialog');
   await first.getByLabel('Event Title').fill('Neighbourhood clean-air walk');
   await first.getByLabel('Location / City').fill('Pune');
   await first.getByLabel('Places available').fill('1');

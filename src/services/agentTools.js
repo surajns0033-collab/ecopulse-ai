@@ -6,8 +6,9 @@ import {
 } from 'firebase/firestore';
 import { isFirebaseConfigured } from '../firebase/config';
 import { db } from '../firebase/firestoreClient';
-import { COLLECTIONS, generateReportId } from '../firebase/collections';
-import { getAirQuality, getWeather } from './environmentalData';
+import { COLLECTIONS } from '../firebase/collections';
+import { reportsOnDevice, saveReport } from './reportRecords.js';
+import { getCurrentAirQuality, getWeather } from './environmentalData';
 import { analyzeEnvironmentalImage as geminiAnalyze } from './geminiService';
 import { getAuthorityBundle, isIndianPlace, matchesDirectoryCity } from './authorityDirectory';
 import { createMeetup, getNearbyMeetups, joinMeetup, cancelMeetupRSVP } from './meetups';
@@ -33,7 +34,6 @@ function writeLocal(key, value) {
 
 const STORAGE_KEYS = {
   POSTS: 'echopulse_local_posts',
-  REPORTS: 'echopulse_local_reports',
   DRAFTS: 'echopulse_local_drafts',
 };
 
@@ -58,7 +58,7 @@ export const tools = {
    */
   getEnvironmentalData: async ({ lat, lng, city }) => {
     const [aqi, weather] = await Promise.all([
-      getAirQuality(lat, lng, city).catch(() => null),
+      getCurrentAirQuality(lat, lng, city).catch(() => null),
       getWeather(lat, lng).catch(() => null),
     ]);
     return { aqi, weather };
@@ -170,36 +170,7 @@ export const tools = {
   /**
    * Create an environmental report
    */
-  createEnvironmentalReport: async ({ userId, title, description, category, location, photoUrl, lat, lng }) => {
-    const reportId = generateReportId();
-    const reportData = {
-      reportId,
-      userId,
-      title,
-      description,
-      category,
-      location,
-      photoUrl: photoUrl || null,
-      lat: lat || null,
-      lng: lng || null,
-      status: 'submitted',
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    };
-
-    return firestoreOrLocal(
-      async () => {
-        const docRef = await addDoc(collection(db, COLLECTIONS.REPORTS), reportData);
-        return { reportId, docId: docRef.id };
-      },
-      () => {
-        const reports = readLocal(STORAGE_KEYS.REPORTS);
-        reports.push({ id: reportId, ...reportData, createdAt: new Date().toISOString() });
-        writeLocal(STORAGE_KEYS.REPORTS, reports);
-        return { reportId, docId: reportId };
-      }
-    );
-  },
+  createEnvironmentalReport: details => saveReport(isFirebaseConfigured ? db : null, details),
 
   /**
    * Analyze an environmental image
@@ -574,7 +545,7 @@ export const tools = {
    * Get a personalized daily action plan
    */
   getDailyActionPlan: async ({ lat, lng }) => {
-    const aqiData = await getAirQuality(lat, lng);
+    const aqiData = await getCurrentAirQuality(lat, lng);
 
     const basePlan = [
       { icon: '🌱', action: 'Check local AQI before planning outdoor activity.' },
@@ -608,7 +579,7 @@ export const tools = {
     }
     const mine = (await readLocalAttendance()).filter(row => row.userId === userId);
     return {
-      reportsSubmitted: readLocal(STORAGE_KEYS.REPORTS).filter(row => row.userId === userId).length,
+      reportsSubmitted: reportsOnDevice(localStorage, userId).length,
       eventsJoined: joinedMeetupIds(mine).size,
     };
   },

@@ -1,64 +1,54 @@
-# EcoPulse AI — code submission verification
+# Verifying EcoPulse AI
 
-## Hack2Skill PromptWars Virtual — Challenge 06
+EcoPulse helps families, schools and neighbourhoods make daily choices during winter smog. A confirmed city, the source time of the air reading and the user's stated routine determine the plan. [Urban Air Quality Assistant brief](https://promptwars.in/promptwarsVirtual.html)
 
-EcoPulse helps households plan around winter smog for the [Urban Air Quality Assistant brief](https://promptwars.in/promptwarsVirtual.html). In Guest Chat, try:
+## Try the household and school flows
+
+Open the live app in a fresh browser session, select **Continue as Guest**, and enter either request.
 
 > Make a smog action plan for Navi Mumbai, Maharashtra, India. I drive to work, cook with gas, and have a child.
 
-> Suggest a low-emission daily routine for Bengaluru, Karnataka, India. I take the metro and cook with induction.
+> Make a smog plan for our school in Delhi, India.
 
-Compare the city and commute/cooking advice, not a fixed AQI number. You can also use **Set my city to …**, choose **Smog Action Plan**, then share a routine or say **skip**. Each section distinguishes reducing exposure from reducing emissions at the source. The plan uses explicit details and environmental data rather than model guesses; the existing generative chat handles open-ended questions and photo analysis.
+The household plan connects commute and cooking choices to their effects. The school plan addresses outdoor assembly, exercise and idling at pickup. The default source provides modeled U.S. AQI. The plan shows its source time in UTC and searches the next 24 hours for a lower-exposure window between 06:00 and 18:00 local time. It labels missing or stale readings and gives a warning if the lowest daytime forecast still poses a risk.
 
-`src/agent/smogPlan.js` builds the plan from the stated lifestyle and verified city. The default Open-Meteo/CAMS source provides **modeled U.S. AQI**, not a CPCB station measurement. An undated or older-than-two-hours reading is not used as current. The plan searches the next 24 hours for the lowest modeled AQI between 06:00 and 18:00 local time and warns if even that slot is unhealthy. With no current reading, it still gives general guidance without inventing a value.
+Select **Explain these choices with AI** on either plan. The server-side AI proxy receives that plan's recommendations, their recorded impacts and the question. Each button remains attached to its original plan after another conversation turn. When the model is unavailable, Chat shows the recorded impacts. [Plan builder](../src/agent/smogPlan.js) · [AI explanation handler](../src/agent/environmentReplies.js)
 
-## Verification
+## Run the checks
 
-```sh
-npm test
-npm run lint
-npm run build
-```
+Use Node.js 24 LTS, version 24.12 or later, and install the lockfile with `npm ci`. The browser suite uses installed Google Chrome. The rule tests use Java 21 and the Firebase Auth and Firestore emulators. CI supplies those dependencies.
 
-| Rubric area | Evidence to review |
+| Command | Evidence |
 | --- | --- |
-| Code Quality | `smogPlan.js` separates plan rules from Chat routing. `server/chatRequest.js` keeps HTTP input validation separate from provider calls. |
-| Problem Statement Alignment | `tests/chatPlaces.test.js` covers city+routine in one message and verifies city corrections before using new data. `tests/smogPlan.test.js` covers different routines, sensitive households, escalating AQI thresholds, stale or unavailable readings, and forecast timing using synthetic data. |
-| Security | `tests/chatProxy.test.js` checks rejected requests, valid Guest and photo requests, search-history isolation and generic errors. Model credentials are server-side; use `GEMINI_API_KEY`, not a `VITE_` key. The endpoint still allows Guest access and these limits are not a distributed rate limiter. |
-| Efficiency | The environmental cache is bounded and expires data. Provider attempts share a deadline, photos are sent once per request to a provider, and Firestore loads after app entry rather than on the signed-out landing page. |
-| Testing | The Node tests use fixtures and mock external providers; they do not require paid calls, credentials or a live database. |
-| Accessibility | Chat has a named message log, a separate progress announcement, visible keyboard focus and reduced-motion support. Tab to controls and use Enter to send or Shift+Enter for a new line. |
+| `npm run lint` | Oxlint checks the repository and treats warnings as failures. |
+| `npm run test:coverage` | Node tests exercise profile parsing, city corrections, environmental providers, the request cache, server request validation and AI responses. |
+| `npm run benchmark` | Eight fixed smog scenarios compare advice and impact explanations. A ninth check expects three environmental requests for the first plan, zero additional requests on repeat and three after cache expiry. These cases also run in the Node suite. |
+| `npm audit --audit-level=high` | Checks the locked dependency tree against published advisories. |
+| `npm run build` | Builds the production app. The photo workflow and on-device vision library load on demand. |
+| `npm run test:browser` | Tests a device-only production build with synthetic AQI, weather, geocoding and model responses. Covers Guest entry and exit, keyboard navigation, independent user sessions, private report links, AI plan selection and event registration across tabs. |
+| `npm run test:rules` | Exercises owner-only report access, public post fields, organizer permissions, simultaneous event registration, last-seat contention and older private records in the emulators. |
 
-**Earlier local run at `3b758da8`.** The suite passed 57 tests, the production build succeeded and lint reported 16 warnings. The offline Chromium smoke test uses mocked readings and geocoding, so it does not measure live provider availability.
+For the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` or start from a clean checkout with no Firebase client credentials. Run `npm run build` and then `npm run test:browser`. The tests create a local Vite preview and block external browser traffic except for the configured test fixtures.
 
-**Landing-page measurement:** Two local production builds with the same settings, before and after deferring Firestore, loaded **253.6 KiB → 117.6 KiB** of compressed JavaScript before Guest entry (**53.6% less**). This sums gzip sizes of the JavaScript requested by Chromium on a 390 px viewport; it is not a live latency or leaderboard score.
+**Verified run.** All 72 Node tests, four Chrome tests and ten emulator tests passed. Lint reported zero warnings and zero errors. The dependency audit reported zero known vulnerabilities in the installed tree. The production build succeeded and Vite reported two minified JavaScript chunks over 500 kB. The automated accessibility scans covered sign-in, Chat at 320 pixels, the account menu, a private report and the meetup dialog. They check WCAG 2.0/2.1 A and AA rules supported by axe. Screen-reader usability also benefits from manual testing. [Verification run](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46066554087)
 
-## Submission checks
+## Where to investigate a regression
 
-Use Node.js 22.12 or later on a supported LTS release. Install from the lockfile with `npm ci`.
-
-| Rubric area | How to check EcoPulse |
+| Symptom | First checks |
 | --- | --- |
-| Code quality (high) | `npm run verify` runs lint, the Node suite and the production build. Profile parsing, advice generation and environmental data remain independently testable. |
-| Problem statement alignment (high) | `npm run benchmark` exercises location, commute, cooking, children's exposure, indoor air, community recommendations and missing or stale AQI. Each of the six fixed household or community scenarios checks the advice and five explanations of direct impact. |
-| Security (medium) | With Java 21 installed, `npm run test:rules` starts local Auth and Firestore emulators for an isolated demo project. It tests owner edits, privacy, allowed public post fields and Guest permissions. The regular Node suite covers the chat endpoint's input limits and generic errors. |
-| Efficiency (medium) | The seventh benchmark check counts data requests. It expects three for a first plan, zero additional calls for an immediate repeat and three after the cache expires. The repeated plan must match the first. |
-| Testing (low) | `npm run test:coverage` reports native Node coverage. The cooking regression covers a missing appliance, coordinated denials, a later affirmative mention and Hindi input. The verification workflow also runs the build and emulator checks. |
-| Accessibility (low) | Check Guest Chat, Community and Events at a 390 px viewport. Try keyboard input, active navigation, filter labels, the chat log and reply announcements. Mobile zoom is enabled and the dark green used for active text contrasts with white at 5.02:1. |
+| The city, routine or risk level is wrong | Reproduce the turn in `tests/chatPlaces.test.js` and the matching household or school in `tests/submissionScenarios.test.js`. Check the reading's timestamp and the forecast's time zone. |
+| Chat explains a different plan or an unrelated detail | The chosen plan supplies its own actions to the AI handler. The Chrome test selects an earlier school plan after creating a neighbourhood plan and checks the single outgoing message and offline response. |
+| A private report fails to open | Check both its document ID and its public-facing code under the owner's account. Emulator tests also read these as a second user. Device-only checks include older saved records. |
+| Provider requests or load size increase | The benchmark counts environmental requests independently of network latency. The production build lists compressed asset sizes. |
+| The keyboard loses focus or text becomes hard to read | Reproduce the screen in Chrome with reduced motion. The suite checks Escape, reverse Tab, focus return and every AQI badge's text contrast. |
 
-Before the cooking correction, the published code at `3b758da8` passed five of the six fixed smog scenarios. A family saying it cooked with gas and had no induction stove received an induction profile. The corrected parser passed all six scenarios in a browser fixture run. It gives that household gas-specific ventilation and burner-use advice.
-
-The deterministic plan and generative follow-up are separate paths. In a live Guest Chat check, the model-backed reply explained that damp dusting reduces indoor particle exposure and carpooling reduces travel emissions. The proxy identified its provider and the answer appeared in the chat log.
-
-Start with incorrect advice, private data access and broken checks when triaging a new revision. The longer-term cleanup is to separate photo and report handling from the main chat orchestrator.
+The chat router delegates to modules for environmental questions, general replies, civic reports, photos and community actions. Cloud and device report lookup share one service. The server checks request sizes, roles, options and photo signatures before forwarding requests. The Firestore SDK's gRPC dependency is pinned to a patched version, with its compatibility exercised by the emulator suite. [Chat router](../src/agent/agentOrchestrator.js) · [Report storage](../src/services/reportRecords.js) · [Request validation](../server/chatRequest.js)
 
 ## Meetup registration
 
-In Events or a Chat event card, **Join event** reserves one place. **Cancel my place** releases it. The Firestore transaction updates the public count and the signed-in person's private registration together. A full or closed event gives an explicit result. An anonymous Firebase account can join. Publishing requires an email or Google account. In a build using device-only sign-in, the confirmation identifies local saves.
+In Events or a Chat event card, **Join event** reserves one place and **Cancel my place** releases it. The Firestore transaction updates the public count and the attendee's private registration together. Anonymous Firebase accounts can join. Publishing a cloud event requires an email or Google account. Device-only builds identify local saves.
 
-- `npm run test:rules` exercises simultaneous joins, the last place, repeated requests, refresh reads, private receipts, rejected partial writes and reconciliation of older records.
-- `npm run build` followed by `npm run test:meetups-ui` runs Chrome on a 390-pixel viewport against a device-only build. It joins from Chat, refreshes Events, cancels and checks the count in a second tab. Use a build with `VITE_FIREBASE_API_KEY=demo-key` for this check.
-- The published-event query uses the collection index on `meetups.status` and `meetups.date` in `firestore.indexes.json`.
+The published-event query uses the collection index on `meetups.status` and `meetups.date` in `firestore.indexes.json`.
 
 ### Existing Firestore installations
 

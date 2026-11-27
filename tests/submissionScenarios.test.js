@@ -50,7 +50,18 @@ const scenarios = [
     aqi: 166,
     expected: ["public transport; gas stove", "gas stove runs"],
     excluded: ["public transport; induction/electric", "Use induction when practical"],
-  }
+  },
+  {
+    name: "Delhi school during very unhealthy smog",
+    city: "Delhi", message: "Plan for our school assembly.", aqi: 208,
+    expected: ["Move outdoor assembly", "engines at the school gate", "cuts emissions near pupils"],
+  },
+  {
+    name: "Pune residents without a current reading or a stated cooking fuel",
+    city: "Pune", message: "Our housing society needs a community smog plan.", aqi: null,
+    expected: ["Current AQI:** unavailable", "shared trips with neighbours", "collection or composting", "if one is available"],
+    excluded: ["Induction avoids", "gas stove runs", "Move outdoor assembly"],
+  },
 ];
 
 for (const scenario of scenarios) {

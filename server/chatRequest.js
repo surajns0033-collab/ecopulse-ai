@@ -56,12 +56,30 @@ function readMessages(messages) {
   return history
 }
 
+function matchesImageType(mimeType, base64) {
+  // Inspect a bounded prefix, leaving the original payload intact for the provider.
+  const header = Buffer.from(base64.slice(0, 512), 'base64')
+  if (mimeType === 'image/png') return header.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+  if (mimeType === 'image/jpeg') return header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff
+  if (mimeType === 'image/webp') return header.toString('ascii', 0, 4) === 'RIFF' && header.toString('ascii', 8, 12) === 'WEBP'
+  if (header.length < 16 || header.toString('ascii', 4, 8) !== 'ftyp') return false
+
+  // HEIC and HEIF share the ISO media container. The brand may be the major
+  // brand or a compatible brand following the four-byte minor version.
+  const size = header.readUInt32BE(0)
+  const end = Math.min(size, header.length)
+  const brands = [header.toString('ascii', 8, 12)]
+  for (let i = 16; i + 4 <= end; i += 4) brands.push(header.toString('ascii', i, i + 4))
+  return size >= 16 && brands.some(brand => /^(?:hei[csxm]|hev[csxm]|mif1|msf1)$/.test(brand))
+}
+
 function readImages(images) {
   requireValid(Array.isArray(images) && images.length <= 1, 'Attach at most one supported photo')
   return images.map((image) => {
     const valid = record(image) && Object.keys(image).every((key) => key === 'mimeType' || key === 'base64') && IMAGE_TYPES.has(image.mimeType) &&
       typeof image.base64 === 'string' && image.base64.length <= MAX_IMAGE_CHARS && image.base64.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(image.base64)
     requireValid(valid, 'Use a supported photo within the attachment size limit')
+    requireValid(matchesImageType(image.mimeType, image.base64), 'The photo format must match the selected file type')
     return { mimeType: image.mimeType, base64: image.base64 }
   })
 }

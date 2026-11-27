@@ -50,7 +50,7 @@
 
 **EcoPulse AI** is a mobile-first Progressive Web App and civic-environmental assistant built with React, Vite, Firebase, and a multi-provider AI proxy. It combines natural-language reasoning with real-time environmental telemetry, verified municipal/forest authority routing, on-device vision & OCR fallbacks, and a privacy-minimized community channel.
 
-Instead of leaving users with generic chatbot replies or unverified contact details, EcoPulse AI routes queries through an intent engine to live APIs, verified official `.gov.in` / municipal directories, and server-side grounded search—while keeping all API secrets off the client bundle.
+The Chat router uses environmental APIs for current readings, verified directories for municipal contacts and a server-side proxy for generative answers and web search. AI and search provider credentials stay on the server.
 
 ---
 
@@ -68,7 +68,7 @@ Instead of leaving users with generic chatbot replies or unverified contact deta
 | Area | What It Does | Powered By |
 | :--- | :--- | :--- |
 | **Conversational Assistant** | Natural-language chat in **English, Hindi, and Hinglish** with automatic language detection, daily-life civic guidance, and deterministic fallback responses. | Gemini AI, OpenRouter Free, `fallbackBrain.js` |
-| **Personalized Smog Action Plan** | Combines a verified city and the user's commute, routine, cooking, and filtration details. Explains which steps reduce exposure and which reduce emissions. | `smogPlan.js`, city lookup, Open-Meteo AQI forecast |
+| **Personalized Smog Action Plan** | Uses the confirmed city, household routine and upcoming daytime forecast. Families and schools can select **Explain these choices with AI** to ask how the recommended steps affect exposure and emissions. | `smogPlan.js`, Open-Meteo, server-side AI proxy |
 | **Air Quality & Weather** | Shows current modeled U.S. AQI, pollutant estimates, and weather. The smog plan displays the AQI source time and does not use stale or undated readings as current. | Open-Meteo Air Quality & Forecast APIs |
 | **Typo-Tolerant Global Maps** | Resolves misspelled or landmark-level locations (e.g., reserves, beaches, neighborhoods) into verified coordinates and Google Maps deep links. | Open-Meteo, Photon, Nominatim (OSM) |
 | **Civic Grievance & Email Routing** | Identifies the incident jurisdiction, links official contacts where available, and prepares an editable draft. Opening Gmail requires confirmation and never sends the draft. | `authorityDirectory.js`, `agentTools.js` |
@@ -82,13 +82,13 @@ Instead of leaving users with generic chatbot replies or unverified contact deta
 
 EcoPulse directly addresses the challenge with:
 
-- **Severe winter-smog mode** driven by live AQI, PM2.5, PM10, temperature, and wind.
+- **Severe winter-smog advice** uses the source time, current AQI category and wind. The AQI card also shows available pollutant estimates.
 - **Lifestyle personalization** for commute mode, work/school/outdoor routine, cooking fuel, air filtration, children, older adults, and heart/lung sensitivity.
 - **Low-emission alternatives** such as public transit, carpooling, trip batching, anti-idling, and zero-tailpipe active travel when exposure conditions allow.
 - **Indoor-air hacks** covering a cleaner-air room, HEPA use, damp cleaning, ventilation timing, cooking exhaust, and avoidance of ozone/ionizer devices.
-- **24-hour AQI planning** that identifies the forecast's lowest-AQI outdoor window.
-- **Action → direct impact** cards that explain both exposure and emissions outcomes without inventing quantified savings.
-- **Community-scale action** for no-burning, no-idling, hotspot evidence, and verified civic reporting.
+- **24-hour AQI planning** finds the lowest modeled daytime value and warns when that period still poses a risk for a school or a sensitive household.
+- **Direct impact** under each action explains what the choice changes. An optional GenAI follow-up uses the selected plan's advice and impacts, including when the user returns to an earlier plan.
+- **Community action** covers school assemblies and pickup queues, neighbourhood shared trips, garden waste collection, and civic reporting.
 - **Private lifestyle details** are used to tailor the plan, not stored in shared community documents.
 
 ---
@@ -146,7 +146,10 @@ ecopulse-ai/
 │   └── bot-logo.svg                 # EcoPulse logo and browser tab icon
 ├── src/
 │   ├── agent/
-│   │   ├── agentOrchestrator.js     # Central intent execution, city extraction & context injection
+│   │   ├── agentOrchestrator.js     # Dispatches Chat turns to the matching handler
+│   │   ├── smogPlan.js              # Household, school and neighbourhood advice
+│   │   ├── environmentReplies.js    # AQI, weather and selected-plan explanations
+│   │   ├── photoReports.js          # On-demand photo report workflow
 │   │   ├── fallbackBrain.js         # Deterministic offline/error fallback responses
 │   │   └── intentEngine.js          # Priority-ordered English/Hindi/Hinglish intent classifier
 │   ├── components/
@@ -162,7 +165,8 @@ ecopulse-ai/
 │   ├── contexts/
 │   │   ├── AppContext.js            # Shared app context and hook
 │   │   ├── AppProvider.jsx          # Selected city & private Chat session state
-│   │   └── AuthContext.jsx          # Firebase Google, Email-link & Anonymous auth
+│   │   ├── AuthContext.jsx          # Shared authentication hook
+│   │   └── AuthProvider.jsx         # Google, email-link and Guest sessions
 │   ├── firebase/
 │   │   ├── collections.js           # Firestore collection helpers
 │   │   └── config.js                # Firebase initialization
@@ -176,7 +180,8 @@ ecopulse-ai/
 │   │   ├── agentTools.js            # Verified contacts, reports, drafts & meetups store
 │   │   ├── aiClient.js              # Client wrapper for /api/ai/chat
 │   │   ├── authorityDirectory.js    # Official municipal & forest authority lookup
-│   │   ├── environmentalData.js     # Open-Meteo, Photon & Nominatim integrations
+│   │   ├── environmentalData.js     # AQI, weather, freshness checks and request cache
+│   │   ├── reportRecords.js         # Owner-scoped cloud and device reports
 │   │   ├── geminiService.js         # Gemini model chain & system instructions
 │   │   ├── imageOcr.js              # Opt-in Tesseract.js OCR (EN/HI/MR)
 │   │   └── onDeviceVision.js        # Private on-device CLIP image classifier
@@ -197,7 +202,7 @@ ecopulse-ai/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- **Node.js 22.12 or later on a supported LTS release** and **npm**
+- **Node.js 24 LTS (24.12 or later in the 24.x series)** and **npm**
 - A **Google Gemini API key** ([Google AI Studio](https://aistudio.google.com/apikey)) is optional for model-powered replies. The smog plan and automated tests do not require one.
 - A **Firebase project** (optional for local UI testing; required for cloud auth & Firestore community)
 
@@ -282,8 +287,10 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run static checks with **Oxlint** |
 | `npm test` | Run the Node regression suite with mocked external services |
-| `npm run benchmark` | Check six smog scenarios and the environmental request count with fixed inputs |
+| `npm run benchmark` | Check eight smog scenarios and the environmental request count with fixed inputs |
 | `npm run test:coverage` | Measure Node test coverage |
+| `npm run test:browser` | Exercise Guest Chat, plan explanations, private reports, event registration and keyboard access in Chrome after a device-only build |
+| `npm audit --audit-level=high` | Check installed versions against published security advisories |
 | `npm run test:rules` | Check authenticated access in local Firebase Auth and Firestore emulators (Java 21 required) |
 | `npm run verify` | Run lint, Node tests and the production build |
 
@@ -292,9 +299,9 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 ## Verification
 
 - `npm test` covers city changes, stale AQI, severe-smog advice, Guest chat, photo request validation, and provider timeouts. It runs with mocked providers and requires no API keys.
-- **Production build passed** (`npm run build`). An offline Chromium check also covered keyboard navigation, reduced motion, and switching cities in the smog-plan flow.
+- CI runs the production build, dependency audit, Chrome accessibility checks and Auth/Firestore emulator tests. To reproduce the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` and run `npm run test:browser`.
 
-Try in Guest Chat: “Make a smog action plan for Navi Mumbai, Maharashtra, India. I take the train and cook with gas.” See the [verification guide](docs/quality-verification.md) for more example prompts and the checks behind these results.
+In Guest Chat, enter “Make a smog plan for our school in Delhi, India.” Select **Explain these choices with AI** to compare reducing exposure with reducing emissions. More prompts and reproducible checks are in the [verification guide](docs/quality-verification.md).
 
 ---
 

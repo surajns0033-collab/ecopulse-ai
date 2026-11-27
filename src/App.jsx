@@ -1,7 +1,8 @@
 // App.jsx — root component with routing and providers
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useMatch } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AuthProvider } from './contexts/AuthProvider';
+import { useAuth } from './contexts/AuthContext';
 import { AppProvider } from './contexts/AppProvider';
 import LandingPage from './pages/LandingPage';
 

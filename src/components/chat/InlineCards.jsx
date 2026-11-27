@@ -1,5 +1,5 @@
 // InlineCards — renders all card types inline in chat, matching reference UI + Google Maps
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { MapPin, Calendar, Users, CheckCircle, AlertCircle, Zap, Droplets, ExternalLink, Navigation } from 'lucide-react';
 import { getAQICategory, getGoogleMapsUrl } from '../../services/environmentalData';
 import { MEETUP_CATEGORIES, REPORT_CATEGORIES } from '../../firebase/collections';
@@ -9,6 +9,7 @@ import { useMeetups } from '../meetups/useMeetups';
 
 // ===== AQI GAUGE — multi-color gradient arc matching reference screenshot =====
 function AQIGauge({ aqi, scale, categoryLabel, categoryColor, categoryBg }) {
+  const gradientId = useId();
   const radius = 52;
   const circumference = Math.PI * radius;
   const pct = Math.min(1, Math.max(0.05, (aqi || 0) / 300));
@@ -16,9 +17,10 @@ function AQIGauge({ aqi, scale, categoryLabel, categoryColor, categoryBg }) {
 
   return (
     <div className="aqi-gauge-side">
-      <svg width="136" height="84" viewBox="0 0 136 84" className="aqi-gauge-svg">
+      <svg width="136" height="84" viewBox="0 0 136 84" className="aqi-gauge-svg"
+        role="img" aria-label={`${scale || 'AQI'} ${aqi ?? 'unavailable'}`}>
         <defs>
-          <linearGradient id="aqiGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+          <linearGradient id={gradientId} x1="0%" y1="100%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#22c55e" />
             <stop offset="35%" stopColor="#eab308" />
             <stop offset="65%" stopColor="#f97316" />
@@ -37,7 +39,7 @@ function AQIGauge({ aqi, scale, categoryLabel, categoryColor, categoryBg }) {
         <path
           d={`M 16 74 A ${radius} ${radius} 0 0 1 120 74`}
           fill="none"
-          stroke="url(#aqiGradient)"
+          stroke={`url(#${gradientId})`}
           strokeWidth="12"
           strokeLinecap="round"
           strokeDasharray={`${dash} ${circumference}`}

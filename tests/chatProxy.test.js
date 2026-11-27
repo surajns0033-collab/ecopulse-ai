@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import { makeAiHandler } from '../server/aiCore.js';
+import { readChatRequest } from '../server/chatRequest.js';
 
 const handler = makeAiHandler({ GEMINI_API_KEY: 'test-gemini-key', TAVILY_API_KEY: 'test-search-key' });
 
@@ -190,4 +191,28 @@ test('upstream errors are not exposed in chat responses or health checks', async
   const health = await runRequest({ url: '/api/ai/health', method: 'GET' }, serve);
   assert.equal(health.status, 200);
   assert.deepEqual(health.result, { status: 'ok' });
+});
+
+test('photo headers must match their declared media type before anything is sent upstream', async t => {
+  const calls = t.mock.method(globalThis, 'fetch', assert.fail);
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jx2kAAAAASUVORK5CYII=';
+  for (const mimeType of ['image/jpeg', 'image/webp', 'image/heic', 'image/heif']) {
+    const reply = await chat({ messages: shortHistory, images: [{ mimeType, base64: png }] });
+    assert.equal(reply.status, 400);
+  }
+  assert.equal(calls.mock.callCount(), 0);
+});
+
+test('supported image headers retain their original bytes', async () => {
+  const headers = {
+    'image/jpeg': Buffer.from([255, 216, 255, 224]),
+    'image/webp': Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')]),
+    'image/heic': Buffer.from('00000018667479706d69663100000000686569636d696631', 'hex'),
+    'image/heif': Buffer.from('00000010667479706d69663100000000', 'hex'),
+  };
+  for (const [mimeType, data] of Object.entries(headers)) {
+    const image = { mimeType, base64: data.toString('base64') };
+    const request = await readChatRequest({ headers: chatHeaders, body: { messages: shortHistory, images: [image] } });
+    assert.deepEqual(request.images, [image]);
+  }
 });

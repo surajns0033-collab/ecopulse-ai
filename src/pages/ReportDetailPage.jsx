@@ -1,10 +1,11 @@
 // ReportDetailPage — full report details view
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { useAuth } from '../contexts/AuthContext';
+import { loadReport } from '../services/reportRecords.js';
 import { db } from '../firebase/firestoreClient';
-import { COLLECTIONS, REPORT_CATEGORIES, REPORT_STATUS } from '../firebase/collections';
-import { ArrowLeft, MapPin, Calendar, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { REPORT_CATEGORIES } from '../firebase/collections';
+import { MapPin, Calendar, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import Header from '../components/chat/Header';
 
@@ -26,38 +27,23 @@ function StatusBadge({ status }) {
 
 export default function ReportDetailPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
-  const [report, setReport] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { user, firebaseReady } = useAuth();
+  const userId = user.uid;
+  const [result, setResult] = useState(null);
+  const current = result?.id === id && result.userId === userId ? result : null;
+  const report = current?.report;
+  const error = current?.error;
+  const loading = !current;
 
   useEffect(() => {
-    async function fetchReport() {
-      try {
-        // Try fetching by Firestore doc ID first
-        const docRef = doc(db, COLLECTIONS.REPORTS, id);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          setReport({ id: snap.id, ...snap.data() });
-          return;
-        }
-        // Try by reportId field
-        const q = query(collection(db, COLLECTIONS.REPORTS), where('reportId', '==', id));
-        const qSnap = await getDocs(q);
-        if (!qSnap.empty) {
-          const d = qSnap.docs[0];
-          setReport({ id: d.id, ...d.data() });
-        } else {
-          setError('Report not found.');
-        }
-      } catch (err) {
-        setError('Could not load report: ' + err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchReport();
-  }, [id]);
+    let active = true;
+    loadReport(firebaseReady ? db : null, userId, id).then(report => {
+      if (active) setResult({ userId, id, report, error: report ? '' : 'Report not found for this account.' });
+    }).catch(() => {
+      if (active) setResult({ userId, id, error: 'Could not load this report. Check your connection and try again.' });
+    });
+    return () => { active = false; };
+  }, [firebaseReady, id, userId]);
 
   function formatDate(d) {
     if (!d) return 'Unknown';
@@ -72,15 +58,15 @@ export default function ReportDetailPage() {
   return (
     <div className="app-shell">
       <Header />
-      <div className="page-content">
+      <main className="page-content" aria-label="Report details">
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
-            <div className="spinner" />
+            <div className="spinner" role="status" aria-label="Loading report" />
           </div>
         )}
 
         {error && (
-          <div style={{ background: '#fee2e2', color: '#dc2626', borderRadius: 10, padding: 14, fontSize: 14 }}>
+          <div role="alert" style={{ background: '#fee2e2', color: '#991b1b', borderRadius: 10, padding: 14, fontSize: 14 }}>
             {error}
           </div>
         )}
@@ -91,7 +77,7 @@ export default function ReportDetailPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                 <div>
                   <div className="report-detail-label">Report ID</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: 16, fontWeight: 700, color: '#22c55e' }}>
+                  <div style={{ fontFamily: 'monospace', fontSize: 16, fontWeight: 700, color: '#166534' }}>
                     {report.reportId || report.id}
                   </div>
                 </div>
@@ -146,7 +132,7 @@ export default function ReportDetailPage() {
                 {report.status !== 'draft' && (
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                     <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#3b82f6', flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, color: '#1e293b' }}>Report received by EcoPulse</span>
+                    <span style={{ fontSize: 13, color: '#1e293b' }}>{report.localOnly ? 'Report saved on this device' : 'Report received by EcoPulse'}</span>
                   </div>
                 )}
                 {report.status === 'resolved' && (
@@ -159,7 +145,7 @@ export default function ReportDetailPage() {
             </div>
           </>
         )}
-      </div>
+      </main>
     </div>
   );
 }

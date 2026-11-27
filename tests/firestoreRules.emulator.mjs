@@ -10,6 +10,7 @@ import {
 
 import { attendanceId, joinedMeetupIds, saveMeetupAttendance } from '../src/services/meetupAttendance.js';
 
+import { findCloudReport, saveReport } from '../src/services/reportRecords.js';
 import { migrateAttendance } from '../server/migrateMeetupAttendance.mjs';
 
 const clients = [];
@@ -219,4 +220,20 @@ test('owner reconciliation keeps legacy participants, repairs the count and can 
   assert.equal((await migrateAttendance('demo-ecopulse', true)).applied, 0);
   await attend(guest, event, false);
   assert.equal(await count(event), 1);
+});
+
+test('report confirmations open by document ID and public code only for their owner', async () => {
+  const saved = await saveReport(owner.db, { userId: owner.uid, title: 'Smoke observation', description: 'Smoke at the gate',
+    category: 'air', location: 'Test neighbourhood', lat: 0, lng: 0 });
+  assert.equal(saved.localOnly, false);
+  for (const id of [saved.docId, saved.reportId]) {
+    const record = await findCloudReport(owner.db, owner.uid, id);
+    assert.equal(record.id, saved.docId);
+    assert.equal(record.lat, 0);
+    assert.equal(record.lng, 0);
+    assert.equal(await findCloudReport(neighbour.db, neighbour.uid, id), null);
+    assert.equal(await findCloudReport(guest.db, guest.uid, id), null);
+  }
+  await deleteDoc(doc(owner.db, 'environmentalReports', saved.docId));
+  assert.equal(await findCloudReport(owner.db, owner.uid, saved.reportId), null);
 });

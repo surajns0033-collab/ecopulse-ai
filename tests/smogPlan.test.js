@@ -197,3 +197,14 @@ test('an unavailable current AQI feed still produces useful guidance and labels 
   assert.deepEqual(result.cards, []);
   assert.equal(fetch.mock.callCount(), 3);
 });
+
+test('a sensitive household and a school get an actionable warning at a forecast AQI of 101', () => {
+  const hour = Date.parse('2026-11-27T08:00:00Z');
+  for (const details of ['one child', 'our school assembly', 'I commute by metro']) {
+    const input = parseSmogProfile(details);
+    const forecast = aqi => ({ timeZone: 'Asia/Kolkata', hours: [{ time: hour, aqi }] });
+    const plan = aqi => buildSmogPlan(input, { city, forecast: forecast(aqi), now }).text;
+    assert.doesNotMatch(plan(100), /still unhealthy for sensitive groups/);
+    assert.equal(plan(101).includes('still unhealthy for sensitive groups'), details !== 'I commute by metro');
+  }
+});
