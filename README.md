@@ -26,6 +26,8 @@
   <p>
     <a href="https://ecopulse-ai-ruby.vercel.app">Live App</a>
     &nbsp;·&nbsp;
+    <a href="https://youtu.be/mrQLC5kSaBU">Project Demo Video</a>
+    &nbsp;·&nbsp;
     <a href="#interface-preview">UI Preview</a>
     &nbsp;·&nbsp;
     <a href="#-key-capabilities">Capabilities</a>
