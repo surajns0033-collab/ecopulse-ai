@@ -21,7 +21,10 @@
         "src/agent/intentEngine.js",
         "src/agent/place*.js",
         "src/agent/smog*.js",
-        "src/agent/civic*.js"
+        "src/agent/civic*.js",
+        "src/services/airQuality.js",
+        "src/services/weatherData.js",
+        "src/services/environmentCache.js"
       ],
       "rules": {
         "complexity": [
