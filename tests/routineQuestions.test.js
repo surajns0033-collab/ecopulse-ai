@@ -69,3 +69,12 @@ test('definitions, current readings and policy searches keep their own routes', 
   assert.equal(routePlaceRequest('What is the AQI in Delhi today?').intent, INTENTS.GET_AIR_QUALITY);
   assert.equal(routePlaceRequest('Search the web for the current policy on open burning.').kind, 'web');
 });
+
+test('a scooter delivery shift includes a feasible emission-reducing action at moderate AQI', () => {
+  const profile = parseSmogProfile('I work outdoors and ride a scooter.');
+  const plan = buildSmogPlan(profile, { city: 'Nagpur', now,
+    aqi: { aqi: 121, timestamp: new Date(now).toISOString(), sourceType: 'modeled' } });
+  assert.match(plan.text, /group stops to avoid repeat trips/i);
+  assert.match(plan.text, /switch off the engine when parked/i);
+  assert.match(plan.text, /take breaks in a cleaner indoor space/i);
+});

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chatRequestSchema } from '../server/chatSchema.ts';
+import { chatRequestSchema } from '../server/chatValidation.js';
 import { logFailure } from '../src/services/diagnostics.js';
 
 test('strict chat schema normalizes legacy roles and isolates search from history', () => {
