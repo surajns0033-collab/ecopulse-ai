@@ -82,3 +82,11 @@ test('the geocoder verifies a Marathi city spelling using the same place data', 
   } });
   assert.deepEqual(result.location, { name: 'Mumbai', city: 'Mumbai, Maharashtra, India', lat: 19.08, lng: 72.88 });
 });
+
+test('malformed primary and secondary place data safely produce no city', async () => {
+  for (const pair of [[{ results: {} }, { features: 5 }], [{ results: [null, { feature_code: 'PPL' }] },
+    { features: [null, { properties: null }, { properties: { type: 'city', name: 'Only a name' } }] }]]) {
+    const result = await lookupPlace('Unverified', { request: async url => Response.json(url.includes('open-meteo') ? pair[0] : pair[1]) });
+    assert.deepEqual(result, {});
+  }
+});

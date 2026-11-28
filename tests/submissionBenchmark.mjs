@@ -26,6 +26,7 @@ const checks = [
     '--test-coverage-lines=80', '--test-coverage-branches=75', '--test-coverage-functions=85', ...unitTests,
   ] },
   { id: 'critical', label: 'Critical logic coverage (90/90/95)', args: [npm, 'run', 'coverage:critical'] },
+  { id: 'mutations', label: 'Targeted domain mutations', args: ['tests/mutationChecks.mjs'] },
   { id: 'plans', label: 'Smog scenarios and request counts', args: [npm, 'run', 'benchmark'] },
   { id: 'build', label: 'Production build', args: [npm, 'run', 'build'] },
   { id: 'size', label: 'Bundle budgets and local photo inference', after: 'build', args: ['--test', 'tests/vision.browser.mjs'] },
@@ -39,7 +40,7 @@ const criteria = [
   ['Code Quality', 'High', ['lint', 'modules', 'types', 'inventory']],
   ['Security', 'Medium', ['audit', 'client', 'rules']],
   ['Efficiency', 'Medium', ['plans', 'size']],
-  ['Testing', 'Low', ['unit', 'critical', 'plans', 'ui', 'client', 'rules', 'size']],
+  ['Testing', 'Low', ['unit', 'critical', 'mutations', 'plans', 'ui', 'client', 'rules', 'size']],
   ['Accessibility', 'Low', ['ui']],
   ['Problem Statement Alignment', 'High', ['plans', 'ui']],
 ];
