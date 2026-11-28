@@ -18,6 +18,36 @@ service cloud.firestore {
       return signedIn() && resource.data.userId == request.auth.uid;
     }
 
+    function textValue(value, max) {
+      return value is string && value.size() > 0 && value.size() <= max;
+    }
+
+    function optionalText(data, key, max) {
+      return data.get(key, null) == null || (data[key] is string && data[key].size() <= max);
+    }
+
+    function coordinate(data, key, bound) {
+      return data.get(key, null) == null || (data[key] is number && data[key] >= -bound && data[key] <= bound);
+    }
+
+    function unchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // An earlier private record format consists of a bounded owner note alone.
+    function privateNote(data) {
+      return data.keys().hasOnly(['userId', 'note']) && textValue(data.note, 16000);
+    }
+
+    function validTag(tags, index) {
+      return tags.size() <= index || textValue(tags[index], 60);
+    }
+
+    function validTags(tags) {
+      return tags is list && tags.size() <= 6 && validTag(tags, 0) && validTag(tags, 1)
+        && validTag(tags, 2) && validTag(tags, 3) && validTag(tags, 4) && validTag(tags, 5);
+    }
+
     // Guests may read the public channel, but only Google/email accounts post.
     // Email addresses are not accepted as a community-post field.
     match /communityPosts/{postId} {
@@ -32,25 +62,49 @@ service cloud.firestore {
           && request.resource.data.text.size() >= 1
           && request.resource.data.text.size() <= 1000
           && request.resource.data.location is string
-          && request.resource.data.location.size() <= 100;
+          && request.resource.data.location.size() <= 100
+          && validTags(request.resource.data.get('tags', []))
+          && (request.resource.data.get('createdAt', null) == null || request.resource.data.createdAt is timestamp);
       }
 
       allow read: if signedIn();
       allow create: if isNonGuest() && ownsIncoming() && validPost();
-      allow update: if isNonGuest() && ownsExisting() && ownsIncoming() && validPost();
+      allow update: if isNonGuest() && ownsExisting() && ownsIncoming() && validPost() && unchanged(['author', 'createdAt']);
       allow delete: if isNonGuest() && ownsExisting();
     }
 
     match /environmentalReports/{reportId} {
-      allow create: if ownsIncoming();
+      function validReport(d) {
+        return d.keys().hasOnly(['userId', 'reportId', 'title', 'description', 'category', 'status', 'location',
+            'lat', 'lng', 'photoUrl', 'createdAt', 'updatedAt'])
+          && textValue(d.title, 120) && textValue(d.description, 16000) && textValue(d.location, 300)
+          && textValue(d.reportId, 100) && d.createdAt is timestamp && d.updatedAt is timestamp
+          && d.category in ['garbage','plastic','burning','air','construction','water','sewage','trees',
+            'greenspace','industrial','road_obstruction','other']
+          && d.status in ['draft','submitted','under_review','resolved','closed']
+          && coordinate(d, 'lat', 90) && coordinate(d, 'lng', 180) && optionalText(d, 'photoUrl', 2000);
+      }
+      allow create: if ownsIncoming() && (privateNote(request.resource.data) ||
+        (validReport(request.resource.data) && request.resource.data.status in ['draft','submitted']));
       allow read, delete: if ownsExisting();
-      allow update: if ownsExisting() && ownsIncoming();
+      allow update: if ownsExisting() && ownsIncoming() && unchanged(['createdAt','reportId'])
+        && ((privateNote(resource.data) && privateNote(request.resource.data))
+          || (validReport(request.resource.data) && (unchanged(['status']) ||
+            (resource.data.status == 'draft' && request.resource.data.status == 'submitted'))));
     }
 
     match /emailDrafts/{draftId} {
-      allow create: if ownsIncoming();
+      function validDraft(d) {
+        return d.keys().hasOnly(['userId','reportId','issue','location','recipientType','recipientEmail',
+            'subject','body','cc','status','createdAt']) && d.status == 'draft' && d.createdAt is timestamp
+          && textValue(d.subject, 512) && textValue(d.body, 32000) && textValue(d.recipientType, 80)
+          && optionalText(d, 'issue', 512) && optionalText(d, 'location', 300) && optionalText(d, 'reportId', 100)
+          && optionalText(d, 'cc', 320) && optionalText(d, 'recipientEmail', 320);
+      }
+      allow create: if ownsIncoming() && (privateNote(request.resource.data) || validDraft(request.resource.data));
       allow read, delete: if ownsExisting();
-      allow update: if ownsExisting() && ownsIncoming();
+      allow update: if ownsExisting() && ownsIncoming() && unchanged(['createdAt','reportId'])
+        && ((privateNote(resource.data) && privateNote(request.resource.data)) || validDraft(request.resource.data));
     }
 
     function attendanceDocId(uid, eventId) {
@@ -100,16 +154,37 @@ service cloud.firestore {
             || (after == before - 1 && exists(receipt) && !existsAfter(receipt)));
       }
 
+      function validEventDetails(d) {
+        return textValue(d.title, 180) && optionalText(d, 'organizer', 120) && optionalText(d, 'description', 6000)
+          && optionalText(d, 'location', 300) && optionalText(d, 'time', 80) && optionalText(d, 'eventId', 128)
+          && (d.get('date', null) == null || d.date is timestamp)
+          && (d.get('createdAt', null) == null || d.createdAt is timestamp)
+          && (d.get('updatedAt', null) == null || d.updatedAt is timestamp)
+          && (d.get('isSeeded', false) is bool)
+          && (d.get('category', null) == null || d.category in ['cleanup','plantation','biodiversity','waste_reduction','awareness','community'])
+          && coordinate(d, 'lat', 90) && coordinate(d, 'lng', 180);
+      }
+
+      function allowedTransition(before, after) {
+        return before == after || (before == 'draft' && after in ['published','cancelled'])
+          || (before == 'published' && after in ['cancelled','completed','closed']);
+      }
+
       function organizerEdit() {
         let changes = request.resource.data.diff(resource.data).affectedKeys();
         return isNonGuest() && ownsExisting() && ownsIncoming()
-          && !changes.hasAny(['eventId', 'participantCount', 'attendanceVersion'])
+          && changes.hasOnly(['title','description','location','date','time','category','lat','lng','capacity','status','updatedAt'])
+          && validEventDetails(request.resource.data)
+          && allowedTransition(resource.data.status, request.resource.data.status)
           && (!changes.hasAny(['capacity']) || (request.resource.data.capacity is int
               && request.resource.data.capacity > 0 && request.resource.data.capacity >= resource.data.get('participantCount', 0)));
       }
 
       allow read: if signedIn();
-      allow create: if isNonGuest() && ownsIncoming() && request.resource.data.attendanceVersion == 2
+      allow create: if isNonGuest() && ownsIncoming() && validEventDetails(request.resource.data)
+        && request.resource.data.keys().hasOnly(['eventId','userId','organizer','title','description','category',
+          'location','date','time','capacity','lat','lng','attendanceVersion','participantCount','status','isSeeded','createdAt','updatedAt'])
+        && request.resource.data.status in ['draft','published'] && request.resource.data.attendanceVersion == 2
         && request.resource.data.participantCount is int && request.resource.data.participantCount == 0
         && request.resource.data.capacity is int && request.resource.data.capacity > 0;
       allow update: if organizerEdit() || (signedIn() && ownAttendanceChange());
@@ -121,9 +196,18 @@ service cloud.firestore {
         return collectionName in ['communityActions', 'userActions', 'aiConversations', 'aiActionLogs'];
       }
 
-      allow create: if isPrivateActivity() && ownsIncoming();
+      function validActivity(d) {
+        return privateNote(d)
+          || (collectionName == 'aiActionLogs' && d.keys().hasOnly(['userId','action','data','timestamp'])
+            && textValue(d.action, 80) && d.data is map && d.data.size() <= 8 && d.timestamp is timestamp)
+          || (collectionName == 'userActions' && d.keys().hasOnly(['userId','actionType','data','createdAt'])
+            && textValue(d.actionType, 80) && d.data is map && d.data.size() <= 16 && d.createdAt is timestamp);
+      }
+
+      allow create: if isPrivateActivity() && ownsIncoming() && validActivity(request.resource.data);
       allow read, delete: if isPrivateActivity() && ownsExisting();
-      allow update: if isPrivateActivity() && ownsExisting() && ownsIncoming();
+      allow update: if isPrivateActivity() && ownsExisting() && ownsIncoming() && validActivity(request.resource.data)
+        && unchanged(['action','actionType','timestamp','createdAt']);
     }
 
     match /{document=**} {
