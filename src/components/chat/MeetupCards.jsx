@@ -93,7 +93,7 @@ export function MeetupPreviewCard({ data, onPublish, onCancel }) {
         </div>
         <div className="preview-field">
           <div className="preview-field-label">Date & Time</div>
-          <div className="preview-field-val">📅 {data.date} • ⏰ {data.time || '7:00 AM'}</div>
+          <div className="preview-field-val">📅 {data.date} • ⏰ {data.time || '7:00 AM'}{data.capacity > 0 && ` • ${data.capacity} places`}</div>
         </div>
         <div className="preview-field">
           <div className="preview-field-label">Description</div>

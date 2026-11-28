@@ -1,5 +1,7 @@
 import { tools } from '../services/agentTools';
 import { getJsonResponse } from '../services/geminiService';
+import { readMeetupDraft } from '../services/meetupDraft.js';
+import { meetupDayStart } from '../services/meetupDiscovery.js';
 import { logAction } from './activityLog';
 
 export async function handleFindEvents(city, category, userId, timeZone, signal) {
@@ -36,47 +38,31 @@ export function handleJoinEventPrompt() {
   };
 }
 
-export async function handleCreateEventPrompt(userMessage, city) {
-  const defaultCity = city || 'Your City';
+export async function handleCreateEventPrompt(userMessage, city, timeZone, signal) {
   const lower = (userMessage || '').toLowerCase();
   const hasDetails = userMessage && userMessage.trim().split(/\s+/).length >= 4 &&
     !['i want to create a community eco-event', 'create event', 'create meetup', 'organise event', 'organize event'].includes(lower.trim());
 
   if (hasDetails) {
     // Use the model to structure meetup details from natural language (best effort).
+    const today = meetupDayStart(timeZone).toISOString().slice(0, 10);
     const parsed = await getJsonResponse(
-      `Extract eco-meetup details from this user request: "${userMessage}".
-Default city if not specified: "${defaultCity}".
-Today's date: "${new Date().toISOString().slice(0, 10)}".
-Only use details the user actually gave; use sensible defaults for the rest.`,
-      '',
-      { timeoutMs: 15000 }
+      'Extract an event proposal from the user request. Return title, location, date (YYYY-MM-DD), time, ' +
+      'category (cleanup, plantation, biodiversity, waste_reduction, awareness or community), description and capacity. ' +
+      'Leave missing details null. Use the local date ' + today + ' to resolve relative dates.\nUser request: ' + userMessage,
+      '', { timeoutMs: 15000, signal }
     );
-    if (parsed) {
-      return {
-        text: "I've prepared your eco-meetup! 🗓️ Review the details below and tap **Publish Meetup**:",
-        cards: [{
-          type: 'meetup-preview',
-          data: {
-            title: parsed.title || 'Community Eco-Meetup',
-            category: parsed.category || 'cleanup',
-            location: parsed.location || defaultCity,
-            date: parsed.date || new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-            time: parsed.time || '7:00 AM',
-            description: parsed.description || userMessage,
-            capacity: parsed.capacity || 25,
-            // A chat location is not a verified coordinate for the event venue.
-            lat: null, lng: null,
-          },
-        }],
-        actions: [],
-        status: 'preview',
-      };
-    }
+    const data = readMeetupDraft(parsed, userMessage, city);
+    if (data) return {
+      text: 'Review the proposed venue, date, time and places before publishing. You can also enter different details in Events.',
+      cards: [{ type: 'meetup-preview', data }],
+      actions: [{ label: 'Open Events', action: 'GOTO_MEETUPS', variant: 'secondary' }],
+      status: 'preview',
+    };
   }
 
   return {
-    text: `Great initiative! 🌱 Tell me the meetup details in one message (for example: *"Create a beach cleanup at Juhu, Mumbai this Sunday at 7 AM"*), and I'll set it up for you — or open the Events page to use the form!`,
+    text: 'Tell me the event title, venue and date so I can prepare a preview. For example, “Organize a park cleanup in Pune this Sunday at 8 AM.” You can also enter the details in Events.',
     cards: [],
     actions: [{ label: '🗓️ Open Events Page', action: 'GOTO_MEETUPS', variant: 'primary' }],
     status: 'info',

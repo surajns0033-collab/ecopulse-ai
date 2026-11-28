@@ -1,12 +1,8 @@
+import { isModelObject } from './modelJson.js';
 import { REPORT_CATEGORIES } from '../firebase/collections.js';
 
 const categories = new Set(REPORT_CATEGORIES.map(item => item.id));
 const severities = new Set(['mild', 'moderate', 'severe']);
-
-/** @param {unknown} value @returns {value is Record<string, unknown>} */
-function isObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /** @param {unknown} value @param {number} limit */
 function text(value, limit) {
@@ -21,7 +17,7 @@ function lines(value, limit) {
 /** Decode the provider's untrusted description before it reaches a report or draft.
  * @param {unknown} value */
 export function photoAssessment(value) {
-  if (!isObject(value) || !text(value.description, 600)) return null;
+  if (!isModelObject(value) || !text(value.description, 600)) return null;
   const category = text(value.category, 25).toLowerCase();
   const severity = text(value.severity, 20).toLowerCase();
   const confidence = value.confidence;
