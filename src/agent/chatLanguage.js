@@ -8,7 +8,7 @@ const spellings = new Map(Object.entries({
   cretae: 'create', qualty: 'quality', complent: 'complaint',
 }));
 const vocabulary = ['pollution', 'forecast', 'weather', 'quality', 'commute', 'routine', 'tomorrow',
-  'school', 'assembly', 'exposure', 'emissions', 'indoor', 'outdoor', 'scooter', 'cycling', 'asthma',
+  'school', 'assembly', 'exposure', 'emission', 'emissions', 'indoor', 'outdoor', 'scooter', 'cycling', 'asthma',
   'purifier', 'exhaust', 'burning', 'garbage', 'complaint', 'report', 'municipal', 'meetup', 'pradushan'];
 
 for (const word of vocabulary) {

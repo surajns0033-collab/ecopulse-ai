@@ -1,3 +1,5 @@
+import { recognitionText } from './chatLanguage.js';
+
 export const PLACE_COMMAND = /^(?:i live in|i (?:am|come) from|i['’]m from|(?:set|change) (?:my )?(?:city|location) to|use the city of)\s+(.+)$/i;
 export const PLACE_FOLLOWUP = /^(?:i (?:am|live)|i['’]m) in\s+(.+)$/i;
 const STATED_CITY = /^(?:(?:i am|i['’]m) (?:currently |now )?in|my (?:current )?city is)\s+(.+)$/i;
@@ -6,11 +8,18 @@ const EN_CITY_CORRECTION = /^(?:(?:no|actually|sorry)[,\s]+)?(?:(?:i (?:meant|sa
 const LOCAL_CITY_CORRECTION = /^(.+?)(?:\s*[,;–—]\s*|\s+)(?:नहीं|नाही|nahi|naahi)[,\s]+(.+?)[.?!।]*$/iu;
 const PREPOSITION = /\b(?:in|at|for|near|around)\s+([^?!.;]+?)(?=\s+\b(?:in|at|for|near|around)\s+|[?!.;]|$)/gi;
 
+function beforeTimeQualifier(value) {
+  for (const match of value.matchAll(/\s+(\p{L}+)/gu)) {
+    if (/^(?:today|tomorrow|tonight)$/i.test(recognitionText(match[1]))) return value.slice(0, match.index);
+  }
+  return value;
+}
+
 export function placeName(value) {
-  const name = String(value || '').trim()
+  const name = beforeTimeQualifier(String(value || '').trim())
     .replace(/^[,.:–—\s]+|[.?!।,\s]+$/gu, '')
     .replace(/(?:,?\s+and\s+(?:can|could|should|what|why|tell|give|precautions?)\b|\s+since\s+|,\s+(?:can|what|how|should)\b).*$/i, '')
-    .replace(/\s+(?:today|tomorrow|tonight|this morning|this evening|next week)\b.*$/i, '')
+    .replace(/\s+(?:this morning|this evening|next week)\b.*$/i, '')
     .replace(/\s+(?:move|hold|keep)\s+(?:sports|assembly|classes)\b.*$/i, '')
     .replace(/\s+(?:right now|now|please)$/i, '')
     .replace(/\s+(?:आज|अभी|आत्ता|सध्या|उद्या|कल)$/u, '')

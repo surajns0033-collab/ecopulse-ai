@@ -1,7 +1,7 @@
 import { asksForSmogPlan, detectIntent, INTENTS } from './intentEngine.js';
 import { communitySetting, isSmogProfile } from './smogProfile.js';
 import { correctedCity, explicitPlace, labeledCity, placeName, statedCity, PLACE_COMMAND } from './placeNames.js';
-import { recognitionText, schoolActivity } from './chatLanguage.js';
+import { recognitionText } from './chatLanguage.js';
 import { WEB_COMMAND, routeTopic } from './placeTopics.js';
 
 export { labeledCity, placeName } from './placeNames.js';
@@ -87,9 +87,6 @@ export function routePlaceRequest(text, history = [], { awaitingSmogProfile = fa
   const command = explicitCommand(clean, relative, smogRequest, profile);
   if (command) return command;
   const { intent } = classification ?? detectIntent(clean, history);
-  if (schoolActivity(recognitionText(clean)) && asksForForecast(clean) && !smogRequest) {
-    return { kind: 'tool', needsPlace: true, intent: INTENTS.GET_AIR_QUALITY, relative, place: explicitPlace(clean, true) };
-  }
   if (smogRequest || intent === INTENTS.GET_SMOG_PLAN) return routeSmogPlan(clean);
   return routeTopic(clean, intent, relative) || (profile?.smogDetails ? profile : { kind: 'general' });
 }
