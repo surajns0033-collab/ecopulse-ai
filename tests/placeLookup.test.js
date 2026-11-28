@@ -100,3 +100,12 @@ test('a common city transposition proposes the geocoded city for confirmation', 
   assert.equal(result.candidate.city, 'Delhi, India');
   assert.equal(result.location, undefined);
 });
+
+test('an unusable reverse-geocoder field cannot become the device city', async () => {
+  const geolocation = { getCurrentPosition(accept) { accept({ coords: { latitude: 18.52, longitude: 73.86, accuracy: 200 } }); } };
+  let address = { city: { label: 'unverified' }, country: 'India' };
+  const request = () => Response.json({ address });
+  assert.equal(await getDevicePlace({ geolocation, request }), null);
+  address = { city: ' ', town: 'Pune', state: {}, country: 'India' };
+  assert.equal((await getDevicePlace({ geolocation, request })).city, 'Pune, India');
+});
