@@ -16,14 +16,15 @@ function restoreDeviceUser() {
   if (isFirebaseConfigured) return null;
   try {
     const saved = JSON.parse(sessionStorage.getItem(localSessionKey));
-    return saved?.isLocal === true && typeof saved.uid === 'string' ? saved : null;
+    return saved?.isLocal === true && saved.isAnonymous === true && typeof saved.uid === 'string'
+      ? { uid: saved.uid, isLocal: true, isAnonymous: true } : null;
   } catch { return null; }
 }
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(restoreDeviceUser);
   const [loading, setLoading] = useState(isFirebaseConfigured);
-  const [authMode, setAuthMode] = useState(() => user && (user.isAnonymous ? 'guest' : 'google'));
+  const [authMode, setAuthMode] = useState(() => user ? 'guest' : null);
 
   const [communityName, setCommunityName] = useState('');
   const [communityNameConfirmed, setCommunityNameConfirmed] = useState(false);
@@ -78,12 +79,7 @@ export function AuthProvider({ children }) {
 
   /** Sign in with Google */
   async function signInWithGoogle() {
-    if (!firebaseReady) {
-      // Firebase not configured — create a local "signed-in" user placeholder
-      setUser(rememberLocalUser({ uid: 'google-user-' + crypto.randomUUID(), displayName: 'User', isAnonymous: false, isLocal: true }));
-      setAuthMode('google');
-      return;
-    }
+    if (!firebaseReady) throw new Error('Google sign-in is unavailable on this device.');
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     setAuthMode('google');

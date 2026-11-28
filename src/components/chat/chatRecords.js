@@ -41,8 +41,9 @@ async function saveEmailDraft(user, data) {
   const { tools } = await import('../../services/agentTools');
   const result = await tools.createEmailDraft({ userId: user.uid, reportId: data.reportId || null,
     issue: data.subject, location: data.location || null, recipientType: 'municipal',
-    recipientEmail: data.to, subject: data.subject, body: data.body });
-  return confirmation('Email Draft Saved! 📧', 'Draft saved to your account. Nothing was sent.', result.draftId);
+    recipientEmail: data.to || null, cc: data.cc || null, subject: data.subject, body: data.body });
+  const where = result.localOnly ? 'on this device' : 'to your account';
+  return confirmation('Email draft saved', 'Draft saved ' + where + '. Nothing was sent.', result.draftId);
 }
 
 export const RECORD_ACTIONS = {

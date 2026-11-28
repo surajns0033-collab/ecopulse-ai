@@ -36,7 +36,7 @@ export default function LandingPage() {
           <button
             className="landing-btn landing-btn-google"
             onClick={handleGoogle}
-            disabled={!!loading}
+            disabled={!!loading || !firebaseReady}
           >
             {loading === 'google' ? (
               <Loader size={20} className="spin" />
@@ -65,14 +65,14 @@ export default function LandingPage() {
                 placeholder="you@example.com"
                 autoComplete="email"
                 aria-label="Email address"
-                disabled={!!loading || emailSent}
+                disabled={!!loading || emailSent || !firebaseReady}
                 required
               />
             </div>
             <button
               type="submit"
               className="landing-btn landing-btn-email"
-              disabled={!!loading || emailSent || !email.trim()}
+              disabled={!!loading || emailSent || !firebaseReady || !email.trim()}
             >
               {loading === 'email' ? <Loader size={18} className="spin" /> : <Mail size={18} />}
               {emailLinkNeedsEmail ? 'Complete Email Sign-In' : 'Send Secure Sign-In Link'}
@@ -86,7 +86,7 @@ export default function LandingPage() {
           )}
 
           {!firebaseReady && (
-            <p className="landing-email-hint">Email and real Google sign-in become active after Firebase is configured. Guest mode continues to work now.</p>
+            <p className="landing-email-hint">Account sign-in is unavailable here. Continue as Guest to use EcoPulse on this device.</p>
           )}
 
           <div className="landing-divider">

@@ -9,7 +9,8 @@ import { createMeetup, getNearbyMeetups, joinMeetup, cancelMeetupRSVP } from './
 import { readLocalAttendance } from './localMeetupAttendance.js';
 import { joinedMeetupIds } from './meetupAttendance.js';
 import { findVerifiedRecipient } from './verifiedRecipient.js';
-import { readLocal, writeLocal, STORAGE_KEYS, localStore, firestoreOrLocal } from './toolStorage.js';
+import { saveEmailDraft } from './emailDrafts.js';
+import { localStore, firestoreOrLocal } from './toolStorage.js';
 import { communityTools } from './communityTools.js';
 
 export const tools = {
@@ -55,34 +56,12 @@ export const tools = {
   /**
    * Save an email draft
    */
-  createEmailDraft: async ({ userId, reportId, issue, location, recipientType, recipientEmail, subject, body }) => {
-    const draftData = {
-      userId,
-      reportId: reportId || null,
-      issue,
-      location,
-      recipientType,
-      recipientEmail,
-      subject,
-      body,
-      status: 'draft',
-      createdAt: Timestamp.now(),
-    };
-
-    return firestoreOrLocal(
-      async () => {
-        const docRef = await addDoc(collection(db, COLLECTIONS.EMAIL_DRAFTS), draftData);
-        return { draftId: docRef.id };
-      },
-      () => {
-        const id = 'draft-' + Date.now();
-        const drafts = readLocal(STORAGE_KEYS.DRAFTS);
-        drafts.push({ id, ...draftData, createdAt: new Date().toISOString() });
-        writeLocal(STORAGE_KEYS.DRAFTS, drafts);
-        return { draftId: id };
-      }
-    );
-  },
+  createEmailDraft: record => saveEmailDraft(record, {
+    persist: db ? async draft => {
+      const ref = await addDoc(collection(db, COLLECTIONS.EMAIL_DRAFTS), { ...draft, createdAt: Timestamp.now() });
+      return ref.id;
+    } : null,
+  }),
 
   /**
    * Get a personalized daily action plan

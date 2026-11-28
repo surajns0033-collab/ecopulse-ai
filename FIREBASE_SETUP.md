@@ -33,6 +33,8 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 ```
 
+Use all six values from the same registered Firebase web app. The CLI project in `.firebaserc` identifies the EcoPulse production project. For a different environment, supply its complete configuration together. With missing or inconsistent settings the app offers a device-only Guest session.
+
 Add every deployed host under **Authentication → Settings → Authorized domains**. Keep `localhost` for local development.
 
 ## Firestore
