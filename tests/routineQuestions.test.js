@@ -78,3 +78,17 @@ test('a scooter delivery shift includes a feasible emission-reducing action at m
   assert.match(plan.text, /switch off the engine when parked/i);
   assert.match(plan.text, /take breaks in a cleaner indoor space/i);
 });
+
+test('public smog plans open a sourced search in each chat language', () => {
+  for (const question of [
+    'What is the government’s official smog plan in Delhi?',
+    'Delhi ka sarkari smgo plan kya hai?',
+    'दिल्ली की सरकारी स्मॉग योजना क्या है?',
+    'What is the smog plan announced by the government in Delhi?',
+  ]) {
+    assert.equal(routePlaceRequest(question).kind, 'web', question);
+  }
+  assert.equal(routePlaceRequest('What is the official winter smog plan near me?').needsPlace, true);
+  assert.equal(routePlaceRequest('I work at a government school. Create a smog plan for my family in Delhi.').intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(routePlaceRequest('What is the official AQI in Delhi?').intent, INTENTS.GET_AIR_QUALITY);
+});
