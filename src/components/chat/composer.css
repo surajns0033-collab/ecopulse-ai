@@ -80,7 +80,8 @@
 }
 
 .chat-text-input:focus { border-color: var(--green); background: #fff; }
-.chat-text-input::placeholder { color: #9ca3af; }
+.chat-text-input::placeholder { color: #525b69; }
+.photo-input-error { color: #991b1b; font-size: 0.875rem; }
 
 /* Green microphone button — large circle matching reference */
 .mic-btn {

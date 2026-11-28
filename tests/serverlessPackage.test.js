@@ -19,7 +19,7 @@ test('the JavaScript-only serverless package starts both public API entry points
   t.after(() => rm(output, { recursive: true, force: true }));
   await writeFile(join(output, 'package.json'), JSON.stringify({ type: 'module' }));
   await symlink(join(root, 'node_modules'), join(output, 'node_modules'), 'junction');
-  for await (const file of glob(['api/ai/*.js', 'server/*.js', 'src/services/diagnostics.js'], { cwd: root })) {
+  for await (const file of glob(['api/ai/*.js', 'server/*.js', 'src/services/diagnostics.js', 'src/services/imageDimensions.js'], { cwd: root })) {
     const destination = join(output, file);
     await mkdir(dirname(destination), { recursive: true });
     await cp(join(root, file), destination);

@@ -1,3 +1,4 @@
+import { photoFixtures } from './photoFixtures.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeAiHandler } from '../server/aiCore.js';
@@ -40,7 +41,7 @@ test('photo headers must match their declared media type before anything is sent
   assert.equal(calls.mock.callCount(), 0);
 });
 
-test('supported image headers retain their original bytes', async () => {
+test('header-only images without dimensions are rejected', async () => {
   const headers = {
     'image/jpeg': Buffer.from([255, 216, 255, 224]),
     'image/webp': Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')]),
@@ -49,6 +50,13 @@ test('supported image headers retain their original bytes', async () => {
   };
   for (const [mimeType, data] of Object.entries(headers)) {
     const image = { mimeType, base64: data.toString('base64') };
+    await assert.rejects(readChatRequest({ headers: chatHeaders, body: { messages: shortHistory, images: [image] } }), { status: 400 });
+  }
+});
+
+test('supported photos retain their original bytes, including HEIC and HEIF', async () => {
+  for (const [mimeType, base64] of photoFixtures) {
+    const image = { mimeType, base64 };
     const request = await readChatRequest({ headers: chatHeaders, body: { messages: shortHistory, images: [image] } });
     assert.deepEqual(request.images, [image]);
   }

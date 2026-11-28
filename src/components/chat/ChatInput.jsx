@@ -3,7 +3,7 @@ import { useChatComposer } from './useChatComposer.js';
 
 export default function ChatInput({ onSend, disabled }) {
 
-  const { text, setText, imageData, setImageData, isListening, fileRef, textareaRef, handleSend, handleKeyDown, handleImageFile, toggleMic, canSend } = useChatComposer(onSend, disabled);
+  const { text, setText, imageError, imageData, setImageData, isListening, fileRef, textareaRef, handleSend, handleKeyDown, handleImageFile, toggleMic, canSend } = useChatComposer(onSend, disabled);
 
   return (
     <div className="chat-input-bar">
@@ -19,14 +19,14 @@ export default function ChatInput({ onSend, disabled }) {
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
         style={{ display: 'none' }}
         onChange={handleImageFile}
       />
 
       {/* Input wrapper */}
       <div className="input-wrapper">
-        {/* Image preview chip */}
+        {imageError && <span role="alert" className="photo-input-error">{imageError}</span>}
         {imageData && (
           <div className="image-preview-chip">
             <img src={imageData.preview} alt="Selected" />

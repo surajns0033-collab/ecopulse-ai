@@ -5,6 +5,9 @@ export function useChatComposer(onSend, disabled) {
   const [text, setText] = useState('');
   const [imageData, setImageData] = useState(null); // { base64, mimeType, preview }
   const [isListening, setIsListening] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const photoRequest = useRef(0);
+  useEffect(() => () => { photoRequest.current++; }, []);
   const fileRef = useRef(null);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -56,6 +59,8 @@ export function useChatComposer(onSend, disabled) {
     if (disabled) return;
     const msg = text.trim();
     if (!msg && !imageData) return;
+    photoRequest.current++;
+    setImageError('');
     onSend(msg, imageData);
     setText('');
     setImageData(null);
@@ -69,39 +74,21 @@ export function useChatComposer(onSend, disabled) {
     }
   };
 
-  const handleImageFile = (e) => {
-    const file = e.target.files?.[0];
+  async function handleImageFile(event) {
+    const file = event.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target.result;
-      const image = new window.Image();
-      image.onload = () => {
-        const maxDimension = 1280;
-        const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
-        const width = Math.max(1, Math.round(image.naturalWidth * scale));
-        const height = Math.max(1, Math.round(image.naturalHeight * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext('2d');
-        context.drawImage(image, 0, 0, width, height);
-        // JPEG dramatically reduces OCR/vision transfer time while preserving
-        // enough detail for signs, number plates and environmental evidence.
-        const optimizedUrl = canvas.toDataURL('image/jpeg', 0.86);
-        const [, base64] = optimizedUrl.split(',');
-        setImageData({ base64, mimeType: 'image/jpeg', preview: optimizedUrl });
-      };
-      image.onerror = () => {
-        const [header, base64] = String(dataUrl).split(',');
-        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
-        setImageData({ base64, mimeType, preview: dataUrl });
-      };
-      image.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = ''; // reset
-  };
+    event.target.value = '';
+    const request = ++photoRequest.current;
+    setImageError('');
+    setImageData(null);
+    try {
+      const { prepareComposerPhoto } = await import('../../services/composerPhoto.js');
+      const prepared = await prepareComposerPhoto(file);
+      if (request === photoRequest.current) setImageData(prepared);
+    } catch (error) {
+      if (request === photoRequest.current) setImageError(error.message || 'Could not prepare this photo.');
+    }
+  }
 
   const toggleMic = () => {
     const rec = recognitionRef.current;
@@ -124,5 +111,5 @@ export function useChatComposer(onSend, disabled) {
 
   const canSend = (text.trim() || imageData) && !disabled;
 
-  return { text, setText, imageData, setImageData, isListening, fileRef, textareaRef, handleSend, handleKeyDown, handleImageFile, toggleMic, canSend };
+  return { text, setText, imageError, imageData, setImageData, isListening, fileRef, textareaRef, handleSend, handleKeyDown, handleImageFile, toggleMic, canSend };
 }
