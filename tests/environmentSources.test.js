@@ -9,6 +9,8 @@ test('fresh station data needs one request and station subindices never become c
   const data = await readAirSources(22, 73, undefined, 'fixture');
   assert.equal(calls.mock.callCount(), 1);
   assert.equal(data.station, 'Station A');
+  assert.equal(data.sourceType, 'station');
+  assert.equal(data.scale, 'U.S. AQI');
   assert.equal(data.aqi, 202);
   assert.equal(data.pm25, undefined);
 });

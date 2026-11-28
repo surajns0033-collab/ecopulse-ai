@@ -97,3 +97,12 @@ test('a sensitive household and a school get an actionable warning at a forecast
     assert.equal(plan(101).includes('still unhealthy for sensitive groups'), details !== 'I commute by metro');
   }
 });
+
+test('only recent, nonnegative wind measurements influence the smog plan', () => {
+  const now = Date.parse('2026-01-05T08:00:00Z');
+  const profile = parseSmogProfile('bus commute');
+  const plan = weather => buildSmogPlan(profile, { city: 'Delhi', now, weather }).text;
+  assert.match(plan({ timestamp: new Date(now).toISOString(), windSpeed: 0 }), /dispersion/i);
+  for (const weather of [null, { windSpeed: 0 }, { timestamp: new Date(now - 4 * 3600000).toISOString(), windSpeed: 0 },
+    { timestamp: new Date(now).toISOString(), windSpeed: -1 }]) assert.doesNotMatch(plan(weather), /dispersion/i);
+});

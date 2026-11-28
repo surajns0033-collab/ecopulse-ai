@@ -1,4 +1,4 @@
-import { OWM_KEY, coordinateKey, environmentJson, getCached, setCached, toUtcIso } from './environmentCache.js';
+import { OWM_KEY, coordinateKey, environmentJson, cachedRead, toUtcIso } from './environmentCache.js';
 
 function wmoDescription(code) {
   if (code === 0) return 'Clear sky';
@@ -61,5 +61,5 @@ export async function getWeather(lat, lng, { signal } = {}) {
   signal?.throwIfAborted();
   const key = coordinateKey('weather', lat, lng);
   if (!key) return null;
-  return getCached(key) || setCached(key, await readWeatherSources(lat, lng, signal));
+  return cachedRead(key, signal, shared => readWeatherSources(lat, lng, shared));
 }

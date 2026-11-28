@@ -69,7 +69,7 @@ export function AQICard({ data }) {
   ].filter((p) => p.value != null);
 
   const timeStr = timestamp
-    ? (() => { try { return format(new Date(timestamp), 'h:mm a'); } catch { return ''; } })()
+    ? (() => { try { return format(new Date(timestamp), 'd MMM, h:mm a'); } catch { return ''; } })()
     : '';
 
   return (
@@ -110,8 +110,8 @@ export function AQICard({ data }) {
       )}
 
       <div className="aqi-source-row">
-        <span>{city ? `📍 ${city} • ` : ''}Source: {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noopener noreferrer">{source}</a> : source || 'Unavailable'}{station && station !== city ? ` (${station})` : ''}</span>
-        {timeStr && <span>{timeStr} (your time)</span>}
+        <span>{city ? `📍 ${city} • ` : ''}Source: {sourceUrl ? <a href={sourceUrl} target="_blank" rel="noopener noreferrer">{source}</a> : source || 'Unavailable'}{data.sourceType === 'station' && ' · station reading'}{data.sourceType === 'modeled' && ' · modeled'}{station && station !== city ? ` (${station})` : ''}</span>
+        {timeStr && <time dateTime={timestamp}>{timeStr} (your time)</time>}
       </div>
     </div>
   );

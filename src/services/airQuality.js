@@ -1,4 +1,4 @@
-import { WAQI_TOKEN, coordinateKey, environmentJson, getCached, setCached, toUtcIso } from './environmentCache.js';
+import { WAQI_TOKEN, coordinateKey, environmentJson, cachedRead, recentTimestamp, toUtcIso } from './environmentCache.js';
 
 function stationReading(json) {
   const data = json?.data;
@@ -6,7 +6,7 @@ function stationReading(json) {
   // WAQI pollutant subindices cannot be displayed as concentrations.
   const station = data.city?.name || null;
   return { aqi: data.aqi, station, city: station, timestamp: data.time?.iso || null,
-    source: 'World Air Quality Index', sourceUrl: 'https://aqicn.org/map/' };
+    scale: 'U.S. AQI', sourceType: 'station', source: 'World Air Quality Index', sourceUrl: 'https://aqicn.org/map/' };
 }
 
 function concentration(value, precision = 10) {
@@ -26,8 +26,7 @@ function modeledReading(current, sourceUrl) {
 
 export function isRecentAirQuality(reading, now = Date.now()) {
   if (!Number.isFinite(reading?.aqi) || reading.aqi < 0) return false;
-  const age = now - Date.parse(reading.timestamp);
-  return age >= -15 * 60_000 && age <= 2 * 60 * 60_000;
+  return recentTimestamp(reading.timestamp, now);
 }
 
 export async function readAirSources(lat, lng, signal, token = WAQI_TOKEN) {
@@ -48,7 +47,7 @@ export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {})
   signal?.throwIfAborted();
   const key = coordinateKey('aqi', lat, lng);
   if (!key) return null;
-  const reading = getCached(key) || setCached(key, await readAirSources(lat, lng, signal));
+  const reading = await cachedRead(key, signal, shared => readAirSources(lat, lng, shared));
   return reading && cityLabel ? { ...reading, city: cityLabel } : reading;
 }
 
@@ -74,8 +73,6 @@ export async function getAirQualityForecast(lat, lng, { signal } = {}) {
   signal?.throwIfAborted();
   const key = coordinateKey('aqi-forecast', lat, lng);
   if (!key) return null;
-  const cached = getCached(key);
-  if (cached) return cached;
   const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi&hourly=us_aqi&forecast_days=2&timezone=auto&timeformat=unixtime`;
-  return setCached(key, forecastHours(await environmentJson(url, 'air.forecast', signal, 6000)));
+  return cachedRead(key, signal, async shared => forecastHours(await environmentJson(url, 'air.forecast', shared, 6000)));
 }
