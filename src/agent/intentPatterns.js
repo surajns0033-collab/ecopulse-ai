@@ -117,7 +117,7 @@ export const INTENT_PATTERNS = [
   },
   {
     intent: INTENTS.GET_USER_IMPACT,
-    keywords: ['my impact', 'my reports', 'mera', 'my stats', 'contribution', 'how much', 'my activity', 'profile', 'my account'],
+    keywords: ['my impact', 'my reports', 'mera impact', 'my stats', 'my contribution', 'my activity', 'profile', 'my account'],
     confidence: 0.85,
     tool: 'getUserImpact',
   },

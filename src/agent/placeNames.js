@@ -39,9 +39,9 @@ export function explicitPlace(text, environment = false) {
   const candidates = [...text.matchAll(PREPOSITION)].map((m) => placeName(m[1])).filter(Boolean);
   if (candidates.length) return candidates.join(', ');
   if (!environment) return '';
-  const schoolPlace = text.match(/^([\p{L}\p{M} .'-]{2,55}?)\s+(?:mein|में)\s+(?:kal|aaj|कल|आज|subah|सुबह|school|स्कूल)/iu);
+  const schoolPlace = text.match(/^([\p{L}\p{M} .'-]{2,55}?)\s+(?:mein|me|में)\s+(?:kal|aaj|कल|आज|subah|सुबह|school|स्कूल)/iu);
   if (schoolPlace) return placeName(schoolPlace[1]);
-  const localPattern = /(?:^|\s)(?:in\s+)?(.+?)\s*(?:\b(?:ka|ki|ke|mein|madhye|madhe)\b|में|का|की|के|मध्ये|चा|ची|चे)\s*(?:aqi|weather|mausam|hawa|havaman|smog|मौसम|हवामान|तापमान|हवा|प्रदूषण|स्मॉग|धुंध)/iu;
+  const localPattern = /(?:^|\s)(?:in\s+)?(.+?)\s*(?:\b(?:ka|ki|ke|mein|me|madhye|madhe)\b|में|का|की|के|मध्ये|चा|ची|चे)\s*(?:aqi|weather|mausam|hawa|havaman|smog|मौसम|हवामान|तापमान|हवा|प्रदूषण|स्मॉग|धुंध)/iu;
   const local = text.match(localPattern)?.[1];
   const afterTopic = text.match(/^(?:(?:check|latest|current|live)\s+)*(?:aqi|a q i|air quality|weather|temperature|forecast|mausam)\s+(.+)$/i)?.[1];
   const beforeTopic = text.match(/^(?:(?:latest|current|live)\s+)?(.+?)\s+(?:aqi|a q i|air quality|weather|mausam)(?:\s+(?:today|now|please))?[.?!]*$/i)?.[1];

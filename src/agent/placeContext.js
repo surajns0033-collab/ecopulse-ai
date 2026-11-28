@@ -24,7 +24,7 @@ function requestDetails(request) {
   if (communitySetting(request)) return [request];
   const personal = request.match(/\b(?:for|with)\s+((?:my|our)\s+(?:child(?:ren)?|kids?|baby|grandparents?)\b.*)/iu);
   if (personal) return [personal[1]];
-  return /^(?:I|we)\s/i.test(request) && isSmogProfile(request) ? [request] : [];
+  return /^(?:I|we|main|hum)\s/i.test(request) && isSmogProfile(request) ? [request] : [];
 }
 
 function declaredLocation(clause) {

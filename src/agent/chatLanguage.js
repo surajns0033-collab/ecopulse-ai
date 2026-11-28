@@ -5,12 +5,13 @@ const spellings = new Map(Object.entries({
   polushun: 'pollution', polushan: 'pollution', pradushn: 'pradushan',
   skool: 'school', schl: 'school', forcast: 'forecast', wheather: 'weather',
   temparature: 'temperature', tommorow: 'tomorrow', tommorrow: 'tomorrow',
-  cretae: 'create', qualty: 'quality', complent: 'complaint',
+  cretae: 'create', qualty: 'quality', complent: 'complaint', subha: 'subah', bnao: 'banao',
 }));
 const vocabulary = ['pollution', 'forecast', 'weather', 'quality', 'commute', 'routine', 'tomorrow',
   'school', 'assembly', 'exposure', 'emission', 'emissions', 'indoor', 'outdoor', 'scooter', 'cycling', 'asthma',
   'purifier', 'exhaust', 'burning', 'garbage', 'complaint', 'report', 'municipal', 'meetup', 'pradushan'];
 
+const protectedWords = new Set([...vocabulary, 'garage', 'repot', 'complain']);
 for (const word of vocabulary) {
   for (let i = 0; i < word.length; i++) {
     const prefix = word.slice(0, i);
@@ -18,7 +19,7 @@ for (const word of vocabulary) {
     const variants = [prefix + suffix, prefix + word[i] + word[i] + suffix];
     if (suffix) variants.push(prefix + suffix[0] + word[i] + suffix.slice(1));
     for (const variant of variants) {
-      if (variant !== word && !vocabulary.includes(variant)) {
+      if (variant !== word && !protectedWords.has(variant)) {
         const previous = spellings.get(variant);
         spellings.set(variant, previous === undefined || previous === word ? word : variant);
       }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { recognitionText } from '../src/agent/chatLanguage.js';
 import { detectIntent, INTENTS } from '../src/agent/intentEngine.js';
 import { routePlaceRequest } from '../src/agent/placeContext.js';
 import { parseSmogProfile } from '../src/agent/smogProfile.js';
@@ -54,4 +55,17 @@ test('recognizable typing mistakes reach the same tool and preserve place names'
   assert.equal(routePlaceRequest('air polution forcast in Noida tomorrow morning').place, 'Noida');
   assert.equal(detectIntent('Can I repair a chair?').intent, INTENTS.ASK_QUESTION);
   assert.equal(detectIntent('I saw garbage on the street').entities.category, undefined);
+});
+
+test('misspellings in a commuter question and bilingual AQI route preserve unrelated words and city names', () => {
+  const commute = 'Main scoter se delivery karta hu. Pradushn me exposur kaise kam karu?';
+  assert.equal(routePlaceRequest(commute).intent, INTENTS.GET_SMOG_PLAN);
+  assert.equal(parseSmogProfile(routePlaceRequest(commute).smogDetails).commute, 'two-wheeler');
+  const city = 'Pune me hawa ki qualty kaisi hai?';
+  assert.equal(routePlaceRequest(city).place, 'Pune');
+  assert.equal(routePlaceRequest(city).intent, INTENTS.GET_AIR_QUALITY);
+  const raw = 'My garage, repot, complain, low-emission, https://example.org/forcast, smgo@example.org';
+  assert.equal(recognitionText(raw), raw);
+  assert.equal(detectIntent('My garage door is stuck').intent, INTENTS.ASK_QUESTION);
+  assert.equal(detectIntent('mera naam kya hai?').intent, INTENTS.ASK_QUESTION);
 });

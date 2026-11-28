@@ -22,7 +22,7 @@ export async function mockDelhi(context) {
   });
   await context.route('https://api.open-meteo.com/**', route => {
     counts.weather++;
-    return route.fulfill({ json: { current: { temperature_2m: 18, wind_speed_10m: 4, weather_code: 0 } } });
+    return route.fulfill({ json: { current: { temperature_2m: 18, wind_speed_10m: 4, weather_code: 0, time: new Date().toISOString() } } });
   });
   return { counts, data };
 }

@@ -1,12 +1,23 @@
 import { WAQI_TOKEN, coordinateKey, environmentJson, cachedRead, recentTimestamp, toUtcIso } from './environmentCache.js';
 
+function stationLink(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && ['aqicn.org', 'waqi.info'].includes(url.hostname) && !url.username && !url.password) return url.href;
+  } catch { /* Some stations omit the listing URL. */ }
+  return 'https://aqicn.org/map/';
+}
+
 function stationReading(json) {
   const data = json?.data;
   if (json?.status !== 'ok' || !Number.isFinite(data?.aqi) || data.aqi < 0) return null;
   // WAQI pollutant subindices cannot be displayed as concentrations.
-  const station = data.city?.name || null;
+  // WAQI publishes its feed on the U.S. EPA scale (https://aqicn.org/scale/).
+  // A differently labelled feed cannot drive the U.S. health thresholds.
+  if (data.scale && !/^(?:us(?:\.|\s)*aqi|u\.s\. aqi|us epa)$/i.test(data.scale)) return null;
+  const station = typeof data.city?.name === 'string' ? data.city.name : null;
   return { aqi: data.aqi, station, city: station, timestamp: data.time?.iso || null,
-    scale: 'U.S. AQI', sourceType: 'station', source: 'World Air Quality Index', sourceUrl: 'https://aqicn.org/map/' };
+    scale: 'U.S. AQI', sourceType: 'station', source: 'World Air Quality Index', sourceUrl: stationLink(data.city?.url) };
 }
 
 function concentration(value, precision = 10) {
@@ -59,6 +70,7 @@ export async function getCurrentAirQuality(lat, lng, city, options) {
 function forecastHours(json) {
   const currentTime = json?.current?.time;
   const times = json?.hourly?.time;
+  if (!Array.isArray(json?.hourly?.us_aqi)) return null;
   if (!Number.isFinite(currentTime) || typeof json.timezone !== 'string' || !Array.isArray(times)) return null;
   const first = times.findIndex(time => Number.isFinite(time) && time >= currentTime);
   if (first < 0) return null;

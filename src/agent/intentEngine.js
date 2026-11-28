@@ -8,17 +8,19 @@ const NAMED_SMOG_PLAN = /\b(?:smog (?:action )?plan|(?:clean[ -]air|cleaner[ -]a
 const INTENT_DETAILS = new Map(INTENT_PATTERNS.map(pattern => [pattern.intent, pattern]));
 
 const PLAN_FOR_SMOG = /\b(?:plan|routine)\s+(?:for|during|around)\s+(?:(?:the|a|severe|heavy|winter|urban|local)\s+)*(?:smog|air pollution)\b/i;
-const AIR_TOPIC = /\b(?:smog|air pollution|polluted air|indoor air quality)\b|स्मॉग|प्रदूषण/i;
+const AIR_TOPIC = /\b(?:smog|air pollution|polluted air|indoor air quality|pradushan)\b|स्मॉग|प्रदूषण/i;
 const DAILY_SETTING = /\b(?:home|household|family|families|kids|children|grandparents?|school|commut(?:e|er)|community|neighbou?rhood|housing society|kitchen|cooking|cycl(?:e|ing|ist)|scooter|deliver(?:y|ies)?|outdoor(?:s| shift| work)?|delivery|street vendor|ghar)\b|घर/iu;
 const PRACTICAL_ADVICE = /\b(?:reduce|lower|limit|cut|improve)\b[^.!?;\n]{0,45}\b(?:exposure|emissions|indoor air|kitchen air)\b|\bkeep\b[^.!?;\n]{0,35}\b(?:air|kitchen)\b[^.!?;\n]{0,15}\bclean(?:er)?\b|\bclean[ -]air routine\b/i;
 const INDOOR_ADVICE_HI = /\bghar (?:ki|ki andar ki|mein) hawa\b.{0,25}\b(?:saaf|behtar)\b|घर की हवा.{0,25}(?:साफ़?|बेहतर)/iu;
+
+const REDUCE_EXPOSURE_HI = /\b(?:exposure|emissions?)\b.{0,24}\b(?:kam|ghata)\b|(?:संपर्क|उत्सर्जन).{0,25}कम/iu;
 
 export function asksForSmogPlan(input) {
   const text = recognitionText(input);
   if (NAMED_SMOG_PLAN.test(text)) return true;
   if (/\b(?:government|official|policy|news)\b/i.test(text)) return false;
   if (PLAN_FOR_SMOG.test(text)) return true;
-  return AIR_TOPIC.test(text) && DAILY_SETTING.test(text) && (PRACTICAL_ADVICE.test(text) || INDOOR_ADVICE_HI.test(text));
+  return AIR_TOPIC.test(text) && DAILY_SETTING.test(text) && (PRACTICAL_ADVICE.test(text) || INDOOR_ADVICE_HI.test(text) || REDUCE_EXPOSURE_HI.test(text));
 }
 
 const civicTopic = /\b(complaint|municipal|authority|pollution|garbage|dumping|burning|sewage|naala|nala|tree cutting|forest|traffic police|road obstruction|mpcb|nmmc|bmc|bbmp|mcd)\b/i;

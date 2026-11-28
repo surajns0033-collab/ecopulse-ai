@@ -40,6 +40,10 @@ export async function handleAirQuality(lat, lng, city, userId, { signal, forecas
     };
   }
 
+  if (/\b(?:cpcb|naqi)\b|सीपीसीबी/iu.test(message)) return {
+    text: 'An official CPCB AQI is unavailable here. These feeds do not provide the required station observations, averaging periods and completeness records. Check the [CPCB national AQI portal](https://airquality.cpcb.gov.in/AQI_India/) for the official reading.',
+    cards: [], actions: [], status: 'unavailable',
+  };
   if (forecast) {
     const hourly = await getAirQualityForecast(lat, lng, { signal });
     const reply = describeRequestedForecast(hourly, message);
