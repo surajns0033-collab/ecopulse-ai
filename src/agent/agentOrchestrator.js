@@ -108,8 +108,9 @@ async function answerTurn(turn, input, history, userId, active, signal, classifi
 
 export async function processMessage(message, history, user, location, image, pending, options = {}) {
   const userId = user?.uid || 'anonymous';
-  const { planChoices, signal } = options;
+  const { planChoices, incident, signal } = options;
   try {
+    if (incident) return await handleCreateEmail(incident.text, [], incident.city);
     if (planChoices?.length) return await explainSmogChoices(message, planChoices, signal);
     if (image?.base64) return await photoReply(image, message, userId, signal);
     return await textReply(message, history, userId, location, pending, options);

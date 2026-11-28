@@ -64,16 +64,16 @@ function mapCommand(text, relative) {
   return null;
 }
 
-function explicitCommand(text, relative, smogRequest, profile) {
+function explicitCommand(text, relative, decision, profile) {
   const command = text.match(PLACE_COMMAND);
   if (command && profile?.pinLocation && profile.smogDetails) return profile;
-  if (command && !smogRequest) {
+  if (command && decision.intent !== INTENTS.GET_SMOG_PLAN) {
     const city = correctedCity(command[1]) || placeName(command[1]);
     if (city) return { kind: 'city', needsPlace: true, place: city };
   }
   const map = mapCommand(text, relative);
   if (map) return map;
-  if (WEB_COMMAND.test(text)) return { kind: 'web', needsPlace: relative, relative, place: relative ? labeledCity(text) : '' };
+  if (decision.useSearch || WEB_COMMAND.test(text)) return { kind: 'web', needsPlace: relative, relative, place: relative ? labeledCity(text) : '' };
   return null;
 }
 
@@ -82,11 +82,11 @@ export function routePlaceRequest(text, history = [], { awaitingSmogProfile = fa
   const clean = text.trim();
   if (DEVICE_LOCATION.test(clean)) return { kind: 'device' };
   const relative = HERE.test(clean) || /\b(?:air|weather|temperature) outside\b/i.test(clean);
-  const smogRequest = asksForSmogPlan(clean);
+  const decision = classification ?? detectIntent(clean, history);
+  const smogRequest = decision.intent === INTENTS.GET_SMOG_PLAN;
   const profile = awaitingSmogProfile && !smogRequest ? routeSmogPlan(clean, true) : null;
-  const command = explicitCommand(clean, relative, smogRequest, profile);
+  const command = explicitCommand(clean, relative, decision, profile);
   if (command) return command;
-  const { intent } = classification ?? detectIntent(clean, history);
-  if (smogRequest || intent === INTENTS.GET_SMOG_PLAN) return routeSmogPlan(clean);
-  return routeTopic(clean, intent, relative) || (profile?.smogDetails ? profile : { kind: 'general' });
+  if (smogRequest) return routeSmogPlan(clean);
+  return routeTopic(clean, decision.intent, relative) || (profile?.smogDetails ? profile : { kind: 'general' });
 }

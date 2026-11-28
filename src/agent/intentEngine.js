@@ -1,29 +1,15 @@
 import { keywordText, keywordIntent, extractEntities } from './intentKeywords.js';
 import { INTENTS, INTENT_PATTERNS } from './intentPatterns.js';
 
+import { smogRequestKind } from './smogRequests.js';
 import { localizedIntent } from './localizedIntents.js';
 import { recognitionText } from './chatLanguage.js';
 
 export { INTENTS } from './intentPatterns.js';
 
-const NAMED_SMOG_PLAN = /\b(?:smog (?:action )?plan|(?:clean[ -]air|cleaner[ -]air|indoor[ -]air|personali[sz]ed air) (?:action )?plan|low[ -]emission (?:daily )?routine)\b|(?:स्मॉग|धुंध).{0,20}(?:योजना|प्लान)/iu;
+export { asksForSmogPlan } from './smogRequests.js';
+
 const INTENT_DETAILS = new Map(INTENT_PATTERNS.map(pattern => [pattern.intent, pattern]));
-
-const PLAN_FOR_SMOG = /\b(?:plan|routine)\s+(?:for|during|around)\s+(?:(?:the|a|severe|heavy|winter|urban|local)\s+)*(?:smog|air pollution)\b/i;
-const AIR_TOPIC = /\b(?:smog|air pollution|polluted air|indoor air quality|pradushan)\b|स्मॉग|प्रदूषण/i;
-const DAILY_SETTING = /\b(?:home|household|family|families|kids|children|grandparents?|school|commut(?:e|er)|community|neighbou?rhood|housing society|kitchen|cooking|cycl(?:e|ing|ist)|scooter|deliver(?:y|ies)?|outdoor(?:s| shift| work)?|delivery|street vendor|ghar)\b|घर/iu;
-const PRACTICAL_ADVICE = /\b(?:reduce|lower|limit|cut|improve)\b[^.!?;\n]{0,45}\b(?:exposure|emissions|indoor air|kitchen air)\b|\bkeep\b[^.!?;\n]{0,35}\b(?:air|kitchen)\b[^.!?;\n]{0,15}\bclean(?:er)?\b|\bclean[ -]air routine\b/i;
-const INDOOR_ADVICE_HI = /\bghar (?:ki|ki andar ki|mein) hawa\b.{0,25}\b(?:saaf|behtar)\b|घर की हवा.{0,25}(?:साफ़?|बेहतर)/iu;
-
-const REDUCE_EXPOSURE_HI = /\b(?:exposure|emissions?)\b.{0,24}\b(?:kam|ghata)\b|(?:संपर्क|उत्सर्जन).{0,25}कम/iu;
-
-export function asksForSmogPlan(input) {
-  const text = recognitionText(input);
-  if (NAMED_SMOG_PLAN.test(text)) return true;
-  if (/\b(?:government|official|policy|news)\b/i.test(text)) return false;
-  if (PLAN_FOR_SMOG.test(text)) return true;
-  return AIR_TOPIC.test(text) && DAILY_SETTING.test(text) && (PRACTICAL_ADVICE.test(text) || INDOOR_ADVICE_HI.test(text) || REDUCE_EXPOSURE_HI.test(text));
-}
 
 const civicTopic = /\b(complaint|municipal|authority|pollution|garbage|dumping|burning|sewage|naala|nala|tree cutting|forest|traffic police|road obstruction|mpcb|nmmc|bmc|bbmp|mcd)\b/i;
 const incident = /\b(garbage|kachra|waste|dumping|dump|landfill|excavation|rubble|soil|debris|burning|buring|smoke|sewage|nali|naala|nala|drain|overflow|tree|cutting|felling|plastic|litter|dust|construction|pollution|parking|parked|vehicle|obstruction|blocked|footpath|leak|chemical|stink|smell)\b/i;
@@ -73,7 +59,9 @@ function witnessedIncident(text) {
 // Explicit requests take precedence over keyword matches. The order also keeps
 // a local incident separate from general questions about the same subject.
 function explicitIntent(text, history) {
-  if (asksForSmogPlan(text)) return { intent: INTENTS.GET_SMOG_PLAN, confidence: 0.99 };
+  const plan = smogRequestKind(text);
+  if (plan === 'policy') return { intent: INTENTS.ASK_QUESTION, useSearch: true, confidence: 0.99 };
+  if (plan === 'household') return { intent: INTENTS.GET_SMOG_PLAN, confidence: 0.99 };
   if (asksAboutEventCreation(text)) return { intent: INTENTS.CREATE_EVENT, confidence: 0.98 };
   if (asksForContacts(text)) return { intent: INTENTS.GET_AUTHORITY_CONTACTS, confidence: 0.97 };
   if (/\b(search (?:the )?web|google (?:this|it|for)|look (?:this )?up|latest (?:news|update|information)|recent news|today'?s news|current (?:law|rules?|policy|deadline|official update))\b/.test(text)) {

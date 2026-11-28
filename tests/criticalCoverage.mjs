@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 // change the denominator. Browser and emulator checks run in their own suites.
 const groups = {
   'src/agent': ['intentEngine', 'intentKeywords', 'localizedIntents', 'chatLanguage', 'placeContext', 'placeNames', 'placeTurn', 'civicIssues',
-    'smogPlan', 'smogForecast', 'smogAdvice', 'smogProfile', 'requestedForecast'],
+    'smogPlan', 'smogRequests', 'smogForecast', 'smogAdvice', 'smogProfile', 'requestedForecast'],
   'src/services': ['airQuality', 'environmentCache', 'photoAssessment', 'imageDimensions', 'modelJson',
     'placeLookup', 'emailDrafts', 'meetupDiscovery', 'meetupDraft'],
   'server': ['chatRequest', 'chatValidation'],

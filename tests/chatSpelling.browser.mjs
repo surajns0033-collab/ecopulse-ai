@@ -42,3 +42,35 @@ test('a guest can type a misspelled bilingual plan and ask a misspelled forecast
   await log.locator('.chat-bubble-ai').filter({ hasText: /current air quality for Delhi, India/i }).waitFor();
   assert.ok(await log.getByText(mistypedCity, { exact: true }).isVisible());
 });
+
+test('official smog questions use only the current question for search and require a source', { timeout: 60000 }, async t => {
+  const { context, origin } = await openBrowser(t);
+  const { counts } = await mockDelhi(context);
+  const requests = [];
+  const source = { title: 'Fixture public bulletin', url: 'https://example.org/fixture-bulletin' };
+  await context.route('**/api/ai/chat', route => {
+    requests.push(route.request().postDataJSON());
+    return route.fulfill({ json: { provider: 'test-fixture', text: 'Fixture policy response.',
+      sources: requests.length === 1 ? [source] : [] } });
+  });
+  const page = await context.newPage();
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  const log = page.getByRole('log', { name: 'Chat messages' });
+  await ask(page, 'Set my city to Delhi');
+  await log.getByText(/is your selected city for Chat/).waitFor();
+
+  const question = 'Delhi ka sarkari smgo plan kya hai?';
+  await ask(page, question);
+  const citation = log.getByRole('link', { name: source.url });
+  await citation.waitFor();
+  assert.equal(await citation.getAttribute('href'), source.url);
+  assert.equal(requests[0].useSearch, true);
+  assert.deepEqual(requests[0].messages, [{ role: 'user', text: question }]);
+
+  await ask(page, 'What is the government’s official smog plan in Delhi?');
+  await log.getByText(/couldn't get a sourced web answer/i).waitFor();
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].useSearch, true);
+  assert.deepEqual(counts, { aqi: 0, weather: 0, forecast: 0 });
+});
