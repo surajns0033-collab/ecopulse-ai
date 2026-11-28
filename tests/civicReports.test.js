@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyReport, detectIssueCategory } from '../src/agent/civicIssues.js';
+import { classifyReport, detectIssueCategory, hasConcreteIssue, observationText } from '../src/agent/civicIssues.js';
 import { reportContacts, reportFields, reportUrgency } from '../src/agent/civicReportDetails.js';
 
 test('overlapping observations preserve report titles and authority routing', () => {
@@ -62,4 +62,15 @@ test('urgent guidance distinguishes local inspection from an emergency in each j
     assert.match(abroad, /verify/i);
     assert.doesNotMatch(abroad, /112/);
   }
+});
+
+test('typing corrections identify the observation without changing the complaint text', () => {
+  const note = 'I saw garbge in Dehli near the gate.';
+  assert.equal(classifyReport(note).category, 'garbage');
+  assert.equal(hasConcreteIssue(note), true);
+  assert.equal(observationText('Draft an email. ' + note), note);
+  assert.equal(hasConcreteIssue('The street is quiet'), false);
+  assert.equal(detectIssueCategory('My chair needs repair'), 'default');
+  assert.equal(classifyReport('मैंने सड़क पर कचरा देखा।').category, 'garbage');
+  assert.equal(classifyReport('maine sadak par dhool dekhi').category, 'construction');
 });

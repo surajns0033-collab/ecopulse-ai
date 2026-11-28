@@ -69,3 +69,11 @@ test('misspellings in a commuter question and bilingual AQI route preserve unrel
   assert.equal(detectIntent('My garage door is stuck').intent, INTENTS.ASK_QUESTION);
   assert.equal(detectIntent('mera naam kya hai?').intent, INTENTS.ASK_QUESTION);
 });
+
+test('a draft follow-up recognizes the preceding misspelled observation and keeps its wording', () => {
+  const note = 'I saw garbge in Dehli near the gate.';
+  const history = [{ role: 'user', text: note }];
+  assert.equal(detectIntent('Draft email', history).intent, INTENTS.CREATE_EMAIL);
+  assert.equal(history[0].text, note);
+  assert.equal(detectIntent('Draft email about my job application').intent, INTENTS.ASK_QUESTION);
+});

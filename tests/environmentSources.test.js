@@ -67,3 +67,18 @@ test('an incompatible station scale and an undated weather report cannot be pres
   assert.equal((await readAirSources(15, 72, undefined, 'fixture')).sourceType, 'modeled');
   assert.equal(await readWeatherSources(15, 72, undefined, 'fixture'), null);
 });
+
+test('station timestamps require an explicit time zone and the original source time survives', async t => {
+  const local = '2026-11-27T10:30:00';
+  const offset = local + '+05:30';
+  t.mock.method(Date, 'now', () => Date.parse(offset));
+  let timestamp = local;
+  t.mock.method(globalThis, 'fetch', async url => url.includes('waqi.info')
+    ? Response.json({ status: 'ok', data: { aqi: 145, scale: 'U.S. AQI', time: { iso: timestamp } } })
+    : Response.json({ current: { us_aqi: 88, time: new Date(Date.now()).toISOString() } }));
+  assert.equal((await readAirSources(22, 73, undefined, 'fixture')).sourceType, 'modeled');
+  timestamp = offset;
+  const station = await readAirSources(22, 73, undefined, 'fixture');
+  assert.equal(station.sourceType, 'station');
+  assert.equal(station.timestamp, offset);
+});
