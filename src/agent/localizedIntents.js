@@ -13,6 +13,7 @@ const requests = [
   [INTENTS.GET_COMMUNITY, /(?:समुदाय|samuday)\s+(?:की|ki)\s+(?:पोस्ट|posts?)/iu],
   [INTENTS.GET_USER_IMPACT, /(?:मेरी पर्यावरण गतिविधि|meri eco activit(?:y|ies)|\bmy eco impact\b)/iu],
   [INTENTS.GET_DAILY_PLAN, /(?:पर्यावरण दिनचर्या|paryavaran dincharya)/iu],
+  [INTENTS.GET_HEALTH_TIPS, /\bhealth (?:tips|advice|precautions)\b.{0,32}\b(?:air quality|aqi|smog|pollution)\b/iu],
   [INTENTS.GET_HEALTH_TIPS, /(?:प्रदूषण|धुंध|pradushan|smog).{0,20}(?:स्वास्थ्य|सेहत|sehat).{0,15}(?:सुझाव|सलाह|tips|salah)/iu],
   [INTENTS.GET_ROUTES, /(?:कम प्रदूषण|kam pradushan).{0,18}(?:रास्ता|मार्ग|rasta|raasta)/iu],
   [INTENTS.GET_WASTE_TIPS, /(?:कचरा|kachra).{0,16}(?:अलग|छाँट|alag|chhaant).{0,16}(?:कैसे|करें|kaise|kare)/iu],

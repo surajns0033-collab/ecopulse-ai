@@ -1,3 +1,12 @@
+import { recognitionText } from './chatLanguage.js';
+
+function issueTerms(text) {
+  return recognitionText(text).toLowerCase()
+    .replace(/कचरा|कचरे|कूड़ा|कूड़े|\bkachre\b/gu, ' garbage ')
+    .replace(/धुआँ|धुआं|\b(?:dhua|dhuan)\b/gu, ' smoke ')
+    .replace(/धूल|\bdhool\b/gu, ' dust ');
+}
+
 export function mentionsForest(text) {
   return /\b(?:trees?|mangroves?|forests?)\b/i.test(text);
 }
@@ -16,11 +25,12 @@ const AUTHORITY_CATEGORIES = [
   ['construction', /construction|dust/i],
   ['burning', /burn|jalana/i],
   ['industrial', /industrial|factory|chemical/i],
-  ['air', /air|smoke|smog/i],
+  ['air', /\b(?:air|smoke|smog)\b/i],
   ['garbage', /garbage|waste|kachra|plastic/i],
 ];
 
-export function detectIssueCategory(text = '') {
+export function detectIssueCategory(input = '') {
+  const text = issueTerms(input);
   if (/polluted (?:naala|nala|drain)/i.test(text)) return 'water';
   if (isRoadObstruction(text)) return 'road_obstruction';
   return AUTHORITY_CATEGORIES.find(([, pattern]) => pattern.test(text))?.[0] ?? 'default';
@@ -37,10 +47,11 @@ const REPORT_CATEGORIES = [
   ['water', /water/i, 'Water Pollution Issue'],
   ['trees', /\b(?:trees?|mangroves?)\b/i, 'Tree / Mangrove Damage Issue'],
   ['construction', /construction|dust/i, 'Construction Dust Issue'],
-  ['air', /air|pollution/i, 'Air Pollution Issue'],
+  ['air', /\b(?:air|pollution)\b/i, 'Air Pollution Issue'],
 ];
 
-export function classifyReport(text) {
+export function classifyReport(input) {
+  const text = issueTerms(input);
   if (isRoadObstruction(text)) return { category: 'road_obstruction', title: 'Road / Footpath Obstruction by Parked Vehicle' };
   const match = REPORT_CATEGORIES.find(([, pattern]) => pattern.test(text));
   if (!match) return { category: 'other', title: 'Environmental Issue Report' };
@@ -71,9 +82,11 @@ const ISSUE_KEYWORDS = [
   'tree', 'cutting', 'industrial', 'chemical', 'noise', 'smell', 'stink', 'parking', 'parked', 'vehicle', 'blocked road', 'obstruction', 'footpath',
 ];
 
+const concreteIssue = new RegExp('\\b(?:' + ISSUE_KEYWORDS.join('|') + ')(?:s|ed|ing)?\\b', 'i');
+
 export function hasConcreteIssue(text) {
-  const lower = (text || '').toLowerCase();
-  const hasIssueWord = ISSUE_KEYWORDS.some((kw) => lower.includes(kw));
+  const lower = issueTerms(text || '');
+  const hasIssueWord = concreteIssue.test(lower);
   const wordCount = lower.trim().split(/\s+/).filter(Boolean).length;
   return hasIssueWord && wordCount >= 2;
 }

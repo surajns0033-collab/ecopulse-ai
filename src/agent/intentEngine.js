@@ -83,7 +83,7 @@ function explicitIntent(text, history) {
   const localized = localizedIntent(text);
   if (localized) return { intent: localized, confidence: 0.97 };
   const recent = (history || []).slice(-5).map(item => item.text || '').join(' ');
-  const civicContext = civicTopic.test(text + ' ' + recent);
+  const civicContext = civicTopic.test(text) || civicTopic.test(recognitionText(recent));
   if (civicContext && asksForDraft(text)) return { intent: INTENTS.CREATE_EMAIL, confidence: 0.97 };
   if (isGeneralTopic(text, civicContext)) return { intent: INTENTS.ASK_QUESTION, confidence: 0.98 };
   if (describesLocalIncident(text)) return { intent: INTENTS.CREATE_REPORT, confidence: 0.95 };

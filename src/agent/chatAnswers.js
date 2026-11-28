@@ -40,6 +40,5 @@ export async function handleGeneralQuestion(message, history, location, userId, 
     cards: [], actions: [], status: 'unavailable',
   };
   logAction(userId, 'general_chat_fallback', {});
-  return buildFallbackReply({ message, location: { ...location, city }, recipient,
-    aqi: null, weather: null, isComplaintContext: complaint });
+  return buildFallbackReply({ message, location: { ...location, city }, recipient, isComplaintContext: complaint });
 }

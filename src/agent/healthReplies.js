@@ -1,4 +1,4 @@
-import { getCurrentAirQuality, getAQICategory, getWeather } from '../services/environmentalData.js';
+import { getCurrentAirQuality, getAQICategory, getAQIInsight, getWeather } from '../services/environmentalData.js';
 import { getChatResponse, isAIUnavailable } from '../services/geminiService';
 import { tools } from '../services/agentTools';
 
@@ -13,6 +13,17 @@ export async function handleDailyPlan(lat, lng) {
   };
 }
 
+function conditions(displayCity, aqiData, weatherData) {
+  const aqiContext = aqiData
+    ? `Current ${aqiData.scale || 'AQI'} in ${displayCity}: ${aqiData.aqi} (${getAQICategory(aqiData.aqi).label}). ${aqiData.source} · ${aqiData.sourceType} · ${aqiData.timestamp}.`
+    : `Live AQI for ${displayCity} is currently unavailable.`;
+  const weatherContext = weatherData
+    ? `Current weather in ${displayCity}: ${weatherData.temp}°C, ${weatherData.description}, humidity ${Number.isFinite(weatherData.humidity) ? weatherData.humidity + '%' : 'unavailable'}.`
+    : 'Current weather unavailable.';
+
+  return [aqiContext, weatherContext].join('\n');
+}
+
 export async function handleHealthTips(lat, lng, city, signal) {
   const displayCity = city || 'your area';
   const [aqiData, weatherData] = Number.isFinite(lat) && Number.isFinite(lng)
@@ -22,50 +33,22 @@ export async function handleHealthTips(lat, lng, city, signal) {
       ])
     : [null, null];
 
-  const aqiContext = aqiData
-    ? `Current AQI in ${displayCity}: ${aqiData.aqi} (${getAQICategory(aqiData.aqi).label}). Source: ${aqiData.source}.`
-    : `Live AQI for ${displayCity} is currently unavailable.`;
-  const weatherContext = weatherData
-    ? `Current weather in ${displayCity}: ${weatherData.temp}°C, ${weatherData.description}, humidity ${weatherData.humidity}%.`
-    : 'Current weather unavailable.';
-
+  const context = conditions(displayCity, aqiData, weatherData);
   const prompt = `Give concise, practical, location-specific health tips for someone in ${displayCity} right now based ONLY on the live data provided. Do not include raw pollutant tables or unrelated topics.`;
   const aiText = await getChatResponse(
     [{ role: 'user', text: prompt }],
-    `${aqiContext}\n${weatherContext}`, { signal }
+    context, { signal }
   );
 
-  if (isAIUnavailable(aiText)) {
-    const category = aqiData ? getAQICategory(aqiData.aqi) : null;
-    const tips = [];
-    if (aqiData?.aqi > 150) {
-      tips.push('Wear an **N95 mask** whenever you step out; cloth masks do not filter PM2.5.');
-      tips.push('Keep windows shut during peak traffic hours (8–10 AM, 6–8 PM) and use a purifier indoors if you have one.');
-      tips.push('Skip outdoor exercise today — move workouts indoors.');
-    } else if (aqiData?.aqi > 100) {
-      tips.push('Sensitive groups (children, elderly, asthma/allergy) should cut long outdoor exposure.');
-      tips.push('Prefer walking/cycling on quieter lanes away from main roads.');
-      tips.push('Keep inhalers/medication handy if you have a respiratory condition.');
-    } else {
-      tips.push('Air is acceptable today — normal outdoor activity is fine.');
-      tips.push('Still prefer green spaces and side lanes over main-road footpaths.');
-      tips.push('Drink water and take shade breaks if it is hot and humid.');
-    }
-    if (weatherData?.temp >= 34) tips.push('It is hot — carry water and avoid the 12–4 PM sun.');
-    if (weatherData?.humidity >= 80) tips.push('High humidity: light cotton clothes and extra hydration help.');
-
-    return {
-      text: aqiData
-        ? `💊 **Today in ${displayCity}** — AQI **${aqiData.aqi}** (${category.label})\n\n${tips.map((t) => `• ${t}`).join('\n')}\n\n_General guidance, not medical advice — consult a doctor for any breathing problem._`
-        : `💊 General tips for **${displayCity}** today:\n\n• Check the AQI before outdoor exercise.\n• Prefer side lanes and green spaces over main-road footpaths.\n• Keep windows shut during peak traffic hours.\n• Sensitive groups should carry medication and limit long outdoor exposure.\n\n_General guidance, not medical advice._`,
-      cards: [],
-      actions: [{ label: '🌬️ View Full AQI Details', action: 'QUICK_AQI', variant: 'secondary' }],
-      status: 'success',
-    };
-  }
-
+  const fallback = isAIUnavailable(aiText);
+  const tips = fallback ? [
+    getAQIInsight(aqiData) || 'Check a fresh AQI reading before outdoor exercise.',
+    'Choose quieter streets and keep a cleaner indoor space available. Ventilate when outdoor air improves.',
+    weatherData?.temp >= 34 && 'In hot weather, carry water and take shade breaks.',
+    'Follow local advisories and your clinician’s advice for individual health decisions.',
+  ].filter(Boolean).join('\n• ') : aiText;
   return {
-    text: `${aqiContext}\n${weatherContext}\n\n${aiText}`,
+    text: context + '\n\n' + (fallback ? '• ' : '') + tips,
     cards: aqiData ? [{ type: 'aqi', data: aqiData }] : [],
     actions: [{ label: '🌬️ View Full AQI Details', action: 'QUICK_AQI', variant: 'secondary' }],
     status: 'success',

@@ -103,7 +103,7 @@ export function AQICard({ data }) {
         <div className="ai-insight-box">
           <div className="insight-label">
             <span className="insight-icon">💡</span>
-            <span>AI Insight</span>
+            <span>AQI guidance</span>
           </div>
           <p>{insight}</p>
         </div>
@@ -117,4 +117,3 @@ export function AQICard({ data }) {
   );
 }
 
-// ===== GOOGLE MAP LOCATION CARD =====

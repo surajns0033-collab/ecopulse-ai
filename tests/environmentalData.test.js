@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAirQuality, getAQICategory } from '../src/services/environmentalData.js';
+import { getAirQuality, getAQICategory, getAQIInsight } from '../src/services/environmentalData.js';
 
 test('the environmental cache reuses recent data but evicts old locations at a fixed size', async (t) => {
   const fetch = t.mock.method(globalThis, 'fetch', async () => Response.json({ current: { us_aqi: 50, time: '2026-11-27T04:30' } }));
@@ -52,4 +52,10 @@ test('all AQI labels meet the WCAG AA text contrast threshold on their badge bac
     const contrast = (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
     assert.ok(contrast >= 4.5, label + ' contrast ratio: ' + contrast);
   }
+});
+
+test('AQI guidance distinguishes missing and invalid readings from a measured zero', () => {
+  for (const reading of [null, {}, { aqi: -1 }, { aqi: '0' }]) assert.equal(getAQIInsight(reading), null);
+  assert.match(getAQIInsight({ aqi: 0 }), /Good range/);
+  assert.match(getAQIInsight({ aqi: 320 }), /hazardous/i);
 });

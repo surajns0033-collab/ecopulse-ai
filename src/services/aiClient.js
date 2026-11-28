@@ -34,10 +34,18 @@ function normalizeMessages(messages) {
   })).filter(message => message.text);
 }
 
+function usableSources(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter(source => {
+    if (typeof source?.title !== 'string' || !source.title.trim() || typeof source.url !== 'string') return false;
+    try { return ['http:', 'https:'].includes(new URL(source.url).protocol); } catch { return false; }
+  }).slice(0, 8);
+}
+
 function readProxyReply({ ok, status, json }) {
   if (ok && typeof json?.text === 'string' && json.text.trim()) {
     const provider = typeof json.provider === 'string' ? json.provider : 'proxy';
-    return { text: json.text, sources: Array.isArray(json.sources) ? json.sources : [], provider,
+    return { text: json.text, sources: usableSources(json.sources), provider,
       ...(json.truncated === true ? { truncated: true } : {}) };
   }
   if (status === 404 || status === 405) {

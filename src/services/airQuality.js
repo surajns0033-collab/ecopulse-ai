@@ -8,15 +8,19 @@ function stationLink(value) {
   return 'https://aqicn.org/map/';
 }
 
+function stationTime(value) {
+  return typeof value === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : null;
+}
+
 function stationReading(json) {
   const data = json?.data;
   if (json?.status !== 'ok' || !Number.isFinite(data?.aqi) || data.aqi < 0) return null;
   // WAQI pollutant subindices cannot be displayed as concentrations.
   // WAQI publishes its feed on the U.S. EPA scale (https://aqicn.org/scale/).
   // A differently labelled feed cannot drive the U.S. health thresholds.
-  if (data.scale && !/^(?:us(?:\.|\s)*aqi|u\.s\. aqi|us epa)$/i.test(data.scale)) return null;
+  if (data.scale && !/^(?:u\.?s\.?\s*aqi|us epa)$/i.test(data.scale)) return null;
   const station = typeof data.city?.name === 'string' ? data.city.name : null;
-  return { aqi: data.aqi, station, city: station, timestamp: data.time?.iso || null,
+  return { aqi: data.aqi, station, city: station, timestamp: stationTime(data.time?.iso),
     scale: 'U.S. AQI', sourceType: 'station', source: 'World Air Quality Index', sourceUrl: stationLink(data.city?.url) };
 }
 

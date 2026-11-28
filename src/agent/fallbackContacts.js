@@ -47,14 +47,6 @@ export function contactLines(recipient) {
   return lines;
 }
 
-export function liveSummary(aqi, weather, city) {
-  const parts = [];
-  if (weather) parts.push(`🌤️ ${weather.temp}°C, ${weather.description}, humidity ${weather.humidity}%`);
-  if (aqi) parts.push(`🌬️ AQI ${aqi.aqi} (PM2.5 ${aqi.pm25 ?? '—'} µg/m³)`);
-  if (!parts.length) return '';
-  return `Right now in **${city}**:\n${parts.join('\n')}`;
-}
-
 export function buildComplaintEmailTemplate({ situation, recipient, city, issueLabel, hasPhoto = false }) {
   const place = city && city !== 'Unknown' ? city : 'my locality';
   const name = recipient?.name || 'Sir/Madam';
