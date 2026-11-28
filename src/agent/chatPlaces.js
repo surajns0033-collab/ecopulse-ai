@@ -32,7 +32,7 @@ const knownCities = new Set([
 export async function resolveChatPlace(message, history, location, pending, { chosenLocation = null, draftDetails = false, fromPhoto = false, ...options } = {}) {
   const waiting = pending?.type === AWAITING_CHAT_PLACE ? pending.waiting : null;
   const awaitingSmogProfile = !fromPhoto && pending?.type === AWAITING_SMOG_PROFILE;
-  let route = routePlaceRequest(message, history, { awaitingSmogProfile });
+  let route = routePlaceRequest(message, history, { awaitingSmogProfile, classification: options.classification });
   const smogLocation = awaitingSmogProfile && route.intent === INTENTS.GET_SMOG_PLAN ? pending.location : null;
   const continuingDraft = draftDetails && pending?.type === AWAITING_DRAFT_DETAILS && ['general', 'tool'].includes(route.kind);
   if (continuingDraft) {

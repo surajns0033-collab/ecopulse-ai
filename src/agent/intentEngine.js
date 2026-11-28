@@ -1,5 +1,7 @@
 import { INTENTS, INTENT_PATTERNS } from './intentPatterns.js';
 
+import { recognitionText } from './chatLanguage.js';
+
 export { INTENTS } from './intentPatterns.js';
 
 const NAMED_SMOG_PLAN = /\b(?:smog (?:action )?plan|(?:clean[ -]air|cleaner[ -]air|indoor[ -]air|personali[sz]ed air) (?:action )?plan|low[ -]emission (?:daily )?routine)\b|(?:स्मॉग|धुंध).{0,20}(?:योजना|प्लान)/iu;
@@ -7,11 +9,12 @@ const INTENT_DETAILS = new Map(INTENT_PATTERNS.map(pattern => [pattern.intent, p
 
 const PLAN_FOR_SMOG = /\b(?:plan|routine)\s+(?:for|during|around)\s+(?:(?:the|a|severe|heavy|winter|urban|local)\s+)*(?:smog|air pollution)\b/i;
 const AIR_TOPIC = /\b(?:smog|air pollution|polluted air|indoor air quality)\b|स्मॉग|प्रदूषण/i;
-const DAILY_SETTING = /\b(?:home|household|family|families|kids|children|grandparents?|school|commut(?:e|er)|community|neighbou?rhood|housing society|kitchen|cooking|outdoor(?:s| shift| work)?|delivery|street vendor|ghar)\b|घर/iu;
+const DAILY_SETTING = /\b(?:home|household|family|families|kids|children|grandparents?|school|commut(?:e|er)|community|neighbou?rhood|housing society|kitchen|cooking|cycl(?:e|ing|ist)|scooter|deliver(?:y|ies)?|outdoor(?:s| shift| work)?|delivery|street vendor|ghar)\b|घर/iu;
 const PRACTICAL_ADVICE = /\b(?:reduce|lower|limit|cut|improve)\b[^.!?;\n]{0,45}\b(?:exposure|emissions|indoor air|kitchen air)\b|\bkeep\b[^.!?;\n]{0,35}\b(?:air|kitchen)\b[^.!?;\n]{0,15}\bclean(?:er)?\b|\bclean[ -]air routine\b/i;
 const INDOOR_ADVICE_HI = /\bghar (?:ki|ki andar ki|mein) hawa\b.{0,25}\b(?:saaf|behtar)\b|घर की हवा.{0,25}(?:साफ़?|बेहतर)/iu;
 
-export function asksForSmogPlan(text) {
+export function asksForSmogPlan(input) {
+  const text = recognitionText(input);
   if (NAMED_SMOG_PLAN.test(text)) return true;
   if (/\b(?:government|official|policy|news)\b/i.test(text)) return false;
   if (PLAN_FOR_SMOG.test(text)) return true;
@@ -83,10 +86,15 @@ function explicitIntent(text, history) {
   return null;
 }
 
+// Delimit complete words so "chair" cannot match "air", or "street" match "tree".
+function keywordText(text) {
+  return ' ' + text.replace(/[^\p{L}\p{M}\p{N}.-]+/gu, ' ').replace(/[.](?!\d)/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+}
+
 function keywordIntent(text) {
   let best = { intent: INTENTS.ASK_QUESTION, confidence: 0.5 };
   for (const pattern of INTENT_PATTERNS) {
-    const matches = pattern.keywords.filter(keyword => text.includes(keyword));
+    const matches = pattern.keywords.filter(keyword => text.includes(' ' + keyword + ' '));
     if (!matches.length) continue;
     const confidence = pattern.confidence * Math.min(1, 0.6 + matches.length * 0.2);
     if (confidence > best.confidence) best = { intent: pattern.intent, confidence, matchedKeywords: matches };
@@ -95,21 +103,19 @@ function keywordIntent(text) {
 }
 
 export function detectIntent(message, conversationHistory = []) {
-  const text = message.toLowerCase().trim();
-  const match = explicitIntent(text, conversationHistory) ?? keywordIntent(text);
+  const original = message.toLowerCase().trim();
+  const text = recognitionText(original);
+  const match = explicitIntent(text, conversationHistory) ?? keywordIntent(keywordText(text));
   const details = INTENT_DETAILS.get(match.intent);
   return {
     ...match,
     suggestedTool: details?.tool ?? null,
     requiresConfirmation: details?.requiresConfirmation ?? false,
-    entities: extractEntities(text),
-    message: text,
+    entities: extractEntities(keywordText(text)),
+    message: original,
   };
 }
 
-/**
- * Extract simple entities from message
- */
 function extractEntities(message) {
   const entities = {};
 
@@ -122,7 +128,7 @@ function extractEntities(message) {
     awareness: ['awareness', 'education', 'learn'],
   };
   for (const [cat, kws] of Object.entries(categories)) {
-    if (kws.some((kw) => message.includes(kw))) {
+    if (kws.some((kw) => message.includes(' ' + kw + ' '))) {
       entities.category = cat;
       break;
     }
@@ -131,7 +137,7 @@ function extractEntities(message) {
   // Locations mentioned
   const locations = ['vashi', 'kharghar', 'belapur', 'panvel', 'ulwe', 'airoli', 'nerul', 'seawoods', 'navi mumbai', 'mumbai'];
   for (const loc of locations) {
-    if (message.includes(loc)) {
+    if (message.includes(' ' + loc + ' ')) {
       entities.location = loc;
       break;
     }

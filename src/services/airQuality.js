@@ -63,7 +63,7 @@ function forecastHours(json) {
   if (!Number.isFinite(currentTime) || typeof json.timezone !== 'string' || !Array.isArray(times)) return null;
   const first = times.findIndex(time => Number.isFinite(time) && time >= currentTime);
   if (first < 0) return null;
-  const hours = times.slice(first, first + 25).flatMap((time, offset) => {
+  const hours = times.slice(first, first + 49).flatMap((time, offset) => {
     const aqi = json.hourly.us_aqi?.[first + offset];
     return Number.isFinite(time) && Number.isFinite(aqi) && aqi >= 0 ? [{ time: time * 1000, aqi: Math.round(aqi) }] : [];
   });

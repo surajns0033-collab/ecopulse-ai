@@ -19,7 +19,7 @@ import { logAction } from './activityLog';
 // are handled once, before and after dispatch.
 const replies = {
   [INTENTS.GET_AIR_QUALITY]: ({ lat, lng, city, userId, message, signal }) =>
-    handleAirQuality(lat, lng, city, userId, { signal, forecast: asksForForecast(message) }),
+    handleAirQuality(lat, lng, city, userId, { signal, message, forecast: asksForForecast(message) }),
   [INTENTS.GET_WEATHER]: ({ lat, lng, city, userId, message, signal }) =>
     handleWeather(lat, lng, city, userId, { signal, forecast: asksForForecast(message) }),
   [INTENTS.GET_WATER_QUALITY]: ({ city }) => handleWaterQuality(city),
@@ -80,21 +80,22 @@ async function textReply(input, history, userId, location, pending, { chosenLoca
   const fromPhoto = photoLocation !== undefined;
   const chatLocation = fromPhoto ? photoLocation : location;
   const chatPending = fromPhoto ? null : pending;
-  const turn = await resolveChatPlace(input, history, chatLocation, chatPending, {
+  const classification = detectIntent(input, history);
+  const turn = await resolveChatPlace(input, history, chatLocation, chatPending, { classification,
     chosenLocation: fromPhoto ? null : chosenLocation, draftDetails: continuesDraft(input, chatPending), fromPhoto, signal,
   });
   const update = fromPhoto ? {} : placeChanges(turn?.context, location, chosenLocation);
   if (turn?.kind === 'reply') return locationReply(turn, update);
   if (turn?.kind === 'map') return { ...chatMap(turn.location), ...update };
   const active = turn?.location || chatLocation;
-  const result = await answerTurn(turn, input, history, userId, active, signal);
+  const result = await answerTurn(turn, input, history, userId, active, signal, classification);
   if (result.pending && active) return { ...result, pendingData: { ...result.pendingData, location: active }, ...update };
   return { ...result, ...update };
 }
 
-async function answerTurn(turn, input, history, userId, active, signal) {
+async function answerTurn(turn, input, history, userId, active, signal, classification) {
   const message = turn?.message || input;
-  const detected = detectIntent(message, history);
+  const detected = message === input ? classification : detectIntent(message, history);
   const intent = turn?.intent || (turn?.kind === 'web' ? INTENTS.ASK_QUESTION : detected.intent);
   logAction(userId, 'intent_detected', { intent, confidence: detected.confidence });
   const reply = replies[intent] ?? generalReply;

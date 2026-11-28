@@ -1,6 +1,7 @@
 import { asksForSmogPlan, detectIntent, INTENTS } from './intentEngine.js';
 import { communitySetting, isSmogProfile } from './smogProfile.js';
 import { correctedCity, explicitPlace, labeledCity, placeName, statedCity, PLACE_COMMAND } from './placeNames.js';
+import { recognitionText, schoolActivity } from './chatLanguage.js';
 import { WEB_COMMAND, routeTopic } from './placeTopics.js';
 
 export { labeledCity, placeName } from './placeNames.js';
@@ -12,7 +13,7 @@ const DEVICE_LOCATION = /^(?:(?:please\s+)?(?:use|share|detect|show|find|check) 
 const MAP = /^(?:(?:can you |please )?(?:show|open|find) (?:me )?(?:(?:the|a) )?)?maps?(?:\s+(?:of|in|for|to))?(?:\s+(.+))?$/i;
 const MAP_QUESTION = /^(?:where(?: is|['’]s)|locate|show (?:me )?(?:the )?location (?:of|for))\s+(.+)$/i;
 const ON_MAP = /^(?:can you |please )?show (?:me )?(.+?)\s+on (?:the |a )?map$/i;
-export const asksForForecast = (text) => /\b(?:forecast|tomorrow|tonight|next week|this (?:evening|weekend)|in the (?:morning|evening))\b|आने वाला|कल|उद्या/iu.test(text);
+export const asksForForecast = (text) => /\b(?:forecast|tomorrow|tonight|next week|this (?:evening|weekend)|in the (?:morning|evening))\b|\bkal\b|आने वाला|कल|उद्या/iu.test(recognitionText(text));
 
 export function resolveCity(city) {
   if (city && city !== 'your city' && city !== 'Unknown') return city;
@@ -21,8 +22,9 @@ export function resolveCity(city) {
 
 function requestDetails(request) {
   if (communitySetting(request)) return [request];
-  const household = request.match(/\b(?:for|with)\s+((?:my|our)\s+(?:child(?:ren)?|kids?|baby|grandparents?))\b/iu);
-  return household ? [household[1]] : [];
+  const personal = request.match(/\b(?:for|with)\s+((?:my|our)\s+(?:child(?:ren)?|kids?|baby|grandparents?)\b.*)/iu);
+  if (personal) return [personal[1]];
+  return /^(?:I|we)\s/i.test(request) && isSmogProfile(request) ? [request] : [];
 }
 
 function declaredLocation(clause) {
@@ -76,7 +78,7 @@ function explicitCommand(text, relative, smogRequest, profile) {
 }
 
 
-export function routePlaceRequest(text, history = [], { awaitingSmogProfile = false } = {}) {
+export function routePlaceRequest(text, history = [], { awaitingSmogProfile = false, classification } = {}) {
   const clean = text.trim();
   if (DEVICE_LOCATION.test(clean)) return { kind: 'device' };
   const relative = HERE.test(clean) || /\b(?:air|weather|temperature) outside\b/i.test(clean);
@@ -84,7 +86,10 @@ export function routePlaceRequest(text, history = [], { awaitingSmogProfile = fa
   const profile = awaitingSmogProfile && !smogRequest ? routeSmogPlan(clean, true) : null;
   const command = explicitCommand(clean, relative, smogRequest, profile);
   if (command) return command;
-  const { intent } = detectIntent(clean, history);
+  const { intent } = classification ?? detectIntent(clean, history);
+  if (schoolActivity(recognitionText(clean)) && asksForForecast(clean) && !smogRequest) {
+    return { kind: 'tool', needsPlace: true, intent: INTENTS.GET_AIR_QUALITY, relative, place: explicitPlace(clean, true) };
+  }
   if (smogRequest || intent === INTENTS.GET_SMOG_PLAN) return routeSmogPlan(clean);
   return routeTopic(clean, intent, relative) || (profile?.smogDetails ? profile : { kind: 'general' });
 }

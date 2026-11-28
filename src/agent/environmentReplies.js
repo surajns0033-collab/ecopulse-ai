@@ -1,4 +1,5 @@
-import { getCurrentAirQuality, getAQIInsight } from '../services/environmentalData.js';
+import { describeRequestedForecast } from './requestedForecast.js';
+import { getAirQualityForecast, getCurrentAirQuality, getAQIInsight } from '../services/environmentalData.js';
 import { requestAI } from '../services/aiClient.js';
 import { getChatResponse, isAIUnavailable } from '../services/geminiService';
 import { isIndianPlace } from '../services/authorityDirectory.js';
@@ -29,7 +30,7 @@ export async function explainSmogChoices(question, choices, signal) {
   return { text: result.text, cards: [], actions: [], status: 'success' };
 }
 
-export async function handleAirQuality(lat, lng, city, userId, { signal, forecast = false } = {}) {
+export async function handleAirQuality(lat, lng, city, userId, { signal, forecast = false, message = '' } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {
       text: 'Which city should I check for air quality?',
@@ -37,6 +38,12 @@ export async function handleAirQuality(lat, lng, city, userId, { signal, forecas
       actions: [{ label: '📍 Share Location', action: 'REQUEST_LOCATION', variant: 'primary' }],
       status: 'needs_location',
     };
+  }
+
+  if (forecast) {
+    const hourly = await getAirQualityForecast(lat, lng, { signal });
+    const reply = describeRequestedForecast(hourly, message);
+    return { ...reply, text: (city ? '**' + city + '** — ' : '') + reply.text, cards: [], actions: [] };
   }
 
   const aqiData = await getCurrentAirQuality(lat, lng, city, { signal });
@@ -55,7 +62,7 @@ export async function handleAirQuality(lat, lng, city, userId, { signal, forecas
   logAction(userId, 'aqi_fetched', { city: displayCity, aqi: aqiData.aqi });
 
   return {
-    text: `${forecast ? "I couldn't verify AQI for the time you asked about. " : ''}Here's the current air quality for **${displayCity}**. 🌬️`,
+    text: `Here's the current air quality for **${displayCity}**. 🌬️`,
     cards: [{ type: 'aqi', data: { ...aqiData, insight } }],
     actions: [
       { label: '💊 Health Tips', action: 'QUICK_HEALTH_TIPS', variant: 'secondary' },
@@ -95,7 +102,7 @@ export async function handleWasteTips(city, lat, lng) {
 
   if (isAIUnavailable(aiText)) {
     return {
-      text: `♻️ **Waste basics that work in ${displayCity}:**\n\n• **Segregate at source:** green bin = wet/food waste, blue = dry (paper, plastic, metal), red/hazardous = batteries, e-waste, sanitary waste.\n• **Rinse and dry** plastic before putting it in dry waste — dirty plastic is not recyclable.\n• **Compost** kitchen waste in a bucket or balcony bin; it cuts half your daily waste.\n• **E-waste:** hand it to a municipal e-waste collection point or an authorised recycler — never to the kabadiwala's fire pit.\n• **Report missed pickups / illegal dumping** to your ward office or the municipal helpline.\n\nTell me your city and I'll pull the exact municipal contact for waste complaints.`,
+      text: `♻️ **Waste basics that work in ${displayCity}:**\n\n• **Segregate at source:** green bin = wet/food waste, blue = dry (paper, plastic, metal), red/hazardous = batteries, e-waste, sanitary waste.\n• **Rinse and dry** plastic before putting it in dry waste — dirty plastic is not recyclable.\n• **Compost** kitchen waste in a bucket or balcony bin; it keeps food scraps out of disposal and open burning.\n• **E-waste:** hand it to a municipal e-waste collection point or an authorised recycler — never to the kabadiwala's fire pit.\n• **Report missed pickups / illegal dumping** to your ward office or the municipal helpline.\n\nTell me your city and I'll pull the exact municipal contact for waste complaints.`,
       cards: [],
       actions: [{ label: '📋 Report Waste Issue', action: 'QUICK_REPORT', variant: 'primary' }],
       status: 'success',

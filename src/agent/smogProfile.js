@@ -1,3 +1,5 @@
+import { recognitionText } from './chatLanguage.js';
+
 export const AWAITING_SMOG_PROFILE = 'SMOG_PLAN_AWAITING_PROFILE';
 
 // Rule order preserves the planner's preference when several values apply.
@@ -77,12 +79,13 @@ export function communitySetting(text) {
 }
 
 export function parseSmogProfile(message) {
-  const text = String(message || '').toLowerCase().replace(/\s+/gu, ' ').trim();
+  const text = recognitionText(String(message || '').toLowerCase()).replace(/\s+/gu, ' ').trim();
   return {
     commute: statedValues(text, COMMUTES)[0] ?? null,
     routine: statedValues(text, ROUTINES)[0] ?? null,
     cooking: statedValues(text, FUELS)[0] ?? null,
     filtration: airFiltration(text),
+    noVentedHood: /\b(?:no|without|do not have|don't have|don’t have)\s+(?:(?:a|an|any)\s+)?(?:vented |exhaust |range |cooker )?hood\b|\b(?:hood|chimney)\s+(?:nahi|nahin)\b|(?:हुड|चिमनी)\s+नहीं/iu.test(text),
     vulnerable: statedValues(text, SENSITIVITIES),
     community: communitySetting(text),
   };
