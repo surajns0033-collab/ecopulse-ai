@@ -42,7 +42,7 @@ export function ReportPreviewCard({ data: initial, onSubmit, onCancel }) {
             target="_blank"
             rel="noopener noreferrer"
             className="report-field-value"
-            style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#16a34a', textDecoration: 'none' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#166534', textDecoration: 'none' }}
           >
             <MapPin size={12} color="#22c55e" /> {data.location} <ExternalLink size={11} />
           </a>

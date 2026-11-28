@@ -59,6 +59,7 @@ export const MEETUP_STATUS = {
 
 const CODE_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
+/** @param {string} prefix */
 function publicCode(prefix) {
   let code = prefix + '-';
   for (let i = 0; i < 6; i++) code += CODE_CHARACTERS[Math.floor(Math.random() * CODE_CHARACTERS.length)];

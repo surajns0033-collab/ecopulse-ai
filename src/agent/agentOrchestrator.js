@@ -68,7 +68,8 @@ async function photoReply(image, message, userId, signal) {
   const candidate = incidentCity(message || '');
   const location = candidate ? (await lookupPlace(candidate, { signal })).location : null;
   const { handleImageAnalysis } = await import('./photoReports');
-  return handleImageAnalysis(image, message, userId, location);
+  signal?.throwIfAborted();
+  return handleImageAnalysis(image, message, userId, location, signal);
 }
 
 function continuesDraft(message, pending) {

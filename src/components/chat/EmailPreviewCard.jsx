@@ -57,7 +57,7 @@ export function EmailPreviewCard({ data, onSave, onCancel }) {
               target="_blank"
               rel="noopener noreferrer"
               className="email-field-value"
-              style={{ color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
+              style={{ color: '#166534', display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
             >
               {data.portalUrl} <ExternalLink size={11} />
             </a>
@@ -85,7 +85,7 @@ export function EmailPreviewCard({ data, onSave, onCancel }) {
             : <div className="email-body-preview">{draft.body}</div>}
         </div>
         {data.disclaimer && (
-          <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6, fontStyle: 'italic' }}>
+          <div style={{ fontSize: 10, color: '#475569', marginTop: 6, fontStyle: 'italic' }}>
             ⚠️ {data.disclaimer}
           </div>
         )}

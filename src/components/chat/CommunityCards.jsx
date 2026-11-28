@@ -20,7 +20,6 @@ export function ConfirmationCard({ data }) {
 // ===== IMAGE ANALYSIS CARD =====
 export function ImageAnalysisCard({ data }) {
   const severityClass = `severity-${data.severity || 'moderate'}`;
-  const confidencePct = Math.round((data.confidence || 0) * 100);
   const catObj = REPORT_CATEGORIES.find((c) => c.id === data.category);
 
   return (
@@ -32,7 +31,7 @@ export function ImageAnalysisCard({ data }) {
       {data.preview && (
         <img
           src={data.preview}
-          alt="Analyzed"
+          alt="Photo supplied for the environmental report"
           style={{ width: '100%', maxHeight: 180, objectFit: 'cover' }}
         />
       )}
@@ -51,12 +50,7 @@ export function ImageAnalysisCard({ data }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a2e' }}>{data.issue}</div>
         <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>{data.description}</div>
 
-        <div>
-          <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>AI Confidence: {confidencePct}%</div>
-          <div className="confidence-bar">
-            <div className="confidence-fill" style={{ width: `${confidencePct}%` }} />
-          </div>
-        </div>
+        <p>Possible finding. Check it against the photo before using it in a report.</p>
       </div>
     </div>
   );

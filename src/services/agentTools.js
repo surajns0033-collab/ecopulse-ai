@@ -42,13 +42,14 @@ export const tools = {
   /**
    * Analyze an environmental image
    */
-  analyzeEnvironmentalImage: async ({ base64, mimeType, contextHint }) => {
+  analyzeEnvironmentalImage: async ({ base64, mimeType, contextHint, signal }) => {
     // Prefer a configured multimodal provider. If it is unavailable, classify
     // common civic/environmental scenes locally in the browser.
-    const cloudResult = await geminiAnalyze(base64, mimeType, contextHint || '');
+    const cloudResult = await geminiAnalyze(base64, mimeType, contextHint || '', signal);
+    signal?.throwIfAborted();
     if (cloudResult) return { ...cloudResult, provider: cloudResult.provider || 'AI vision' };
     const { analyzeImageOnDevice } = await import('./onDeviceVision.js');
-    return analyzeImageOnDevice(base64, mimeType, contextHint || '');
+    return analyzeImageOnDevice(base64, mimeType, contextHint || '', signal);
   },
 
   /**

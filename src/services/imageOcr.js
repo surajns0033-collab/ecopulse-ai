@@ -35,17 +35,21 @@ function cleanOcrLines(text) {
 }
 
 /** Returns only reasonably confident text; empty means "do not quote OCR". */
-export async function extractVisibleText(base64, mimeType = 'image/jpeg') {
+export async function extractVisibleText(base64, mimeType = 'image/jpeg', signal) {
+  signal?.throwIfAborted();
   if (!base64) return { lines: [], confidence: 0 };
   try {
     const cleanBase64 = String(base64).replace(/^data:[^,]+,/, '');
     const image = `data:${mimeType};base64,${cleanBase64}`;
     const worker = await getWorker();
+    signal?.throwIfAborted();
     const { data } = await worker.recognize(image);
+    signal?.throwIfAborted();
     const confidence = Number(data?.confidence || 0);
     if (confidence < 55) return { lines: [], confidence };
     return { lines: cleanOcrLines(data?.text), confidence };
   } catch {
+    signal?.throwIfAborted();
     logFailure('vision.ocr');
     return { lines: [], confidence: 0 };
   }
