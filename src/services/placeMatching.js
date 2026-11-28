@@ -61,6 +61,7 @@ export function selectExact(places, expected, qualifiers) {
 
 export function toLocation(place) {
   return {
+    ...(place.timeZone ? { timeZone: place.timeZone } : {}),
     lat: place.lat,
     lng: place.lng,
     name: place.name,

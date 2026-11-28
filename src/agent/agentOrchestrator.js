@@ -23,7 +23,7 @@ const replies = {
   [INTENTS.GET_WEATHER]: ({ lat, lng, city, userId, message, signal }) =>
     handleWeather(lat, lng, city, userId, { signal, forecast: asksForForecast(message) }),
   [INTENTS.GET_WATER_QUALITY]: ({ city }) => handleWaterQuality(city),
-  [INTENTS.FIND_EVENTS]: ({ city, category, userId }) => handleFindEvents(city, category, userId),
+  [INTENTS.FIND_EVENTS]: ({ city, category, userId, timeZone, signal }) => handleFindEvents(city, category, userId, timeZone, signal),
   [INTENTS.JOIN_EVENT]: () => handleJoinEventPrompt(),
   [INTENTS.CREATE_EVENT]: ({ message, city, lat, lng }) => handleCreateEventPrompt(message, city, lat, lng),
   [INTENTS.CREATE_REPORT]: ({ message, userId, city, lat, lng }) => handleCreateReport(message, userId, { lat, lng, city }),
@@ -102,7 +102,7 @@ async function answerTurn(turn, input, history, userId, active, signal, classifi
   const reply = replies[intent] ?? generalReply;
   return reply({
     message, history, userId, turn, signal, category: detected.entities?.category,
-    lat: active?.lat, lng: active?.lng, city: resolveCity(active?.city),
+    timeZone: active?.timeZone, lat: active?.lat, lng: active?.lng, city: resolveCity(active?.city),
   });
 }
 

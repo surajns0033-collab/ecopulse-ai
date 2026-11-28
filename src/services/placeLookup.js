@@ -27,7 +27,7 @@ export async function lookupPlace(query, { map = false, signal, request = fetch 
   const places = results.filter((p) => /^PPL/.test(p.feature_code) || (map && /^(?:ADM|PCL)/.test(p.feature_code)))
     .map((p) => ({
       name: p.name, region: p.admin1, country: p.country, countryCode: p.country_code,
-      lat: p.latitude, lng: p.longitude, population: p.population || 0,
+      lat: p.latitude, lng: p.longitude, timeZone: p.timezone, population: p.population || 0,
     }));
   const exact = selectExact(places, expected, qualifiers);
   if (matchingRegion) {

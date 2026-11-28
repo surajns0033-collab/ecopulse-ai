@@ -2,17 +2,14 @@ import { tools } from '../services/agentTools';
 import { getJsonResponse } from '../services/geminiService';
 import { logAction } from './activityLog';
 
-export async function handleFindEvents(city, category, userId) {
-  const today = new Date().toISOString().slice(0, 10);
-  const events = (await tools.getNearbyMeetups({ category, limit: 30 })).filter((event) => {
-    const date = new Date(event.date?.toDate?.() || event.date);
-    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) >= today;
-  }).slice(0, 8);
+export async function handleFindEvents(city, category, userId, timeZone, signal) {
+  const events = await tools.getNearbyMeetups({ city, category, timeZone, limit: 8, signal });
   logAction(userId, 'events_fetched', { count: events.length, category: category || null });
 
   if (!events || events.length === 0) {
     return {
-      text: 'I didn’t find any upcoming meetups in the EcoPulse listings. You can check the Events tab or organize one.',
+      text: city ? 'No upcoming meetup lists ' + city + ' in its venue. The Events tab also lists venues without a city.'
+        : 'I didn’t find any upcoming meetups in the EcoPulse listings. You can check the Events tab or organize one.',
       cards: [],
       actions: [{ label: '➕ Create Meetup', action: 'CREATE_EVENT', variant: 'primary' }],
       status: 'empty',
@@ -20,7 +17,7 @@ export async function handleFindEvents(city, category, userId) {
   }
 
   return {
-    text: `Upcoming EcoPulse meetups are listed by date. Check the venue${city ? ` for travel from **${city}**` : ''} before joining.`,
+    text: `Upcoming EcoPulse meetups are listed by date. ${city ? `The venue lists **${city}**.` : 'Check the venue before joining.'}`,
     cards: [{ type: 'meetup-list', data: { events } }],
     actions: [
       { label: '🗓️ See All Events', action: 'GOTO_MEETUPS', variant: 'secondary' },

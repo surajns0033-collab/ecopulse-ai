@@ -1,7 +1,8 @@
-import { addDoc, collection, getDocs, limit, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore';
+import { addDoc, collection, getDocs, limit, onSnapshot, orderBy, query, startAfter, Timestamp, where } from 'firebase/firestore';
 import { isFirebaseConfigured } from '../firebase/config';
 import { db } from '../firebase/firestoreClient';
 import { COLLECTIONS, generateEventId } from '../firebase/collections.js';
+import { meetupDayStart, selectUpcomingEvents } from './meetupDiscovery.js';
 import { joinedMeetupIds, saveMeetupAttendance } from './meetupAttendance.js';
 import {
   localMeetups, localMeetupsKey, localParticipants, notifyLocalMeetups, readLocalAttendance,
@@ -22,11 +23,25 @@ function deviceEvents(rows) {
     .map(event => ({ ...event, participantCount: localParticipants(rows, event.eventId || event.id) }));
 }
 
-export async function getNearbyMeetups({ category, limit: max = 10 } = {}) {
-  const events = isFirebaseConfigured
-    ? eventRows(await getDocs(publishedMeetups(max)))
-    : deviceEvents(await readLocalAttendance());
-  return events.filter(event => !category || event.category === category).slice(0, max);
+export async function getNearbyMeetups({ category, city, timeZone, limit: max = 10, signal } = {}) {
+  const since = meetupDayStart(timeZone);
+  const filters = { since, category, city, max };
+  if (!isFirebaseConfigured) return selectUpcomingEvents(deviceEvents(await readLocalAttendance()), filters);
+
+  const collectionRef = collection(db, COLLECTIONS.MEETUPS);
+  const constraints = [where('status', '==', 'published'), where('date', '>=', Timestamp.fromDate(since))];
+  if (category) constraints.push(where('category', '==', category));
+  const pageSize = city ? Math.max(max, 30) : max;
+  const matches = [];
+  let cursor;
+  do {
+    signal?.throwIfAborted();
+    const paging = cursor ? [startAfter(cursor)] : [];
+    const snapshot = await getDocs(query(collectionRef, ...constraints, orderBy('date'), ...paging, limit(pageSize)));
+    matches.push(...selectUpcomingEvents(eventRows(snapshot), { ...filters, max: max - matches.length }));
+    cursor = snapshot.size === pageSize ? snapshot.docs.at(-1) : null;
+  } while (cursor && matches.length < max);
+  return matches;
 }
 
 export function subscribeMeetups(userId, onChange, onError) {
