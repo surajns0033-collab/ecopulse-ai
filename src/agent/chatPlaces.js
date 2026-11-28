@@ -29,34 +29,43 @@ const knownCities = new Set([
   'patna', 'bhubaneswar', 'guwahati', 'visakhapatnam', 'vadodara', 'ghaziabad', 'ludhiana', 'agra', 'nashik',
 ]);
 
-export async function resolveChatPlace(message, history, location, pending, { chosenLocation = null, draftDetails = false, fromPhoto = false, ...options } = {}) {
-  const waiting = pending?.type === AWAITING_CHAT_PLACE ? pending.waiting : null;
-  const awaitingSmogProfile = !fromPhoto && pending?.type === AWAITING_SMOG_PROFILE;
-  let route = routePlaceRequest(message, history, { awaitingSmogProfile });
-  const smogLocation = awaitingSmogProfile && route.intent === INTENTS.GET_SMOG_PLAN ? pending.location : null;
-  const continuingDraft = draftDetails && pending?.type === AWAITING_DRAFT_DETAILS && ['general', 'tool'].includes(route.kind);
-  if (continuingDraft) {
-    route = {
-      kind: 'tool', needsPlace: true, intent: INTENTS.CREATE_EMAIL,
-      place: incidentCity(message), draftDetails: true, draftIssue: pending.draftIssue,
-    };
+function pendingRoute(message, history, pending, options) {
+  const awaitingSmogProfile = !options.fromPhoto && pending?.type === AWAITING_SMOG_PROFILE;
+  const base = routePlaceRequest(message, history, { awaitingSmogProfile, classification: options.classification });
+  if (options.draftDetails && pending?.type === AWAITING_DRAFT_DETAILS && ['general', 'tool'].includes(base.kind)) {
+    return { kind: 'tool', needsPlace: true, intent: INTENTS.CREATE_EMAIL, place: incidentCity(message),
+      draftDetails: true, draftIssue: pending.draftIssue };
   }
-  if (fromPhoto && route.needsPlace) route = { ...route, place: '', relative: false };
-  let possibleCityOnly = false;
+  return options.fromPhoto && base.needsPlace ? { ...base, place: '', relative: false } : base;
+}
+
+function citySnapshotRoute(message) {
+  const place = placeName(message);
+  const known = knownCities.has(place.toLowerCase());
+  const possible = !known && /^(?:\p{Lu}[\p{L}'’.-]*)(?:\s+\p{Lu}[\p{L}'’.-]*){0,3}(?:,\s*[^,]+){0,2}$/u.test(place);
+  if (!known && !possible) return null;
+  return { kind: 'tool', intent: INTENTS.ASK_QUESTION, needsPlace: true, place, snapshot: true, possibleCityOnly: possible };
+}
+
+function locationForTurn(route, pending, location) {
+  if (route.draftDetails || (pending?.type === AWAITING_SMOG_PROFILE && route.intent === INTENTS.GET_SMOG_PLAN)) {
+    return pending?.location || location;
+  }
+  return location;
+}
+
+export async function resolveChatPlace(message, history, location, pending, options = {}) {
+  const waiting = pending?.type === AWAITING_CHAT_PLACE ? pending.waiting : null;
+  let route = pendingRoute(message, history, pending, options);
   if (route.kind === 'general' && !waiting) {
     if (route.intent) return route;
-    const place = placeName(message);
-    const known = knownCities.has(place.toLowerCase());
-    possibleCityOnly = !known && /^(?:\p{Lu}[\p{L}'’.-]*)(?:\s+\p{Lu}[\p{L}'’.-]*){0,3}(?:,\s*[^,]+){0,2}$/u.test(place);
-    if (!known && !possibleCityOnly) return null;
-    route = { kind: 'tool', intent: INTENTS.ASK_QUESTION, needsPlace: true, place, snapshot: true };
+    route = citySnapshotRoute(message);
+    if (!route) return null;
   }
   if (route.kind === 'tool' && !route.needsPlace) return null;
   const resolved = await resolvePlaceTurn(message, {
-    location: continuingDraft ? pending.location : smogLocation || location, chosenLocation, waiting,
+    location: locationForTurn(route, pending, location), chosenLocation: options.chosenLocation ?? null, waiting,
   }, route, options);
-  // A capitalized word like “Photosynthesis” isn't necessarily a city. If no
-  // place matches and the user didn't ask for local data, leave it to Chat.
-  if (possibleCityOnly && resolved.kind === 'reply' && !resolved.context.waiting?.candidate && !resolved.ambiguous) return null;
+  if (route.possibleCityOnly && resolved.kind === 'reply' && !resolved.context.waiting?.candidate && !resolved.ambiguous) return null;
   return resolved;
 }

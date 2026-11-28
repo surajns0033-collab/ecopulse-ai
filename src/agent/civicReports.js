@@ -1,7 +1,7 @@
-import { tools } from '../services/agentTools';
-import { getJsonResponse } from '../services/geminiService';
+import { findVerifiedRecipient } from '../services/verifiedRecipient.js';
+import { getJsonResponse } from '../services/geminiService.js';
 import { resolveCity } from './placeContext.js';
-import { classifyReport, mentionsForest } from './civicIssues.js';
+import { classifyReport, describesIssue, mentionsForest } from './civicIssues.js';
 import { reportContacts, reportFields, reportUrgency } from './civicReportDetails.js';
 
 export { handleCreateEmail } from './civicEmail.js';
@@ -13,9 +13,10 @@ function asksWhereToReport(message) {
     !/\b(my|our|near|nearby|outside|behind|beside|opposite|society|street|road|happening|since|yesterday|today|saw|seen|noticed|smell|stink|gate)\b/i.test(message);
 }
 
-function reportActions(category, preview) {
+function reportActions(category, preview, incident) {
   return [
-    { label: preview ? '📧 Draft Email' : '📧 Draft Complaint Email', action: 'QUICK_DRAFT_EMAIL', variant: preview ? 'secondary' : 'primary' },
+    { label: preview ? '📧 Draft Email' : '📧 Draft Complaint Email', action: 'QUICK_DRAFT_EMAIL',
+      variant: preview ? 'secondary' : 'primary', ...(incident ? { data: { incident } } : {}) },
     { label: '📇 All Contacts', action: 'QUICK_ALL_CONTACTS', variant: 'secondary', data: { category } },
   ];
 }
@@ -29,7 +30,7 @@ function reportingInstructions(city, category, recipient, forest) {
   };
 }
 
-function extractObservation(userMessage, city) {
+function extractObservation(userMessage, city, signal) {
   return getJsonResponse(
     `Extract a concise report title, a clean factual 1-2 sentence description, and the specific locality from this complaint.
 Complaint: "${userMessage}"
@@ -37,27 +38,29 @@ Default city: "${city}".
 Rules: do not invent names, streets, dates or facts. If the locality is not stated, use the default city.
 Respond in JSON: {"title":"...","description":"...","locality":"..."}`,
     '',
-    { timeoutMs: 15000 }
+    { timeoutMs: 15000, signal }
   );
 }
 
-export async function handleCreateReport(userMessage, userId, location) {
-  const city = resolveCity(location?.city) || 'your area';
+export async function handleCreateReport(userMessage, userId, location, signal) {
+  const resolvedCity = resolveCity(location?.city);
+  const city = resolvedCity || 'your area';
   const { category, title } = classifyReport(userMessage);
-  const recipient = await tools.findVerifiedRecipient({ issueCategory: category, city });
+  const recipient = await findVerifiedRecipient({ issueCategory: category, city });
   const forest = mentionsForest(userMessage);
   if (asksWhereToReport(userMessage)) return reportingInstructions(city, category, recipient, forest);
 
-  const structured = await extractObservation(userMessage, city);
+  const structured = await extractObservation(userMessage, city, signal);
   const fields = reportFields(userMessage, city, title, structured);
   const data = { ...fields, category, userId, lat: location?.lat, lng: location?.lng };
   const contacts = reportContacts(recipient, forest, true);
   const urgency = reportUrgency(recipient, forest, true);
+  const incident = resolvedCity && describesIssue(userMessage) ? { city: resolvedCity, text: userMessage } : null;
   const photoHint = forest && recipient.forestEmail
     ? '📸 *Got a photo? Attach it — it speeds up inspection. **Draft Email** will also CC the Forest Cell.*'
     : '📸 *Got a photo? Attach it — evidence makes the complaint much harder to ignore.*';
   return {
     text: `Thank you for speaking up for **${fields.location}**! 🙌 Reporting this really makes a difference in our community.\n\n${urgency}\n\n${contacts}\n${recipient.disclaimer}\n\n${photoHint}`,
-    cards: [{ type: 'report-preview', data }], actions: reportActions(category, true), status: 'preview',
+    cards: [{ type: 'report-preview', data }], actions: reportActions(category, true, incident), status: 'preview',
   };
 }

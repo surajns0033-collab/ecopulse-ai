@@ -35,6 +35,56 @@ export function setCached(key, value) {
   return value;
 }
 
+const pending = new Map();
+
+// Each subscriber owns its wait. Only the last cancellation stops the shared fetch.
+function subscribe(entry, signal) {
+  entry.waiters++;
+  return new Promise((resolve, reject) => {
+    let active = true;
+    function finish(callback, value) {
+      if (!active) return;
+      active = false;
+      signal?.removeEventListener('abort', cancel);
+      entry.waiters--;
+      callback(value);
+    }
+    function cancel() {
+      finish(reject, signal.reason);
+      if (!entry.waiters) entry.controller.abort();
+    }
+    signal?.addEventListener('abort', cancel, { once: true });
+    entry.promise.then(value => finish(resolve, value), error => finish(reject, error));
+  });
+}
+
+export async function cachedRead(key, signal, read) {
+  signal?.throwIfAborted();
+  const hit = getCached(key);
+  if (hit !== null) return hit;
+  let entry = pending.get(key);
+  if (!entry || entry.controller.signal.aborted) {
+    const controller = new AbortController();
+    const promise = Promise.resolve().then(() => {
+      controller.signal.throwIfAborted();
+      return read(controller.signal);
+    }).then(value => {
+      controller.signal.throwIfAborted();
+      return setCached(key, value);
+    }).finally(() => {
+      if (pending.get(key)?.controller === controller) pending.delete(key);
+    });
+    entry = { controller, promise, waiters: 0 };
+    pending.set(key, entry);
+  }
+  return subscribe(entry, signal);
+}
+
+export function recentTimestamp(timestamp, now = Date.now()) {
+  const age = now - Date.parse(timestamp);
+  return age >= -15 * 60000 && age <= 2 * 3600000;
+}
+
 export function toUtcIso(timeStr) {
   if (typeof timeStr !== 'string' || !timeStr) return null;
   return timeStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(timeStr) ? timeStr : `${timeStr}Z`;

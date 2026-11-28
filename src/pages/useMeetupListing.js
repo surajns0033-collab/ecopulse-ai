@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
+import { defaultMeetupTime, defaultMeetupCapacity } from '../services/meetupDraft.js';
 import { tools } from '../services/agentTools';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
@@ -10,12 +11,12 @@ function emptyMeetupForm() {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   return { title: '', category: 'cleanup', location: null, date: format(tomorrow, 'yyyy-MM-dd'),
-    time: '7:00 AM', capacity: 25, description: '' };
+    time: defaultMeetupTime, capacity: defaultMeetupCapacity, description: '' };
 }
 
 export function useMeetupListing() {
 
-  const { user } = useAuth();
+  const { user, communityName, communityNameConfirmed } = useAuth();
   const { location } = useApp();
   const { events, joinedIds, loading, error, retry } = useMeetups(user?.uid);
   const [pending, setPending] = useState(new Set());
@@ -50,13 +51,13 @@ export function useMeetupListing() {
     try {
       const result = await tools.createMeetup({
         userId: user?.uid || 'guest',
-        organizer: user?.displayName || 'Community Member',
+        organizer: communityNameConfirmed ? communityName : 'Community Member',
         title: form.title.trim(),
         category: form.category,
         location: venue.trim(),
         date: form.date,
-        time: form.time.trim() || '7:00 AM',
-        capacity: Number(form.capacity) || 25,
+        time: form.time.trim() || defaultMeetupTime,
+        capacity: Number(form.capacity),
         description: form.description.trim() || `Community ${form.category} meetup in ${venue.trim()}.`,
       });
       dialog.current.close();

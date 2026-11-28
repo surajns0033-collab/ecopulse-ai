@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { MapPin, Calendar, Users } from 'lucide-react';
 import { getGoogleMapsUrl } from '../../services/environmentalData';
 import { MEETUP_CATEGORIES } from '../../firebase/collections';
-import { format } from 'date-fns';
+import { formatMeetupDate } from '../../services/meetupDiscovery.js';
+import { AttendanceButton } from '../meetups/AttendanceButton.jsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useMeetups } from '../meetups/useMeetups';
 
@@ -25,15 +26,6 @@ export function MeetupListCard({ data, onJoin, onLeave }) {
     }
   }
 
-  function formatEventDate(d) {
-    if (!d) return 'TBD';
-    try {
-      if (d?.toDate) return format(d.toDate(), 'EEE d MMM');
-      if (d instanceof Date) return format(d, 'EEE d MMM');
-      return String(d);
-    } catch { return 'TBD'; }
-  }
-
   return (
     <div className="inline-card">
       <div className="card-header">
@@ -42,44 +34,42 @@ export function MeetupListCard({ data, onJoin, onLeave }) {
       </div>
       {live.error && <div role="alert">{live.error} <button onClick={live.retry}>Retry</button></div>}
       <div className="meetup-scroll">
-        {data.events.map((saved) => {
-          const id = saved.id || saved.eventId;
-          const current = live.events.find(event => saved.id ? event.id === saved.id : event.eventId === saved.eventId);
-          const ev = current || saved;
-          const joined = live.joinedIds.has(current?.id || id);
-          const full = current?.capacity > 0 && current.participantCount >= current.capacity;
-          const saving = pending.has(id);
-          const catObj = MEETUP_CATEGORIES.find((c) => c.id === ev.category);
-          const mapsUrl = getGoogleMapsUrl(ev.lat, ev.lng, ev.location);
-          return (
-            <div key={ev.id || ev.eventId} className="meetup-mini-card">
-              <div className="event-category">{catObj?.icon} {catObj?.label || ev.category}</div>
-              <div className="event-title">{ev.title}</div>
-              <div className="event-meta"><Calendar size={10} /> {formatEventDate(ev.date)} • {ev.time}</div>
-              <div className="event-meta">
-                <MapPin size={10} />
-                <a
-                  href={mapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: '#16a34a', textDecoration: 'none' }}
-                >
-                  {ev.location?.length > 26 ? ev.location.slice(0, 26) + '…' : ev.location}
-                </a>
-              </div>
-              {current && <div className="event-meta"><Users size={10} /> {current.participantCount || 0}{current.capacity > 0 && `/${current.capacity}`}</div>}
-              <button className="join-btn" disabled={live.loading || !!live.error || saving || (!joined && full)}
-                onClick={() => changePlace(saved, joined)}>
-                {saving ? 'Saving…' : joined ? 'Cancel my place' : full ? 'Event full' : 'Join event'}
-              </button>
-            </div>
-          );
-        })}
+        {data.events.map(saved => <ChatMeetup key={saved.id || saved.eventId} saved={saved} live={live}
+          saving={pending.has(saved.id || saved.eventId)} changePlace={changePlace} />)}
       </div>
     </div>
   );
 }
 
+
+function ChatMeetup({ saved, live, saving, changePlace }) {
+  const current = live.events.find(event => saved.id ? event.id === saved.id : event.eventId === saved.eventId);
+  const ev = current || saved;
+  const joined = live.joinedIds.has(current?.id || saved.id || saved.eventId);
+  const catObj = MEETUP_CATEGORIES.find(category => category.id === ev.category);
+  const mapsUrl = getGoogleMapsUrl(ev.lat, ev.lng, ev.location);
+  return (
+    <div className="meetup-mini-card">
+      <div className="event-category">{catObj?.icon} {catObj?.label || ev.category}</div>
+      <div className="event-title">{ev.title}</div>
+      <div className="event-meta"><Calendar size={10} /> {formatMeetupDate(ev.date, true)} • {ev.time}</div>
+      <div className="event-meta">
+        <MapPin size={10} />
+        <a
+          href={mapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#166534', textDecoration: 'none' }}
+        >
+          {ev.location?.length > 26 ? ev.location.slice(0, 26) + '…' : ev.location}
+        </a>
+      </div>
+      {current && <div className="event-meta"><Users size={10} /> {current.participantCount || 0}{current.capacity > 0 && `/${current.capacity}`}</div>}
+      <AttendanceButton compact event={ev} joined={joined} pending={saving} unavailable={live.loading || Boolean(live.error)}
+        onChange={() => changePlace(saved, joined)} />
+    </div>
+  );
+}
 
 export function MeetupPreviewCard({ data, onPublish, onCancel }) {
   const cat = MEETUP_CATEGORIES.find((c) => c.id === data.category);
@@ -103,7 +93,7 @@ export function MeetupPreviewCard({ data, onPublish, onCancel }) {
         </div>
         <div className="preview-field">
           <div className="preview-field-label">Date & Time</div>
-          <div className="preview-field-val">📅 {data.date} • ⏰ {data.time || '7:00 AM'}</div>
+          <div className="preview-field-val">📅 {data.date} • ⏰ {data.time || '7:00 AM'}{data.capacity > 0 && ` • ${data.capacity} places`}</div>
         </div>
         <div className="preview-field">
           <div className="preview-field-label">Description</div>

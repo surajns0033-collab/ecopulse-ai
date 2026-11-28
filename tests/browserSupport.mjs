@@ -22,7 +22,7 @@ export async function auditAccessibility(page, label) {
   await page.addScriptTag({ path: axeScript });
   const findings = await page.evaluate(async () => {
     const result = await window.axe.run(document, { runOnly: {
-      type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'],
+      type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'],
     } });
     return result.violations.map(rule => ({ rule: rule.id, nodes: rule.nodes.map(node => ({
       selector: node.target, issue: node.failureSummary,

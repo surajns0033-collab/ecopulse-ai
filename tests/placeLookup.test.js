@@ -82,3 +82,41 @@ test('the geocoder verifies a Marathi city spelling using the same place data', 
   } });
   assert.deepEqual(result.location, { name: 'Mumbai', city: 'Mumbai, Maharashtra, India', lat: 19.08, lng: 72.88 });
 });
+
+test('malformed primary and secondary place data safely produce no city', async () => {
+  for (const pair of [[{ results: {} }, { features: 5 }], [{ results: [null, { feature_code: 'PPL' }] },
+    { features: [null, { properties: null }, { properties: { type: 'city', name: 'Only a name' } }] }]]) {
+    const result = await lookupPlace('Unverified', { request: async url => Response.json(url.includes('open-meteo') ? pair[0] : pair[1]) });
+    assert.deepEqual(result, {});
+  }
+});
+
+test('a common city transposition proposes the geocoded city for confirmation', async () => {
+  const request = async url => {
+    assert.equal(new URL(url).searchParams.get('name'), 'Delhi');
+    return Response.json({ results: [{ ...openPlace('Delhi', 'Delhi', 'India', 28.6, 77.2), population: 1000000 }] });
+  };
+  const result = await lookupPlace('Dehli, India', { request });
+  assert.equal(result.candidate.city, 'Delhi, India');
+  assert.equal(result.location, undefined);
+});
+
+test('an unusable reverse-geocoder field cannot become the device city', async () => {
+  const geolocation = { getCurrentPosition(accept) { accept({ coords: { latitude: 18.52, longitude: 73.86, accuracy: 200 } }); } };
+  let address = { city: { label: 'unverified' }, country: 'India' };
+  const request = () => Response.json({ address });
+  assert.equal(await getDevicePlace({ geolocation, request }), null);
+  address = { city: ' ', town: 'Pune', state: {}, country: 'India' };
+  assert.equal((await getDevicePlace({ geolocation, request })).city, 'Pune, India');
+});
+
+test('denied and cancelled device fixes never start a reverse lookup', async () => {
+  const denied = { getCurrentPosition(_, reject) { reject(new Error('Location permission denied')); } };
+  assert.equal(await getDevicePlace({ geolocation: denied, request: assert.fail }), null);
+  const broken = { getCurrentPosition() { throw new Error('Sensor unavailable'); } };
+  assert.equal(await getDevicePlace({ geolocation: broken, request: assert.fail }), null);
+  const controller = new AbortController();
+  const pending = getDevicePlace({ signal: controller.signal, geolocation: { getCurrentPosition() {} }, request: assert.fail });
+  controller.abort();
+  assert.equal(await pending, null);
+});

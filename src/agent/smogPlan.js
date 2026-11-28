@@ -1,6 +1,7 @@
 import { getAirQuality, getAirQualityForecast, getAQIInsight, getWeather } from '../services/environmentalData.js';
 import { AWAITING_SMOG_PROFILE, parseSmogProfile } from './smogProfile.js';
 import { exposureAdvice, commuteAdvice, indoorAirAdvice, cookingAdvice, communityAdvice } from './smogAdvice.js';
+import { recentTimestamp } from '../services/environmentCache.js';
 import { currentReading, forecastWindow } from './smogForecast.js';
 
 export function startSmogPlan(city) {
@@ -25,10 +26,10 @@ export function buildSmogPlan(profile, { city, aqi, weather, forecast, now = Dat
     ['🛡️ 1. Exposure routine', exposureAdvice(index, profile), 'Shorter outdoor exposure can reduce the amount of particles you breathe; it does not reduce emissions.'],
     ['🚌 2. Lower-emission commute', commuteAdvice(profile.commute, index), commuteImpact],
     ['🏠 3. Indoor air', indoorAirAdvice(profile.filtration, index), 'Source control prevents new indoor particles; filtration removes particles already in the air.'],
-    ['🍳 4. Cooking', ...cookingAdvice(profile.cooking)],
+    ['🍳 4. Cooking', ...cookingAdvice(profile.cooking, profile.noVentedHood)],
     ['🌿 5. Community choice', ...communityAdvice(profile.community, index)],
   ];
-  const lowWind = Number.isFinite(weather?.windSpeed) && weather.windSpeed < 2
+  const lowWind = recentTimestamp(weather?.timestamp, now) && Number.isFinite(weather.windSpeed) && weather.windSpeed >= 0 && weather.windSpeed < 2
     ? ` Wind is low (${weather.windSpeed} m/s), so dispersion may be slow.` : '';
 
   return {

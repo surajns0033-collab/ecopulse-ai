@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import { useComposerPhoto } from './useComposerPhoto.js';
 
 export function useChatComposer(onSend, disabled) {
 
   const [text, setText] = useState('');
-  const [imageData, setImageData] = useState(null); // { base64, mimeType, preview }
+  const photo = useComposerPhoto(disabled);
   const [isListening, setIsListening] = useState(false);
-  const fileRef = useRef(null);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
 
@@ -41,24 +41,13 @@ export function useChatComposer(onSend, disabled) {
     return () => rec.abort();
   }, []);
 
-  // Welcome/quick-action buttons can open the same image picker while keeping
-  // the normal text box available. The custom event fires within the user's
-  // button click, so browsers treat it as an intentional file-picker action.
-  useEffect(() => {
-    const openPicker = () => {
-      if (!disabled) fileRef.current?.click();
-    };
-    window.addEventListener('ecopulse:open-image-picker', openPicker);
-    return () => window.removeEventListener('ecopulse:open-image-picker', openPicker);
-  }, [disabled]);
-
   const handleSend = () => {
-    if (disabled) return;
+    if (disabled || photo.preparing) return;
     const msg = text.trim();
-    if (!msg && !imageData) return;
-    onSend(msg, imageData);
+    if (!msg && !photo.imageData) return;
+    onSend(msg, photo.imageData);
     setText('');
-    setImageData(null);
+    photo.clearPhoto();
     textareaRef.current?.focus();
   };
 
@@ -67,40 +56,6 @@ export function useChatComposer(onSend, disabled) {
       e.preventDefault();
       handleSend();
     }
-  };
-
-  const handleImageFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target.result;
-      const image = new window.Image();
-      image.onload = () => {
-        const maxDimension = 1280;
-        const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
-        const width = Math.max(1, Math.round(image.naturalWidth * scale));
-        const height = Math.max(1, Math.round(image.naturalHeight * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext('2d');
-        context.drawImage(image, 0, 0, width, height);
-        // JPEG dramatically reduces OCR/vision transfer time while preserving
-        // enough detail for signs, number plates and environmental evidence.
-        const optimizedUrl = canvas.toDataURL('image/jpeg', 0.86);
-        const [, base64] = optimizedUrl.split(',');
-        setImageData({ base64, mimeType: 'image/jpeg', preview: optimizedUrl });
-      };
-      image.onerror = () => {
-        const [header, base64] = String(dataUrl).split(',');
-        const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
-        setImageData({ base64, mimeType, preview: dataUrl });
-      };
-      image.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = ''; // reset
   };
 
   const toggleMic = () => {
@@ -122,7 +77,7 @@ export function useChatComposer(onSend, disabled) {
     }
   };
 
-  const canSend = (text.trim() || imageData) && !disabled;
-
-  return { text, setText, imageData, setImageData, isListening, fileRef, textareaRef, handleSend, handleKeyDown, handleImageFile, toggleMic, canSend };
+  const hasDraft = Boolean(text.trim() || photo.imageData || photo.preparing);
+  return { text, setText, photo, isListening, textareaRef, handleSend, handleKeyDown, toggleMic,
+    hasDraft, canSend: hasDraft && !disabled && !photo.preparing };
 }

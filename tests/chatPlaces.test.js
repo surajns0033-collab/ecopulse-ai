@@ -117,3 +117,11 @@ test('global web searches do not geocode a region; local web searches ask for a 
   assert.equal(confirmed.location, Paris);
   assert.equal(confirmed.message, request);
 });
+
+test('a health follow-up uses the last requested city without geocoding request wording', async () => {
+  const request = "Give me health tips for today's air quality";
+  const resolved = await resolveChatPlace(request, [], Paris, null, { lookup: forbidLookup });
+  assert.equal(resolved.intent, INTENTS.GET_HEALTH_TIPS);
+  assert.equal(resolved.location, Paris);
+  assert.equal(routePlaceRequest('Health advice for smog in Pune, India').place, 'Pune, India');
+});

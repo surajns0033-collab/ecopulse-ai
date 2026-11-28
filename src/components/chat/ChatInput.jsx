@@ -3,7 +3,9 @@ import { useChatComposer } from './useChatComposer.js';
 
 export default function ChatInput({ onSend, disabled }) {
 
-  const { text, setText, imageData, setImageData, isListening, fileRef, textareaRef, handleSend, handleKeyDown, handleImageFile, toggleMic, canSend } = useChatComposer(onSend, disabled);
+  const { text, setText, photo, isListening, textareaRef, handleSend, handleKeyDown, toggleMic,
+    hasDraft, canSend } = useChatComposer(onSend, disabled);
+  const { imageError, imageData, clearPhoto, fileRef, handleImageFile, preparing } = photo;
 
   return (
     <div className="chat-input-bar">
@@ -19,19 +21,20 @@ export default function ChatInput({ onSend, disabled }) {
       <input
         ref={fileRef}
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
         style={{ display: 'none' }}
         onChange={handleImageFile}
       />
 
       {/* Input wrapper */}
       <div className="input-wrapper">
-        {/* Image preview chip */}
+        {preparing && <span role="status">Preparing photo…</span>}
+        {imageError && <span role="alert" className="photo-input-error">{imageError}</span>}
         {imageData && (
           <div className="image-preview-chip">
             <img src={imageData.preview} alt="Selected" />
             <span>Image attached</span>
-            <button onClick={() => setImageData(null)} aria-label="Remove image">
+            <button onClick={clearPhoto} aria-label="Remove image">
               <X size={12} />
             </button>
           </div>
@@ -51,7 +54,7 @@ export default function ChatInput({ onSend, disabled }) {
       </div>
 
       {/* Send or Mic button */}
-      {canSend ? (
+      {hasDraft ? (
         <button
           className="send-btn"
           onClick={handleSend}

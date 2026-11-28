@@ -1,7 +1,7 @@
 import { communityMessageKey } from '../services/communityMessages';
 import Header from '../components/chat/Header';
 import BottomNav from '../components/BottomNav';
-import { format } from 'date-fns';
+import { formatMeetupDate } from '../services/meetupDiscovery.js';
 import { Users, Calendar } from 'lucide-react';
 import { PostCard } from './CommunityPost.jsx';
 import { CommunityComposer } from './CommunityComposer.jsx';
@@ -11,15 +11,6 @@ export default function CommunityPage() {
   const model = useCommunityFeed();
   const { user, communityNameConfirmed, selectLocation, locationFilter, availableLocations, messagesRef, handleScroll, handleSaveName,
     nameInput, setNameDraft, nameError, loading, events, navigate, visiblePosts, handleDeletePost } = model;
-
-  function formatEventDate(d) {
-    if (!d) return 'TBD';
-    try {
-      if (d?.toDate) return format(d.toDate(), 'EEE d MMM');
-      return format(new Date(d), 'EEE d MMM');
-    } catch { return 'TBD'; }
-  }
-
 
   return (
     <div className="app-shell">
@@ -96,7 +87,7 @@ export default function CommunityPage() {
               <div key={ev.id || ev.eventId} className="report-detail-section" style={{ marginBottom: 8, padding: '10px 12px' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{ev.title}</div>
                 <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
-                  📅 {formatEventDate(ev.date)} • 📍 {ev.location}
+                  📅 {formatMeetupDate(ev.date, true)} • 📍 {ev.location}
                 </div>
               </div>
             ))}

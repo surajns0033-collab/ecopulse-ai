@@ -9,7 +9,7 @@ import { createMeetup, getNearbyMeetups, joinMeetup, cancelMeetupRSVP } from './
 import { readLocalAttendance } from './localMeetupAttendance.js';
 import { joinedMeetupIds } from './meetupAttendance.js';
 import { findVerifiedRecipient } from './verifiedRecipient.js';
-import { readLocal, writeLocal, STORAGE_KEYS, localStore, firestoreOrLocal } from './toolStorage.js';
+import { saveEmailDraft } from './emailDrafts.js';
 import { communityTools } from './communityTools.js';
 
 export const tools = {
@@ -42,46 +42,25 @@ export const tools = {
   /**
    * Analyze an environmental image
    */
-  analyzeEnvironmentalImage: async ({ base64, mimeType, contextHint }) => {
+  analyzeEnvironmentalImage: async ({ base64, mimeType, contextHint, signal }) => {
     // Prefer a configured multimodal provider. If it is unavailable, classify
     // common civic/environmental scenes locally in the browser.
-    const cloudResult = await geminiAnalyze(base64, mimeType, contextHint || '');
+    const cloudResult = await geminiAnalyze(base64, mimeType, contextHint || '', signal);
+    signal?.throwIfAborted();
     if (cloudResult) return { ...cloudResult, provider: cloudResult.provider || 'AI vision' };
     const { analyzeImageOnDevice } = await import('./onDeviceVision.js');
-    return analyzeImageOnDevice(base64, mimeType, contextHint || '');
+    return analyzeImageOnDevice(base64, mimeType, contextHint || '', signal);
   },
 
   /**
    * Save an email draft
    */
-  createEmailDraft: async ({ userId, reportId, issue, location, recipientType, recipientEmail, subject, body }) => {
-    const draftData = {
-      userId,
-      reportId: reportId || null,
-      issue,
-      location,
-      recipientType,
-      recipientEmail,
-      subject,
-      body,
-      status: 'draft',
-      createdAt: Timestamp.now(),
-    };
-
-    return firestoreOrLocal(
-      async () => {
-        const docRef = await addDoc(collection(db, COLLECTIONS.EMAIL_DRAFTS), draftData);
-        return { draftId: docRef.id };
-      },
-      () => {
-        const id = 'draft-' + Date.now();
-        const drafts = readLocal(STORAGE_KEYS.DRAFTS);
-        drafts.push({ id, ...draftData, createdAt: new Date().toISOString() });
-        writeLocal(STORAGE_KEYS.DRAFTS, drafts);
-        return { draftId: id };
-      }
-    );
-  },
+  createEmailDraft: record => saveEmailDraft(record, {
+    persist: db ? async draft => {
+      const ref = await addDoc(collection(db, COLLECTIONS.EMAIL_DRAFTS), { ...draft, createdAt: Timestamp.now() });
+      return ref.id;
+    } : null,
+  }),
 
   /**
    * Get a personalized daily action plan
@@ -124,26 +103,5 @@ export const tools = {
       reportsSubmitted: reportsOnDevice(localStorage, userId).length,
       eventsJoined: joinedMeetupIds(mine).size,
     };
-  },
-
-  /**
-   * Save a user action to history
-   */
-  saveUserAction: async ({ userId, actionType, data }) => {
-    return firestoreOrLocal(
-      async () => {
-        await addDoc(collection(db, COLLECTIONS.USER_ACTIONS), {
-          userId,
-          actionType,
-          data,
-          createdAt: Timestamp.now(),
-        });
-        return { saved: true };
-      },
-      () => {
-        localStore.actions.push({ userId, actionType, data, createdAt: new Date().toISOString() });
-        return { saved: true };
-      }
-    );
   },
 };

@@ -17,7 +17,7 @@ if (!unitTests.length) throw new Error('No unit test files were discovered.');
 const checks = [
   { id: 'lint', label: 'Lint and function complexity', args: [npm, 'run', 'lint'] },
   { id: 'modules', label: 'Physical module length', args: [npm, 'run', 'quality:modules'] },
-  { id: 'types', label: 'Strict chat contract', args: [npm, 'run', 'typecheck'] },
+  { id: 'types', label: 'Strict application and API contracts', args: [npm, 'run', 'typecheck'] },
   { id: 'inventory', label: 'Source-wide maintainability scan', args: [npm, 'run', 'quality:inventory'] },
   { id: 'audit', label: 'Dependency advisories', args: [npm, 'audit', '--audit-level=moderate'] },
   { id: 'client', label: 'Browser credential isolation', args: ['--test', clientEnvironment] },
@@ -25,6 +25,8 @@ const checks = [
     '--test', '--experimental-test-coverage', '--test-coverage-include=src/**', '--test-coverage-include=server/**',
     '--test-coverage-lines=80', '--test-coverage-branches=75', '--test-coverage-functions=85', ...unitTests,
   ] },
+  { id: 'critical', label: 'Critical logic coverage (90/90/95)', args: [npm, 'run', 'coverage:critical'] },
+  { id: 'mutations', label: 'Targeted domain mutations', args: ['tests/mutationChecks.mjs'] },
   { id: 'plans', label: 'Smog scenarios and request counts', args: [npm, 'run', 'benchmark'] },
   { id: 'build', label: 'Production build', args: [npm, 'run', 'build'] },
   { id: 'size', label: 'Bundle budgets and local photo inference', after: 'build', args: ['--test', 'tests/vision.browser.mjs'] },
@@ -38,7 +40,7 @@ const criteria = [
   ['Code Quality', 'High', ['lint', 'modules', 'types', 'inventory']],
   ['Security', 'Medium', ['audit', 'client', 'rules']],
   ['Efficiency', 'Medium', ['plans', 'size']],
-  ['Testing', 'Low', ['unit', 'plans', 'ui', 'client', 'rules', 'size']],
+  ['Testing', 'Low', ['unit', 'critical', 'mutations', 'plans', 'ui', 'client', 'rules', 'size']],
   ['Accessibility', 'Low', ['ui']],
   ['Problem Statement Alignment', 'High', ['plans', 'ui']],
 ];
@@ -57,6 +59,7 @@ for (const check of checks) {
     env: { ...process.env, VITE_FIREBASE_API_KEY: 'demo-key' },
   });
   if (run.error) console.error(run.error.message);
+  console.log('Command exit code: ' + (run.status ?? 'unavailable'));
   if (grouped) console.log('::endgroup::');
   results.set(check.id, run.status === 0 ? 'PASS' : 'FAIL');
 }

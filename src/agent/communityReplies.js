@@ -1,18 +1,17 @@
 import { tools } from '../services/agentTools';
 import { getJsonResponse } from '../services/geminiService';
+import { readMeetupDraft } from '../services/meetupDraft.js';
+import { meetupDayStart } from '../services/meetupDiscovery.js';
 import { logAction } from './activityLog';
 
-export async function handleFindEvents(city, category, userId) {
-  const today = new Date().toISOString().slice(0, 10);
-  const events = (await tools.getNearbyMeetups({ category, limit: 30 })).filter((event) => {
-    const date = new Date(event.date?.toDate?.() || event.date);
-    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) >= today;
-  }).slice(0, 8);
+export async function handleFindEvents(city, category, userId, timeZone, signal) {
+  const events = await tools.getNearbyMeetups({ city, category, timeZone, limit: 8, signal });
   logAction(userId, 'events_fetched', { count: events.length, category: category || null });
 
   if (!events || events.length === 0) {
     return {
-      text: 'I didn’t find any upcoming meetups in the EcoPulse listings. You can check the Events tab or organize one.',
+      text: city ? 'No upcoming meetup lists ' + city + ' in its venue. The Events tab also lists venues without a city.'
+        : 'I didn’t find any upcoming meetups in the EcoPulse listings. You can check the Events tab or organize one.',
       cards: [],
       actions: [{ label: '➕ Create Meetup', action: 'CREATE_EVENT', variant: 'primary' }],
       status: 'empty',
@@ -20,7 +19,7 @@ export async function handleFindEvents(city, category, userId) {
   }
 
   return {
-    text: `Upcoming EcoPulse meetups are listed by date. Check the venue${city ? ` for travel from **${city}**` : ''} before joining.`,
+    text: `Upcoming EcoPulse meetups are listed by date. ${city ? `The venue lists **${city}**.` : 'Check the venue before joining.'}`,
     cards: [{ type: 'meetup-list', data: { events } }],
     actions: [
       { label: '🗓️ See All Events', action: 'GOTO_MEETUPS', variant: 'secondary' },
@@ -39,47 +38,31 @@ export function handleJoinEventPrompt() {
   };
 }
 
-export async function handleCreateEventPrompt(userMessage, city, lat, lng) {
-  const defaultCity = city || 'Your City';
+export async function handleCreateEventPrompt(userMessage, city, timeZone, signal) {
   const lower = (userMessage || '').toLowerCase();
   const hasDetails = userMessage && userMessage.trim().split(/\s+/).length >= 4 &&
     !['i want to create a community eco-event', 'create event', 'create meetup', 'organise event', 'organize event'].includes(lower.trim());
 
   if (hasDetails) {
     // Use the model to structure meetup details from natural language (best effort).
+    const today = meetupDayStart(timeZone).toISOString().slice(0, 10);
     const parsed = await getJsonResponse(
-      `Extract eco-meetup details from this user request: "${userMessage}".
-Default city if not specified: "${defaultCity}".
-Today's date: "${new Date().toISOString().slice(0, 10)}".
-Only use details the user actually gave; use sensible defaults for the rest.`,
-      '',
-      { timeoutMs: 15000 }
+      'Extract an event proposal from the user request. Return title, location, date (YYYY-MM-DD), time, ' +
+      'category (cleanup, plantation, biodiversity, waste_reduction, awareness or community), description and capacity. ' +
+      'Leave missing details null. Use the local date ' + today + ' to resolve relative dates.\nUser request: ' + userMessage,
+      '', { timeoutMs: 15000, signal }
     );
-    if (parsed) {
-      return {
-        text: "I've prepared your eco-meetup! 🗓️ Review the details below and tap **Publish Meetup**:",
-        cards: [{
-          type: 'meetup-preview',
-          data: {
-            title: parsed.title || 'Community Eco-Meetup',
-            category: parsed.category || 'cleanup',
-            location: parsed.location || defaultCity,
-            date: parsed.date || new Date(Date.now() + 86400000).toISOString().slice(0, 10),
-            time: parsed.time || '7:00 AM',
-            description: parsed.description || userMessage,
-            capacity: parsed.capacity || 25,
-            lat,
-            lng,
-          },
-        }],
-        actions: [],
-        status: 'preview',
-      };
-    }
+    const data = readMeetupDraft(parsed, userMessage, city);
+    if (data) return {
+      text: 'Review the proposed venue, date, time and places before publishing. You can also enter different details in Events.',
+      cards: [{ type: 'meetup-preview', data }],
+      actions: [{ label: 'Open Events', action: 'GOTO_MEETUPS', variant: 'secondary' }],
+      status: 'preview',
+    };
   }
 
   return {
-    text: `Great initiative! 🌱 Tell me the meetup details in one message (for example: *"Create a beach cleanup at Juhu, Mumbai this Sunday at 7 AM"*), and I'll set it up for you — or open the Events page to use the form!`,
+    text: 'Tell me the event title, venue and date so I can prepare a preview. For example, “Organize a park cleanup in Pune this Sunday at 8 AM.” You can also enter the details in Events.',
     cards: [],
     actions: [{ label: '🗓️ Open Events Page', action: 'GOTO_MEETUPS', variant: 'primary' }],
     status: 'info',

@@ -1,3 +1,4 @@
+import { recognitionText, schoolActivity } from './chatLanguage.js';
 import { INTENTS } from './intentEngine.js';
 import { explicitPlace } from './placeNames.js';
 
@@ -15,9 +16,9 @@ const PLACE_TOOLS = new Set([
   INTENTS.CREATE_REPORT, INTENTS.CREATE_EMAIL, INTENTS.GET_AUTHORITY_CONTACTS, INTENTS.GET_WATER_QUALITY,
 ]);
 
-function localTopics(text, intent, relative) {
-  const air = AIR.test(text);
-  const weather = WEATHER.test(text);
+function localTopics(text, recognized, intent, relative) {
+  const air = AIR.test(recognized) || schoolActivity(recognized);
+  const weather = WEATHER.test(recognized);
   const localNews = LOCAL_NEWS.test(text);
   const contact = intent === INTENTS.GET_AUTHORITY_CONTACTS || (intent !== INTENTS.CREATE_EMAIL &&
     CIVIC_OFFICE.test(text) && /\b(?:email|phone|helpline|contacts?|portal)\b/i.test(text));
@@ -37,7 +38,7 @@ function wantsNews(text, { localNews, relative, air, weather, contact }) {
 }
 
 function localTool(text, intent, topics, definition) {
-  if (!definition && intent === INTENTS.GET_HEALTH_TIPS) return intent;
+  if (!definition && [INTENTS.GET_HEALTH_TIPS, INTENTS.GET_ROUTES, INTENTS.GET_WATER_QUALITY].includes(intent)) return intent;
   if (topics.contact) return INTENTS.GET_AUTHORITY_CONTACTS;
   if (intent === INTENTS.CREATE_EMAIL) return intent;
   if (intent === INTENTS.CREATE_REPORT && /\b(?:burning|dumping|sewage|smoke|cutting|complaint|garbage|report|blocked)\b/i.test(text)) return intent;
@@ -59,12 +60,13 @@ function otherTool(text, intent, { place, relative }) {
 }
 
 export function routeTopic(text, intent, relative) {
-  const topics = localTopics(text, intent, relative);
-  const definition = definitionQuestion(text, topics);
+  const recognized = recognitionText(text);
+  const topics = localTopics(text, recognized, intent, relative);
+  const definition = definitionQuestion(recognized, topics);
   if (definition && (topics.air || topics.weather)) return { kind: 'general', intent: INTENTS.ASK_QUESTION };
   const { place, localNews } = topics;
-  if (wantsNews(text, topics)) return { kind: 'web', needsPlace: relative || localNews, relative, place };
-  const tool = localTool(text, intent, topics, definition);
+  if (wantsNews(recognized, topics)) return { kind: 'web', needsPlace: relative || localNews, relative, place };
+  const tool = localTool(recognized, intent, topics, definition);
   if (tool) return { kind: 'tool', needsPlace: true, intent: tool, relative, place };
-  return otherTool(text, intent, topics);
+  return otherTool(recognized, intent, topics);
 }

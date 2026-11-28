@@ -12,7 +12,7 @@ export function currentReading(reading, now) {
     return { text: '**Current AQI:** no recent timestamp could be verified. The older or undated value is not used for advice.' };
   }
 
-  const source = reading.sourceType === 'modeled' ? 'Open-Meteo / CAMS modeled U.S. AQI' : reading.source || 'Reported AQI';
+  const source = reading.sourceType === 'modeled' ? 'Open-Meteo / CAMS modeled U.S. AQI' : [reading.source, reading.sourceType === 'station' ? 'station · ' + reading.scale : ''].filter(Boolean).join(' · ') || 'Reported AQI';
   const sourceTime = new Date(time).toISOString().slice(0, 16).replace('T', ' ');
   return {
     reading,

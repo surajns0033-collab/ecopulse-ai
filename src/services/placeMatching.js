@@ -20,7 +20,10 @@ const regionKey = (value) => {
   const key = normalize(value);
   return Object.hasOwn(regions, key) ? regions[key] : key;
 };
-export const commonTypos = new Map(['sanfransico', 'sanfrancisco', 'sanfransisco', 'san fransico'].map((typo) => [typo, 'San Francisco']));
+export const commonTypos = new Map([
+  ...['sanfransico', 'sanfrancisco', 'sanfransisco', 'san fransico'].map(typo => [typo, 'San Francisco']),
+  ['dehli', 'Delhi'], ['mumbal', 'Mumbai'], ['banglore', 'Bengaluru'],
+]);
 
 export function alias(value) {
   return aliases.get(value.toLowerCase()) || value;
@@ -61,6 +64,7 @@ export function selectExact(places, expected, qualifiers) {
 
 export function toLocation(place) {
   return {
+    ...(place.timeZone ? { timeZone: place.timeZone } : {}),
     lat: place.lat,
     lng: place.lng,
     name: place.name,

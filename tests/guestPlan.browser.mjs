@@ -92,3 +92,27 @@ test('a Guest gets kitchen advice without a purifier and society advice with sta
   assert.doesNotMatch(plan, /Current AQI: 208/i);
   assert.equal(counts.aqi, 2);
 });
+
+test('the AQI health shortcut gives health advice and handles a missing reading', { timeout: 60000 }, async t => {
+  const { context, origin } = await openBrowser(t);
+  const { data } = await mockDelhi(context);
+  await context.route('**/api/ai/chat', route => route.fulfill({ status: 503, json: {} }));
+  const page = await context.newPage();
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  const log = page.getByRole('log', { name: 'Chat messages' });
+  await ask(page, 'Check AQI in Delhi, India');
+  await log.getByRole('button', { name: /Health Tips/ }).click();
+  const health = log.locator('.chat-bubble-ai').filter({ hasText: /general|clinician/i });
+  await health.waitFor();
+  assert.match(await health.innerText(), /Very Unhealthy/i);
+  assert.match(await health.innerText(), /Open-Meteo Air Quality.*modeled/is);
+
+  data.ageHours = 4;
+  await page.reload();
+  await ask(page, 'AQI health tips in Delhi, India');
+  const unavailable = log.locator('.chat-bubble-ai').filter({ hasText: /check a fresh AQI reading/i });
+  await unavailable.waitFor();
+  assert.match(await unavailable.innerText(), /AQI.*unavailable/i);
+  assert.doesNotMatch(await unavailable.innerText(), /acceptable|good range|fine for normal outdoor/i);
+});

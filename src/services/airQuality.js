@@ -1,12 +1,27 @@
-import { WAQI_TOKEN, coordinateKey, environmentJson, getCached, setCached, toUtcIso } from './environmentCache.js';
+import { WAQI_TOKEN, coordinateKey, environmentJson, cachedRead, recentTimestamp, toUtcIso } from './environmentCache.js';
+
+function stationLink(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && ['aqicn.org', 'waqi.info'].includes(url.hostname) && !url.username && !url.password) return url.href;
+  } catch { /* Some stations omit the listing URL. */ }
+  return 'https://aqicn.org/map/';
+}
+
+function stationTime(value) {
+  return typeof value === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : null;
+}
 
 function stationReading(json) {
   const data = json?.data;
   if (json?.status !== 'ok' || !Number.isFinite(data?.aqi) || data.aqi < 0) return null;
   // WAQI pollutant subindices cannot be displayed as concentrations.
-  const station = data.city?.name || null;
-  return { aqi: data.aqi, station, city: station, timestamp: data.time?.iso || null,
-    source: 'World Air Quality Index', sourceUrl: 'https://aqicn.org/map/' };
+  // WAQI publishes its feed on the U.S. EPA scale (https://aqicn.org/scale/).
+  // A differently labelled feed cannot drive the U.S. health thresholds.
+  if (data.scale && !/^(?:u\.?s\.?\s*aqi|us epa)$/i.test(data.scale)) return null;
+  const station = typeof data.city?.name === 'string' ? data.city.name : null;
+  return { aqi: data.aqi, station, city: station, timestamp: stationTime(data.time?.iso),
+    scale: 'U.S. AQI', sourceType: 'station', source: 'World Air Quality Index', sourceUrl: stationLink(data.city?.url) };
 }
 
 function concentration(value, precision = 10) {
@@ -26,8 +41,7 @@ function modeledReading(current, sourceUrl) {
 
 export function isRecentAirQuality(reading, now = Date.now()) {
   if (!Number.isFinite(reading?.aqi) || reading.aqi < 0) return false;
-  const age = now - Date.parse(reading.timestamp);
-  return age >= -15 * 60_000 && age <= 2 * 60 * 60_000;
+  return recentTimestamp(reading.timestamp, now);
 }
 
 export async function readAirSources(lat, lng, signal, token = WAQI_TOKEN) {
@@ -48,7 +62,7 @@ export async function getAirQuality(lat, lng, cityLabel = null, { signal } = {})
   signal?.throwIfAborted();
   const key = coordinateKey('aqi', lat, lng);
   if (!key) return null;
-  const reading = getCached(key) || setCached(key, await readAirSources(lat, lng, signal));
+  const reading = await cachedRead(key, signal, shared => readAirSources(lat, lng, shared));
   return reading && cityLabel ? { ...reading, city: cityLabel } : reading;
 }
 
@@ -60,10 +74,11 @@ export async function getCurrentAirQuality(lat, lng, city, options) {
 function forecastHours(json) {
   const currentTime = json?.current?.time;
   const times = json?.hourly?.time;
+  if (!Array.isArray(json?.hourly?.us_aqi)) return null;
   if (!Number.isFinite(currentTime) || typeof json.timezone !== 'string' || !Array.isArray(times)) return null;
   const first = times.findIndex(time => Number.isFinite(time) && time >= currentTime);
   if (first < 0) return null;
-  const hours = times.slice(first, first + 25).flatMap((time, offset) => {
+  const hours = times.slice(first, first + 49).flatMap((time, offset) => {
     const aqi = json.hourly.us_aqi?.[first + offset];
     return Number.isFinite(time) && Number.isFinite(aqi) && aqi >= 0 ? [{ time: time * 1000, aqi: Math.round(aqi) }] : [];
   });
@@ -74,8 +89,6 @@ export async function getAirQualityForecast(lat, lng, { signal } = {}) {
   signal?.throwIfAborted();
   const key = coordinateKey('aqi-forecast', lat, lng);
   if (!key) return null;
-  const cached = getCached(key);
-  if (cached) return cached;
   const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=us_aqi&hourly=us_aqi&forecast_days=2&timezone=auto&timeformat=unixtime`;
-  return setCached(key, forecastHours(await environmentJson(url, 'air.forecast', signal, 6000)));
+  return cachedRead(key, signal, async shared => forecastHours(await environmentJson(url, 'air.forecast', shared, 6000)));
 }

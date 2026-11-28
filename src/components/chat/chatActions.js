@@ -9,7 +9,6 @@ const ACTION_PROMPTS = {
   QUICK_REPORT: 'I want to file an environmental complaint',
   QUICK_WATER_REPORT: 'I want to report a water pollution issue',
   QUICK_FIND_EVENTS: 'Find eco-meetups near me',
-  QUICK_DRAFT_EMAIL: 'Draft a complaint email to municipal corporation',
   CREATE_EVENT: 'I want to create a community eco-event',
 };
 
@@ -18,7 +17,7 @@ export function createWelcomeMessage(user) {
   return {
     id: 'welcome',
     role: 'ai',
-    text: `👋 Hi${name}! I'm **EcoPulse AI**, I can help your household or community plan for smog. Choose **Smog Action Plan** for commute and indoor-air advice and the impact of each choice.\n\nType a city name for a local snapshot, or say **“Set my city to…”** to save your choice.`,
+    text: (user?.offline ? 'Cloud sign-in is unavailable. You are using Guest mode on this device. Exit Guest mode to try account sign-in again.\n\n' : '') + `👋 Hi${name}! I'm **EcoPulse AI**, I can help your household or community plan for smog. Choose **Smog Action Plan** for commute and indoor-air advice and the impact of each choice.\n\nType a city name for a local snapshot, or say **“Set my city to…”** to save your choice.`,
     cards: [],
     actions: [
       { label: '🌫️ Smog Action Plan', action: 'QUICK_SMOG_PLAN', variant: 'primary' },
@@ -47,47 +46,55 @@ const COMPLAINT = {
   ],
 };
 
+// A report shortcut carries the same confirmed observation a typed follow-up can use.
+export function chatHistoryTurn({ role, text, actions }) {
+  const incident = actions?.find(item => item.action === 'QUICK_DRAFT_EMAIL')?.data?.incident;
+  return incident ? { role, text, incident } : { role, text };
+}
+
 export function chatMessage(role, { text = '', cards = [], actions = [] }) {
   return { role, text, cards, actions, timestamp: new Date().toISOString() };
 }
 
-function handlePlanOrPhoto(action, details, send) {
+function handleContextAction(action, details, send) {
   switch (action) {
+    case 'QUICK_DRAFT_EMAIL':
+      return send('Draft a complaint email to municipal corporation', null, { incident: details.incident });
     case 'EXPLAIN_SMOG_CHOICES':
-      if (details?.choices?.length) return send('How do the choices in this plan reduce exposure and emissions?', null, { planChoices: details.choices });
+      if (details.choices?.length) return send('How do the choices in this plan reduce exposure and emissions?', null, { planChoices: details.choices });
       break;
     case 'FILE_REPORT_FROM_ANALYSIS': {
-      const message = details?.situation ? `Help me file a report. Possible photo finding (needs review): ${details.situation}` : 'Help me file a report for this environmental issue';
-      return send(message, null, { photoLocation: details?.photoLocation });
+      const message = details.situation ? `Help me file a report. Possible photo finding (needs review): ${details.situation}` : 'Help me file a report for this environmental issue';
+      return send(message, null, { photoLocation: details.photoLocation });
     }
     case 'PHOTO_ISSUE':
-      if (details?.issue) return send(`Draft a complaint email. I observed ${details.issue.toLowerCase()} and have a photo.`, null, { photoLocation: details.photoLocation ?? null });
+      if (details.issue) return send(`Draft a complaint email. I observed ${details.issue.toLowerCase()} and have a photo.`, null, { photoLocation: details.photoLocation ?? null });
       break;
     case 'QUICK_ALL_CONTACTS': {
-      const message = details?.category === 'road_obstruction'
+      const message = details.category === 'road_obstruction'
         ? 'Show me the local, state and emergency traffic-police contacts for this road obstruction, with verified email, helpline and complaint portal'
         : 'Show me the national, state and local authority contacts with emails';
-      return send(message, null, { photoLocation: details?.photoLocation });
+      return send(message, null, { photoLocation: details.photoLocation });
     }
   }
 }
 
 export function dispatchChatAction(action, item, { send, reply, navigate, save }) {
+  const details = item?.data ?? {};
   if (Object.hasOwn(ACTION_PROMPTS, action)) return send(ACTION_PROMPTS[action], null);
   if (Object.hasOwn(RECORD_ACTIONS, action)) return save(action, item);
-  const details = item?.data;
   switch (action) {
     case 'GOTO_MEETUPS': return navigate('/meetups');
     case 'GOTO_COMMUNITY': return navigate('/community');
     case 'VIEW_REPORT':
-      if (details?.id) return navigate('/report/' + encodeURIComponent(details.id));
+      if (details.id) return navigate('/report/' + encodeURIComponent(details.id));
       break;
     case 'START_MAP_SEARCH':
       return reply({ text: '🗺️ Type any city, area, or landmark like **“show map of Udaipur”**, **“map Vashi station”**, or **“Tokyo”**. I’ll resolve the real coordinates and open it on the map.' });
     case 'START_COMPLAINT': return reply(COMPLAINT);
-    case 'START_COMPLAINT_CATEGORY': return send(details?.prompt || 'I need help making a civic complaint', null);
+    case 'START_COMPLAINT_CATEGORY': return send(details.prompt || 'I need help making a civic complaint', null);
     case 'OPEN_IMAGE_PICKER': return window.dispatchEvent(new Event('ecopulse:open-image-picker'));
     case 'CANCEL': return reply({ text: "No problem! Let me know if there's anything else I can help you with. 🌱" });
-    default: return handlePlanOrPhoto(action, details, send);
+    default: return handleContextAction(action, details, send);
   }
 }

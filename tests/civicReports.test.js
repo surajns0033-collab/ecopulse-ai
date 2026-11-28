@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyReport, detectIssueCategory } from '../src/agent/civicIssues.js';
-import { reportContacts, reportFields, reportUrgency } from '../src/agent/civicReportDetails.js';
+import { classifyReport, describesIssue, detectIssueCategory, hasConcreteIssue, mentionsForest, observationText } from '../src/agent/civicIssues.js';
+import { forestDraftCopy, reportContacts, reportFields, reportUrgency } from '../src/agent/civicReportDetails.js';
 
 test('overlapping observations preserve report titles and authority routing', () => {
   const issues = [
@@ -62,4 +62,32 @@ test('urgent guidance distinguishes local inspection from an emergency in each j
     assert.match(abroad, /verify/i);
     assert.doesNotMatch(abroad, /112/);
   }
+});
+
+test('typing corrections identify the observation without changing the complaint text', () => {
+  const note = 'I saw garbge in Dehli near the gate.';
+  assert.equal(classifyReport(note).category, 'garbage');
+  assert.equal(hasConcreteIssue(note), true);
+  assert.equal(observationText('Draft an email. ' + note), note);
+  assert.equal(hasConcreteIssue('The street is quiet'), false);
+  assert.equal(detectIssueCategory('My chair needs repair'), 'default');
+  assert.equal(classifyReport('मैंने सड़क पर कचरा देखा।').category, 'garbage');
+  assert.equal(classifyReport('maine sadak par dhool dekhi').category, 'construction');
+});
+
+test('the complaint flow distinguishes a witnessed issue from a question or draft instruction', () => {
+  assert.equal(describesIssue('Where can I report tree cutting?'), false);
+  assert.equal(describesIssue('Please write a complaint about garbage.'), false);
+  assert.equal(describesIssue('Please write a complaint. I saw garbge near the gate.'), true);
+  assert.equal(describesIssue('What are the opening hours?'), false);
+  assert.equal(mentionsForest('Two mango trees were cut.'), true);
+  assert.equal(mentionsForest('My street is quiet.'), false);
+});
+
+test('a street observation cannot add a forest recipient to a complaint email', () => {
+  const office = { forestEmail: 'forest@example.test', forestHelpline: 'forest desk' };
+  assert.deepEqual(forestDraftCopy(office, 'I saw garbge on the street.'), { cc: null, ccLabel: null });
+  assert.equal(forestDraftCopy(office, 'I saw mangrove cutting').cc, office.forestEmail);
+  assert.equal(forestDraftCopy(office, 'Waste at the gate', 'Please CC the forest office.').cc, office.forestEmail);
+  assert.deepEqual(forestDraftCopy({}, 'Two trees were cut.'), { cc: null, ccLabel: null });
 });

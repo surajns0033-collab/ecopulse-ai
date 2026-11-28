@@ -57,3 +57,19 @@ test('Chat and Events share device-only attendance across tabs and refresh', { t
   await other.getByText(/Your place has been cancelled/).waitFor();
   await first.getByText('0 / 1', { exact: true }).waitFor();
 });
+
+test('Guest can navigate the public channel and its read-only controls at 320 pixels', { timeout: 60000 }, async t => {
+  const { context, origin } = await openBrowser(t);
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Continue as Guest' }).press('Enter');
+  const community = page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('button', { name: 'Community' });
+  await community.press('Enter');
+  await page.getByRole('main', { name: 'Community messages' }).waitFor();
+  await page.getByRole('button', { name: 'Sign in to post' }).waitFor();
+  assert.equal(await community.getAttribute('aria-current'), 'page');
+  assert.equal(await page.getByRole('textbox', { name: 'Community message' }).count(), 0);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await auditAccessibility(page, 'Guest community feed and navigation');
+});

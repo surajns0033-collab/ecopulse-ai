@@ -8,7 +8,7 @@ export function citySnapshot({ city, lat, lng, liveAqi, liveWeather, userId }) {
 
   if (liveAqi) {
     const category = getAQICategory(liveAqi.aqi);
-    lines.push(`🌬️ **AQI ${liveAqi.aqi} — ${category.label}** (PM2.5: ${liveAqi.pm25 ?? '—'} µg/m³, PM10: ${liveAqi.pm10 ?? '—'} µg/m³)`);
+    lines.push(`🌬️ **${liveAqi.scale || 'AQI'} ${liveAqi.aqi} — ${category.label}** [${liveAqi.source}](${liveAqi.sourceUrl}) · ${liveAqi.sourceType} · ${liveAqi.timestamp}`);
   } else {
     lines.push('🌬️ Live air-quality data is temporarily unavailable.');
   }

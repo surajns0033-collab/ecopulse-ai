@@ -19,14 +19,14 @@ import { logAction } from './activityLog';
 // are handled once, before and after dispatch.
 const replies = {
   [INTENTS.GET_AIR_QUALITY]: ({ lat, lng, city, userId, message, signal }) =>
-    handleAirQuality(lat, lng, city, userId, { signal, forecast: asksForForecast(message) }),
+    handleAirQuality(lat, lng, city, userId, { signal, message }),
   [INTENTS.GET_WEATHER]: ({ lat, lng, city, userId, message, signal }) =>
     handleWeather(lat, lng, city, userId, { signal, forecast: asksForForecast(message) }),
   [INTENTS.GET_WATER_QUALITY]: ({ city }) => handleWaterQuality(city),
-  [INTENTS.FIND_EVENTS]: ({ city, category, userId }) => handleFindEvents(city, category, userId),
+  [INTENTS.FIND_EVENTS]: ({ city, category, userId, timeZone, signal }) => handleFindEvents(city, category, userId, timeZone, signal),
   [INTENTS.JOIN_EVENT]: () => handleJoinEventPrompt(),
-  [INTENTS.CREATE_EVENT]: ({ message, city, lat, lng }) => handleCreateEventPrompt(message, city, lat, lng),
-  [INTENTS.CREATE_REPORT]: ({ message, userId, city, lat, lng }) => handleCreateReport(message, userId, { lat, lng, city }),
+  [INTENTS.CREATE_EVENT]: ({ message, city, timeZone, signal }) => handleCreateEventPrompt(message, city, timeZone, signal),
+  [INTENTS.CREATE_REPORT]: ({ message, userId, city, lat, lng, signal }) => handleCreateReport(message, userId, { lat, lng, city }, signal),
   [INTENTS.CREATE_EMAIL]: ({ message, history, city, turn }) => handleCreateEmail(message, history, city, turn),
   [INTENTS.GET_AUTHORITY_CONTACTS]: ({ message, city }) => handleAuthorityContacts(message, { city }),
   [INTENTS.GET_COMMUNITY]: () => handleCommunityFeed(),
@@ -68,7 +68,8 @@ async function photoReply(image, message, userId, signal) {
   const candidate = incidentCity(message || '');
   const location = candidate ? (await lookupPlace(candidate, { signal })).location : null;
   const { handleImageAnalysis } = await import('./photoReports');
-  return handleImageAnalysis(image, message, userId, location);
+  signal?.throwIfAborted();
+  return handleImageAnalysis(image, message, userId, location, signal);
 }
 
 function continuesDraft(message, pending) {
@@ -80,34 +81,36 @@ async function textReply(input, history, userId, location, pending, { chosenLoca
   const fromPhoto = photoLocation !== undefined;
   const chatLocation = fromPhoto ? photoLocation : location;
   const chatPending = fromPhoto ? null : pending;
-  const turn = await resolveChatPlace(input, history, chatLocation, chatPending, {
+  const classification = detectIntent(input, history);
+  const turn = await resolveChatPlace(input, history, chatLocation, chatPending, { classification,
     chosenLocation: fromPhoto ? null : chosenLocation, draftDetails: continuesDraft(input, chatPending), fromPhoto, signal,
   });
   const update = fromPhoto ? {} : placeChanges(turn?.context, location, chosenLocation);
   if (turn?.kind === 'reply') return locationReply(turn, update);
   if (turn?.kind === 'map') return { ...chatMap(turn.location), ...update };
   const active = turn?.location || chatLocation;
-  const result = await answerTurn(turn, input, history, userId, active, signal);
+  const result = await answerTurn(turn, input, history, userId, active, signal, classification);
   if (result.pending && active) return { ...result, pendingData: { ...result.pendingData, location: active }, ...update };
   return { ...result, ...update };
 }
 
-async function answerTurn(turn, input, history, userId, active, signal) {
+async function answerTurn(turn, input, history, userId, active, signal, classification) {
   const message = turn?.message || input;
-  const detected = detectIntent(message, history);
+  const detected = message === input ? classification : detectIntent(message, history);
   const intent = turn?.intent || (turn?.kind === 'web' ? INTENTS.ASK_QUESTION : detected.intent);
   logAction(userId, 'intent_detected', { intent, confidence: detected.confidence });
   const reply = replies[intent] ?? generalReply;
   return reply({
     message, history, userId, turn, signal, category: detected.entities?.category,
-    lat: active?.lat, lng: active?.lng, city: resolveCity(active?.city),
+    timeZone: active?.timeZone, lat: active?.lat, lng: active?.lng, city: resolveCity(active?.city),
   });
 }
 
 export async function processMessage(message, history, user, location, image, pending, options = {}) {
   const userId = user?.uid || 'anonymous';
-  const { planChoices, signal } = options;
+  const { planChoices, incident, signal } = options;
   try {
+    if (incident) return await handleCreateEmail(incident.text, [], incident.city);
     if (planChoices?.length) return await explainSmogChoices(message, planChoices, signal);
     if (image?.base64) return await photoReply(image, message, userId, signal);
     return await textReply(message, history, userId, location, pending, options);

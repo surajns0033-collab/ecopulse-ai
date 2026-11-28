@@ -1,22 +1,15 @@
+import { keywordText, keywordIntent, extractEntities } from './intentKeywords.js';
 import { INTENTS, INTENT_PATTERNS } from './intentPatterns.js';
+
+import { smogRequestKind } from './smogRequests.js';
+import { localizedIntent } from './localizedIntents.js';
+import { recognitionText } from './chatLanguage.js';
 
 export { INTENTS } from './intentPatterns.js';
 
-const NAMED_SMOG_PLAN = /\b(?:smog (?:action )?plan|(?:clean[ -]air|cleaner[ -]air|indoor[ -]air|personali[sz]ed air) (?:action )?plan|low[ -]emission (?:daily )?routine)\b|(?:स्मॉग|धुंध).{0,20}(?:योजना|प्लान)/iu;
+export { asksForSmogPlan } from './smogRequests.js';
+
 const INTENT_DETAILS = new Map(INTENT_PATTERNS.map(pattern => [pattern.intent, pattern]));
-
-const PLAN_FOR_SMOG = /\b(?:plan|routine)\s+(?:for|during|around)\s+(?:(?:the|a|severe|heavy|winter|urban|local)\s+)*(?:smog|air pollution)\b/i;
-const AIR_TOPIC = /\b(?:smog|air pollution|polluted air|indoor air quality)\b|स्मॉग|प्रदूषण/i;
-const DAILY_SETTING = /\b(?:home|household|family|families|kids|children|grandparents?|school|commut(?:e|er)|community|neighbou?rhood|housing society|kitchen|cooking|outdoor(?:s| shift| work)?|delivery|street vendor|ghar)\b|घर/iu;
-const PRACTICAL_ADVICE = /\b(?:reduce|lower|limit|cut|improve)\b[^.!?;\n]{0,45}\b(?:exposure|emissions|indoor air|kitchen air)\b|\bkeep\b[^.!?;\n]{0,35}\b(?:air|kitchen)\b[^.!?;\n]{0,15}\bclean(?:er)?\b|\bclean[ -]air routine\b/i;
-const INDOOR_ADVICE_HI = /\bghar (?:ki|ki andar ki|mein) hawa\b.{0,25}\b(?:saaf|behtar)\b|घर की हवा.{0,25}(?:साफ़?|बेहतर)/iu;
-
-export function asksForSmogPlan(text) {
-  if (NAMED_SMOG_PLAN.test(text)) return true;
-  if (/\b(?:government|official|policy|news)\b/i.test(text)) return false;
-  if (PLAN_FOR_SMOG.test(text)) return true;
-  return AIR_TOPIC.test(text) && DAILY_SETTING.test(text) && (PRACTICAL_ADVICE.test(text) || INDOOR_ADVICE_HI.test(text));
-}
 
 const civicTopic = /\b(complaint|municipal|authority|pollution|garbage|dumping|burning|sewage|naala|nala|tree cutting|forest|traffic police|road obstruction|mpcb|nmmc|bmc|bbmp|mcd)\b/i;
 const incident = /\b(garbage|kachra|waste|dumping|dump|landfill|excavation|rubble|soil|debris|burning|buring|smoke|sewage|nali|naala|nala|drain|overflow|tree|cutting|felling|plastic|litter|dust|construction|pollution|parking|parked|vehicle|obstruction|blocked|footpath|leak|chemical|stink|smell)\b/i;
@@ -66,15 +59,19 @@ function witnessedIncident(text) {
 // Explicit requests take precedence over keyword matches. The order also keeps
 // a local incident separate from general questions about the same subject.
 function explicitIntent(text, history) {
-  if (asksForSmogPlan(text)) return { intent: INTENTS.GET_SMOG_PLAN, confidence: 0.99 };
+  const plan = smogRequestKind(text);
+  if (plan === 'policy') return { intent: INTENTS.ASK_QUESTION, useSearch: true, confidence: 0.99 };
+  if (plan === 'household') return { intent: INTENTS.GET_SMOG_PLAN, confidence: 0.99 };
   if (asksAboutEventCreation(text)) return { intent: INTENTS.CREATE_EVENT, confidence: 0.98 };
   if (asksForContacts(text)) return { intent: INTENTS.GET_AUTHORITY_CONTACTS, confidence: 0.97 };
   if (/\b(search (?:the )?web|google (?:this|it|for)|look (?:this )?up|latest (?:news|update|information)|recent news|today'?s news|current (?:law|rules?|policy|deadline|official update))\b/.test(text)) {
     return { intent: INTENTS.ASK_QUESTION, confidence: 0.99 };
   }
 
+  const localized = localizedIntent(text);
+  if (localized) return { intent: localized, confidence: 0.97 };
   const recent = (history || []).slice(-5).map(item => item.text || '').join(' ');
-  const civicContext = civicTopic.test(text + ' ' + recent);
+  const civicContext = civicTopic.test(text) || civicTopic.test(recognitionText(recent));
   if (civicContext && asksForDraft(text)) return { intent: INTENTS.CREATE_EMAIL, confidence: 0.97 };
   if (isGeneralTopic(text, civicContext)) return { intent: INTENTS.ASK_QUESTION, confidence: 0.98 };
   if (describesLocalIncident(text)) return { intent: INTENTS.CREATE_REPORT, confidence: 0.95 };
@@ -83,59 +80,16 @@ function explicitIntent(text, history) {
   return null;
 }
 
-function keywordIntent(text) {
-  let best = { intent: INTENTS.ASK_QUESTION, confidence: 0.5 };
-  for (const pattern of INTENT_PATTERNS) {
-    const matches = pattern.keywords.filter(keyword => text.includes(keyword));
-    if (!matches.length) continue;
-    const confidence = pattern.confidence * Math.min(1, 0.6 + matches.length * 0.2);
-    if (confidence > best.confidence) best = { intent: pattern.intent, confidence, matchedKeywords: matches };
-  }
-  return best;
-}
-
 export function detectIntent(message, conversationHistory = []) {
-  const text = message.toLowerCase().trim();
-  const match = explicitIntent(text, conversationHistory) ?? keywordIntent(text);
+  const original = message.toLowerCase().trim();
+  const text = recognitionText(original);
+  const match = explicitIntent(text, conversationHistory) ?? keywordIntent(keywordText(text));
   const details = INTENT_DETAILS.get(match.intent);
   return {
     ...match,
     suggestedTool: details?.tool ?? null,
     requiresConfirmation: details?.requiresConfirmation ?? false,
-    entities: extractEntities(text),
-    message: text,
+    entities: extractEntities(keywordText(text)),
+    message: original,
   };
-}
-
-/**
- * Extract simple entities from message
- */
-function extractEntities(message) {
-  const entities = {};
-
-  // Category
-  const categories = {
-    cleanup: ['cleanup', 'clean up', 'cleaning'],
-    plantation: ['plantation', 'tree', 'trees', 'plant'],
-    waste_reduction: ['waste', 'plastic', 'reduce'],
-    biodiversity: ['biodiversity', 'nature', 'mangrove', 'wildlife'],
-    awareness: ['awareness', 'education', 'learn'],
-  };
-  for (const [cat, kws] of Object.entries(categories)) {
-    if (kws.some((kw) => message.includes(kw))) {
-      entities.category = cat;
-      break;
-    }
-  }
-
-  // Locations mentioned
-  const locations = ['vashi', 'kharghar', 'belapur', 'panvel', 'ulwe', 'airoli', 'nerul', 'seawoods', 'navi mumbai', 'mumbai'];
-  for (const loc of locations) {
-    if (message.includes(loc)) {
-      entities.location = loc;
-      break;
-    }
-  }
-
-  return entities;
 }

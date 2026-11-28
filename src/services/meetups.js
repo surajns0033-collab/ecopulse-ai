@@ -1,7 +1,9 @@
-import { addDoc, collection, getDocs, limit, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore';
+import { cloudUpcomingEvents } from './firestoreDiscovery.js';
+import { addDoc, collection, limit, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore';
 import { isFirebaseConfigured } from '../firebase/config';
 import { db } from '../firebase/firestoreClient';
 import { COLLECTIONS, generateEventId } from '../firebase/collections.js';
+import { meetupDayStart, selectUpcomingEvents } from './meetupDiscovery.js';
 import { joinedMeetupIds, saveMeetupAttendance } from './meetupAttendance.js';
 import {
   localMeetups, localMeetupsKey, localParticipants, notifyLocalMeetups, readLocalAttendance,
@@ -22,11 +24,12 @@ function deviceEvents(rows) {
     .map(event => ({ ...event, participantCount: localParticipants(rows, event.eventId || event.id) }));
 }
 
-export async function getNearbyMeetups({ category, limit: max = 10 } = {}) {
-  const events = isFirebaseConfigured
-    ? eventRows(await getDocs(publishedMeetups(max)))
-    : deviceEvents(await readLocalAttendance());
-  return events.filter(event => !category || event.category === category).slice(0, max);
+export async function getNearbyMeetups({ category, city, timeZone, limit: max = 10, signal } = {}) {
+  const since = meetupDayStart(timeZone);
+  const filters = { since, category, city, max };
+  if (!isFirebaseConfigured) return selectUpcomingEvents(deviceEvents(await readLocalAttendance()), filters);
+
+  return cloudUpcomingEvents(db, filters, signal);
 }
 
 export function subscribeMeetups(userId, onChange, onError) {

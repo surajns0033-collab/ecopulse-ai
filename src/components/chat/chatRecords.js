@@ -4,10 +4,10 @@ function confirmation(title, message, id, actions = []) {
   return { cards: [{ type: 'confirmation', data: { title, message, id } }], actions };
 }
 
-async function publishMeetup(user, data) {
+async function publishMeetup(user, data, publicName) {
   const { createMeetup } = await import('../../services/meetups');
   const { title, description, category, location, date, time, capacity, lat, lng } = data;
-  const result = await createMeetup({ userId: user.uid, organizer: user.displayName || 'Guest Organizer',
+  const result = await createMeetup({ userId: user.uid, organizer: publicName || 'Community Member',
     title, description, category, location, date, time, capacity, lat, lng });
   return confirmation(result.localOnly ? 'Meetup saved on this device' : 'Meetup published',
     `"${title}" at ${location} is on your Events page.`, result.eventId,
@@ -41,8 +41,9 @@ async function saveEmailDraft(user, data) {
   const { tools } = await import('../../services/agentTools');
   const result = await tools.createEmailDraft({ userId: user.uid, reportId: data.reportId || null,
     issue: data.subject, location: data.location || null, recipientType: 'municipal',
-    recipientEmail: data.to, subject: data.subject, body: data.body });
-  return confirmation('Email Draft Saved! 📧', 'Draft saved to your account. Nothing was sent.', result.draftId);
+    recipientEmail: data.to || null, cc: data.cc || null, subject: data.subject, body: data.body });
+  const where = result.localOnly ? 'on this device' : 'to your account';
+  return confirmation('Email draft saved', 'Draft saved ' + where + '. Nothing was sent.', result.draftId);
 }
 
 export const RECORD_ACTIONS = {

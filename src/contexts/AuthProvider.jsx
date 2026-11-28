@@ -1,29 +1,15 @@
 import { logFailure } from '../services/diagnostics.js';
 import { useCallback, useEffect, useState } from 'react';
 import { signInAnonymously, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
-import { auth, isFirebaseConfigured } from '../firebase/config';
+import { clearDeviceGuest, deviceGuest, startGuest } from './deviceSession.js';
+import { auth, isFirebaseConfigured, offlineGuestSession } from '../firebase/config';
 import { AuthContext } from './AuthContext';
 import { useEmailSignIn } from './useEmailSignIn.js';
 
-const localSessionKey = 'ecopulse_device_session';
-
-function rememberLocalUser(user) {
-  try { sessionStorage.setItem(localSessionKey, JSON.stringify(user)); } catch { /* Storage can be disabled. */ }
-  return user;
-}
-
-function restoreDeviceUser() {
-  if (isFirebaseConfigured) return null;
-  try {
-    const saved = JSON.parse(sessionStorage.getItem(localSessionKey));
-    return saved?.isLocal === true && typeof saved.uid === 'string' ? saved : null;
-  } catch { return null; }
-}
-
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(restoreDeviceUser);
+  const [user, setUser] = useState(() => isFirebaseConfigured ? null : deviceGuest());
   const [loading, setLoading] = useState(isFirebaseConfigured);
-  const [authMode, setAuthMode] = useState(() => user && (user.isAnonymous ? 'guest' : 'google'));
+  const [authMode, setAuthMode] = useState(() => user ? 'guest' : null);
 
   const [communityName, setCommunityName] = useState('');
   const [communityNameConfirmed, setCommunityNameConfirmed] = useState(false);
@@ -78,12 +64,7 @@ export function AuthProvider({ children }) {
 
   /** Sign in with Google */
   async function signInWithGoogle() {
-    if (!firebaseReady) {
-      // Firebase not configured — create a local "signed-in" user placeholder
-      setUser(rememberLocalUser({ uid: 'google-user-' + crypto.randomUUID(), displayName: 'User', isAnonymous: false, isLocal: true }));
-      setAuthMode('google');
-      return;
-    }
+    if (!firebaseReady) throw new Error('Google sign-in is unavailable on this device.');
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     setAuthMode('google');
@@ -93,22 +74,19 @@ export function AuthProvider({ children }) {
 
   /** Continue as guest (anonymous) */
   async function continueAsGuest() {
-    if (!firebaseReady) {
-      // Firebase not configured — create local guest user
-      setUser(rememberLocalUser({ uid: 'guest-' + crypto.randomUUID(), isAnonymous: true, isLocal: true }));
+    const guest = await startGuest(firebaseReady ? () => signInAnonymously(auth) : null, () => window.location.reload());
+    if (guest) {
+      setUser(guest);
       setAuthMode('guest');
-      return;
     }
-    const cred = await signInAnonymously(auth);
-    setUser(cred.user);
-    setAuthMode('guest');
   }
 
   /** Sign out */
   async function signOut() {
     if (firebaseReady) await firebaseSignOut(auth);
-    try { sessionStorage.removeItem(localSessionKey); } catch { /* Storage can be disabled. */ }
+    clearDeviceGuest();
     resetUser();
+    if (offlineGuestSession) window.location.reload();
   }
 
   function saveCommunityName(value) {

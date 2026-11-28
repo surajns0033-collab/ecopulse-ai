@@ -1,4 +1,4 @@
-import { cityLabel, contactLines, liveSummary } from './fallbackContacts.js';
+import { cityLabel, contactLines } from './fallbackContacts.js';
 import { casualReply } from './fallbackSmallTalk.js';
 import { environmentalAdvice } from './fallbackAdvice.js';
 
@@ -10,22 +10,17 @@ export function buildFallbackReply({
   message = '',
   location,
   recipient = null,
-  aqi = null,
-  weather = null,
   isComplaintContext = false,
 } = {}) {
   const text = (message || '').trim();
   const lower = text.toLowerCase();
   const city = cityLabel(location);
-  const contacts = contactLines(recipient);
-  const live = liveSummary(aqi, weather, city);
-
 
   const casual = casualReply(text, lower, city);
   if (casual) return casual;
 
-  // 4. Complaint / contact question — give the verified route
   if (COMPLAINT.test(lower) || isComplaintContext) {
+    const contacts = contactLines(recipient);
     const contactBlock = contacts.length
       ? contacts.join('\n')
       : 'Which city and country is the issue in? I don’t have a verified local contact yet.';
@@ -41,25 +36,9 @@ export function buildFallbackReply({
     };
   }
 
-  // 5. Live data question without a model
-  if (live && /\b(aqi|air|weather|temperature|pollution|mausam|garmi|humid)\b/i.test(lower)) {
-    return {
-      text: `${live}\n\nBased on this: ${aqi && aqi.aqi > 150
-        ? 'avoid outdoor exercise, keep windows closed at peak traffic hours and wear an N95 if you must go out.'
-        : aqi && aqi.aqi > 100
-          ? 'sensitive people (children, elderly, asthma) should limit long outdoor exposure.'
-          : 'it\'s fine for normal outdoor activity.'}`,
-      cards: [],
-      actions: [{ label: '💊 Health Tips', action: 'QUICK_HEALTH_TIPS', variant: 'secondary' }],
-      status: 'success',
-    };
-  }
-
-
   const advice = environmentalAdvice(lower);
   if (advice) return advice;
 
-  // 7. Anything else — be honest and move the conversation forward
   const asksAboutEnvironment = /\b(environment|climate|waste|plastic|tree|water|pollution|garbage|kachra|recycle|compost|energy|eco|green|bird|animal|forest|river|beach)\b/i.test(lower);
 
   return {

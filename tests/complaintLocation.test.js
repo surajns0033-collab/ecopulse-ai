@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { AWAITING_CHAT_PLACE, incidentCity, isDraftDetailFragment, resolveChatPlace } from '../src/agent/chatPlaces.js';
 import { buildComplaintEmailTemplate } from '../src/agent/fallbackBrain.js';
 import { INTENTS } from '../src/agent/intentEngine.js';
+import { handleCreateEmail } from '../src/agent/civicEmail.js';
 import { getAuthorityBundle, matchesDirectoryCity } from '../src/services/authorityDirectory.js';
 import { NaviMumbai, Paris, draft, forbidLookup } from './placeFixtures.mjs';
 
@@ -67,4 +68,23 @@ test('a local complaint draft preserves the observation and leaves unknown or un
   assert.match(body, /\[Your full name\]/);
   assert.match(body, /\[Attach the photo/);
   assert.doesNotMatch(body, /I have attached/);
+});
+
+test('draft history uses the most recent observation and its resolved jurisdiction', async () => {
+  const note = 'I saw garbge near the gate in Parris.';
+  const history = [{ role: 'user', text: note }, { role: 'ai', text: 'Report preview',
+    incident: { city: Paris.city, text: note } }];
+  const draft = (turns, city) => handleCreateEmail('Draft email', turns, city);
+  const paris = await draft(history, Paris.city);
+  assert.equal(paris.status, 'preview');
+  assert.ok(paris.cards[0].data.body.includes(note));
+  assert.equal((await draft(history, 'Paris, Texas, United States')).status, 'needs_info');
+  assert.equal((await draft(history.slice(0, 1), Paris.city)).status, 'needs_info');
+  assert.equal((await draft([...history, { role: 'user', text: 'I saw smoke in Pune.' }], Paris.city)).status, 'needs_info');
+
+  const raw = city => [{ role: 'user', text: 'I saw smoke in ' + city + '.' }];
+  assert.equal((await draft(raw('Paris, France'), Paris.city)).status, 'preview');
+  assert.equal((await draft(raw('France'), Paris.city)).status, 'needs_info');
+  assert.equal((await draft(raw('Paris'), 'Paris, Texas, United States')).status, 'needs_info');
+  assert.equal((await draft(raw('Paris, Texas'), Paris.city)).status, 'needs_info');
 });

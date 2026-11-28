@@ -44,13 +44,17 @@ export function indoorAirAdvice(filtration, aqi) {
   return `${setup} ${ventilation}`;
 }
 
-export function cookingAdvice(fuel) {
+export function cookingAdvice(fuel, noVentedHood = false) {
+  if (noVentedHood) return [
+    'Cover pots with a lid when practical and prefer lower-smoke cooking such as simmering. Ventilate when outdoor air improves. Keep combustion vents clear.',
+    'Less frying creates fewer cooking particles. Covering a pot can shorten cooking time and energy use.',
+  ];
   if (fuel === 'gas stove') return [
-    'Use an exhaust hood that vents outdoors while the gas stove runs. Cover the pot when boiling water to shorten burner time.',
+    'If available, use an exhaust hood that vents outdoors while the gas stove runs. Cover the pot when boiling water to shorten burner time.',
     'Venting carries cooking pollutants outside. A shorter burner time uses less gas and reduces combustion emissions.',
   ];
   if (fuel === 'induction/electric') return [
-    'Use a vented hood when frying or cooking at high heat, even on an electric hob.',
+    'If available, use a vented hood when frying or cooking at high heat, even on an electric hob.',
     'Induction avoids gas combustion at the stove. A vented hood removes particles produced by cooking the food.',
   ];
   return [

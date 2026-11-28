@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useApp } from '../contexts/AppContext';
-import { chatMessage, createWelcomeMessage, dispatchChatAction } from '../components/chat/chatActions.js';
+import { chatHistoryTurn, chatMessage, createWelcomeMessage, dispatchChatAction } from '../components/chat/chatActions.js';
 import { RECORD_ACTIONS, recordError } from '../components/chat/chatRecords.js';
 import { useChatActivity } from '../components/chat/useChatActivity.js';
 
@@ -19,7 +19,7 @@ function typingLabel(text, photo, choices) {
 
 export function useChatSession() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, communityName, communityNameConfirmed } = useAuth();
   const app = useApp();
   const { conversation, addMessage, chosenLocation, location, pendingAction } = app;
   const { status, run, cancel } = useChatActivity();
@@ -30,14 +30,14 @@ export function useChatSession() {
 
   const reply = data => addMessage(chatMessage('ai', data));
 
-  function sendMessage(text, imageData, { photoLocation, planChoices } = {}) {
+  function sendMessage(text, imageData, { photoLocation, planChoices, incident } = {}) {
     if (!text && !imageData) return;
     const task = async signal => {
       addMessage(chatMessage('user', { text: text || '📸 [Image attached]' }));
-      const history = planChoices ? [] : conversation.map(({ role, text }) => ({ role, text }));
+      const history = planChoices ? [] : conversation.map(chatHistoryTurn);
       const { processMessage } = await import('../agent/agentOrchestrator');
       signal.throwIfAborted();
-      return processMessage(text, history, user, location, imageData, pendingAction, { chosenLocation, photoLocation, planChoices, signal });
+      return processMessage(text, history, user, location, imageData, pendingAction, { chosenLocation, photoLocation, planChoices, incident, signal });
     };
     const receive = response => {
       if (response.resolvedLocation) app.setLocation(response.resolvedLocation);
@@ -55,7 +55,7 @@ export function useChatSession() {
   function save(action, data) {
     if (!user || !data) return;
     const operation = RECORD_ACTIONS[action];
-    return run(operation.status, () => operation.save(user, data), reply, error => reply(recordError(action, error, user, data)));
+    return run(operation.status, () => operation.save(user, data, communityNameConfirmed ? communityName : null), reply, error => reply(recordError(action, error, user, data)));
   }
 
   function handleRefresh() {

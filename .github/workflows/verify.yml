@@ -22,5 +22,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Run the standalone test entry point
+        run: npm test
       - name: Benchmark all six submission criteria
+        if: ${{ !cancelled() }}
         run: npm run benchmark:submission

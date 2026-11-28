@@ -1,6 +1,7 @@
 import { asksForSmogPlan, detectIntent, INTENTS } from './intentEngine.js';
 import { communitySetting, isSmogProfile } from './smogProfile.js';
 import { correctedCity, explicitPlace, labeledCity, placeName, statedCity, PLACE_COMMAND } from './placeNames.js';
+import { forecastKind } from './requestedForecast.js';
 import { WEB_COMMAND, routeTopic } from './placeTopics.js';
 
 export { labeledCity, placeName } from './placeNames.js';
@@ -12,7 +13,7 @@ const DEVICE_LOCATION = /^(?:(?:please\s+)?(?:use|share|detect|show|find|check) 
 const MAP = /^(?:(?:can you |please )?(?:show|open|find) (?:me )?(?:(?:the|a) )?)?maps?(?:\s+(?:of|in|for|to))?(?:\s+(.+))?$/i;
 const MAP_QUESTION = /^(?:where(?: is|['’]s)|locate|show (?:me )?(?:the )?location (?:of|for))\s+(.+)$/i;
 const ON_MAP = /^(?:can you |please )?show (?:me )?(.+?)\s+on (?:the |a )?map$/i;
-export const asksForForecast = (text) => /\b(?:forecast|tomorrow|tonight|next week|this (?:evening|weekend)|in the (?:morning|evening))\b|आने वाला|कल|उद्या/iu.test(text);
+export const asksForForecast = text => forecastKind(text) !== 'current';
 
 export function resolveCity(city) {
   if (city && city !== 'your city' && city !== 'Unknown') return city;
@@ -21,8 +22,9 @@ export function resolveCity(city) {
 
 function requestDetails(request) {
   if (communitySetting(request)) return [request];
-  const household = request.match(/\b(?:for|with)\s+((?:my|our)\s+(?:child(?:ren)?|kids?|baby|grandparents?))\b/iu);
-  return household ? [household[1]] : [];
+  const personal = request.match(/\b(?:for|with)\s+((?:my|our)\s+(?:child(?:ren)?|kids?|baby|grandparents?)\b.*)/iu);
+  if (personal) return [personal[1]];
+  return /^(?:I|we|main|hum)\s/i.test(request) && isSmogProfile(request) ? [request] : [];
 }
 
 function declaredLocation(clause) {
@@ -62,29 +64,29 @@ function mapCommand(text, relative) {
   return null;
 }
 
-function explicitCommand(text, relative, smogRequest, profile) {
+function explicitCommand(text, relative, decision, profile) {
   const command = text.match(PLACE_COMMAND);
   if (command && profile?.pinLocation && profile.smogDetails) return profile;
-  if (command && !smogRequest) {
+  if (command && decision.intent !== INTENTS.GET_SMOG_PLAN) {
     const city = correctedCity(command[1]) || placeName(command[1]);
     if (city) return { kind: 'city', needsPlace: true, place: city };
   }
   const map = mapCommand(text, relative);
   if (map) return map;
-  if (WEB_COMMAND.test(text)) return { kind: 'web', needsPlace: relative, relative, place: relative ? labeledCity(text) : '' };
+  if (decision.useSearch || WEB_COMMAND.test(text)) return { kind: 'web', needsPlace: relative, relative, place: relative ? labeledCity(text) : '' };
   return null;
 }
 
 
-export function routePlaceRequest(text, history = [], { awaitingSmogProfile = false } = {}) {
+export function routePlaceRequest(text, history = [], { awaitingSmogProfile = false, classification } = {}) {
   const clean = text.trim();
   if (DEVICE_LOCATION.test(clean)) return { kind: 'device' };
   const relative = HERE.test(clean) || /\b(?:air|weather|temperature) outside\b/i.test(clean);
-  const smogRequest = asksForSmogPlan(clean);
+  const decision = classification ?? detectIntent(clean, history);
+  const smogRequest = decision.intent === INTENTS.GET_SMOG_PLAN;
   const profile = awaitingSmogProfile && !smogRequest ? routeSmogPlan(clean, true) : null;
-  const command = explicitCommand(clean, relative, smogRequest, profile);
+  const command = explicitCommand(clean, relative, decision, profile);
   if (command) return command;
-  const { intent } = detectIntent(clean, history);
-  if (smogRequest || intent === INTENTS.GET_SMOG_PLAN) return routeSmogPlan(clean);
-  return routeTopic(clean, intent, relative) || (profile?.smogDetails ? profile : { kind: 'general' });
+  if (smogRequest) return routeSmogPlan(clean);
+  return routeTopic(clean, decision.intent, relative) || (profile?.smogDetails ? profile : { kind: 'general' });
 }

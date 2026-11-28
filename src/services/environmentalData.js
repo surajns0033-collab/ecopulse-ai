@@ -18,7 +18,7 @@ export function getAQICategory(aqi) {
 }
 
 export function getAQIInsight(aqiData) {
-  if (!Number.isFinite(aqiData?.aqi)) return null;
+  if (!Number.isFinite(aqiData?.aqi) || aqiData.aqi < 0) return null;
   const { aqi } = aqiData;
   if (aqi > 300) return 'Air quality is hazardous. Stay indoors where possible and follow local health advisories.';
   if (aqi > 200) return 'Air quality is very unhealthy. Avoid outdoor exertion and wear a well-fitted N95 if you must go out.';
