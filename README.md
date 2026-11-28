@@ -113,7 +113,7 @@ flowchart LR
 | --- | --- |
 | Select an intent and city | `intentEngine.js` classifies the request. `placeNames.js` extracts the city and `placeTurn.js` handles confirmation. A lookup in another city leaves the household's chosen location intact. |
 | Build a plan | `smogProfile.js` interprets stated conditions. `smogForecast.js` checks reading age and forecast hours. `smogAdvice.js` selects commute, indoor, cooking and community advice. `smogPlan.js` pairs each choice with its impact. |
-| Explain a choice | `server/chatRequest.js` caps the HTTP body and checks photo headers. `server/chatSchema.ts` validates the request and normalizes it into typed messages. `server/aiCore.js` gives eligible providers time within one shared deadline. |
+| Explain a choice | `server/chatRequest.js` caps the HTTP body and checks photo headers. `server/chatValidation.js` uses Zod to validate and normalize messages. Its output is checked against the interfaces in `server/chatSchema.ts`. `server/aiCore.js` gives eligible providers time within one shared deadline. |
 | Edit a report | The report card lets its owner correct the title, description, category and location before saving. Changing the location clears the old coordinates. `reportRecords.js` handles private cloud and device records. |
 | Recover from failures | `AppErrorBoundary.jsx` offers reload and return-to-Chat controls after a rendering failure. `diagnostics.js` records fixed operation names and optional numeric status codes. |
 
@@ -288,7 +288,7 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run lint` | Run static checks with **Oxlint** |
 | `npm test` | Run the Node regression suite with mocked external services |
 | `npm run benchmark:submission` | Run and report the six submission criteria, including code complexity, coverage, security, startup budgets, accessibility and smog planning |
-| `npm run benchmark` | Run 17 smog scenarios, route controls and a request-cache check with fixed inputs |
+| `npm run benchmark` | Run 18 smog scenarios, route controls and a request-cache check with fixed inputs |
 | `npm run test:coverage` | Measure Node test coverage |
 | `npm run test:browser` | Check production bundle sizes and exercise Guest Chat, local photo fallback, plan explanations, private reports, events and keyboard access in Chrome after a device-only build |
 | `npm audit --audit-level=moderate` | Check installed versions against published security advisories |
@@ -299,7 +299,7 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 
 ## Verification
 
-CI counts physical lines in every application, server, API, test and stylesheet module. A module of 150 lines fails the build. Strict TypeScript checks cover the chat request contract, and Zod validates untrusted input at runtime. Run `npm run quality:modules`, `npm run typecheck` and `npm run lint` for the code-quality checks. The full benchmark also runs Chrome, Firestore emulators and the production bundle checks.
+CI counts physical lines in every application, server, API, test and stylesheet module. A module of 150 lines fails the build. Strict TypeScript checks cover the JavaScript validator and its output contract. A packaging test starts both API endpoints in a JavaScript-only function directory. Run `npm run quality:modules`, `npm run typecheck` and `npm run lint` for the code-quality checks. The full benchmark also runs Chrome, Firestore emulators and the production bundle checks.
 
 After `npm ci`, run `npm run benchmark:submission` to reproduce the CI report with Node 24, Chrome and Java 21. The [verification guide](docs/quality-verification.md) lists each threshold, its scope and a recorded run.
 
