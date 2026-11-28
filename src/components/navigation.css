@@ -1,0 +1,112 @@
+/* Spinner */
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+
+/* ===== BOTTOM NAVIGATION BAR ===== */
+.bottom-nav {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: center;
+  justify-content: space-around;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding: 6px 8px 8px;
+  flex-shrink: 0;
+  z-index: 90;
+}
+
+.bottom-nav-item {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.bottom-nav-item.active {
+  color: var(--green-dark);
+}
+
+.bottom-nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 14px;
+  border-radius: 16px;
+  transition: background 0.15s;
+}
+
+.bottom-nav-icon.active {
+  background: var(--green-light);
+}
+
+.bottom-nav-label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+
+/* ===== CREATE MEETUP MODAL ===== */
+.meetup-dialog {
+  width: min(390px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+}
+
+.meetup-dialog::backdrop { background: rgba(15, 23, 42, 0.5); }
+
+.create-modal {
+  width: 100%;
+  max-width: 390px;
+  background: white;
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: var(--shadow-md);
+  max-height: 85dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  margin-top: 2px;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: #f8fafc;
+}
+
+.modal-input:focus {
+  outline: 2px solid var(--green-dark);
+  outline-offset: 1px;
+  border-color: var(--green-dark);
+  background: white;
+}

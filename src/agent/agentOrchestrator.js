@@ -1,3 +1,4 @@
+import { logFailure } from '../services/diagnostics.js';
 import { detectIntent, INTENTS } from './intentEngine.js';
 import { getSmogPlan, startSmogPlan } from './smogPlan.js';
 import { AWAITING_CHAT_PLACE, AWAITING_DRAFT_DETAILS, incidentCity, isDraftDetailFragment, resolveChatPlace } from './chatPlaces.js';
@@ -110,9 +111,9 @@ export async function processMessage(message, history, user, location, image, pe
     if (planChoices?.length) return await explainSmogChoices(message, planChoices, signal);
     if (image?.base64) return await photoReply(image, message, userId, signal);
     return await textReply(message, history, userId, location, pending, options);
-  } catch (err) {
+  } catch {
     signal?.throwIfAborted();
-    console.error('Orchestrator error:', err);
+    logFailure('chat.turn');
     logAction(userId, 'error', {});
     return {
       text: "I encountered an issue processing that request. Please try again.",

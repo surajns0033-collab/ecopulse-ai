@@ -1,142 +1,21 @@
-// Intent Detection Engine — keyword-based, supports English + Hindi + Hinglish
+import { INTENTS, INTENT_PATTERNS } from './intentPatterns.js';
 
-export const INTENTS = {
-  ASK_QUESTION: 'ASK_QUESTION',
-  GET_AIR_QUALITY: 'GET_AIR_QUALITY',
-  GET_WATER_QUALITY: 'GET_WATER_QUALITY',
-  GET_WEATHER: 'GET_WEATHER',
-  CREATE_REPORT: 'CREATE_REPORT',
-  UPLOAD_PHOTO_REPORT: 'UPLOAD_PHOTO_REPORT',
-  FIND_EVENTS: 'FIND_EVENTS',
-  JOIN_EVENT: 'JOIN_EVENT',
-  CREATE_EVENT: 'CREATE_EVENT',
-  CREATE_EMAIL: 'CREATE_EMAIL',
-  GET_AUTHORITY_CONTACTS: 'GET_AUTHORITY_CONTACTS',
-  GET_COMMUNITY: 'GET_COMMUNITY',
-  GET_DAILY_PLAN: 'GET_DAILY_PLAN',
-  GET_HEALTH_TIPS: 'GET_HEALTH_TIPS',
-  GET_ROUTES: 'GET_ROUTES',
-  GET_USER_IMPACT: 'GET_USER_IMPACT',
-  GET_WASTE_TIPS: 'GET_WASTE_TIPS',
-  GET_SMOG_PLAN: 'GET_SMOG_PLAN',
-};
-
-// Keyword patterns for each intent (ordered & weighted so specific intents aren't hijacked)
-const INTENT_PATTERNS = [
-  {
-    intent: INTENTS.GET_SMOG_PLAN,
-    keywords: ['smog plan', 'smog action plan', 'personalized air plan', 'personalised air plan', 'indoor air plan', 'low-emission routine'],
-    confidence: 0.99,
-    tool: null,
-  },
-  {
-    intent: INTENTS.GET_HEALTH_TIPS,
-    keywords: ['aqi health', 'air quality health', 'pollution health', 'pollution mask', 'smog health', 'pm2.5 health'],
-    confidence: 0.95,
-    tool: null,
-  },
-  {
-    intent: INTENTS.GET_ROUTES,
-    keywords: ['low-traffic', 'low-pollution', 'low traffic', 'less pollution', 'green route', 'routes', 'route', 'commuting', 'commute', 'rasta', 'path', 'travel'],
-    confidence: 0.94,
-    tool: null,
-  },
-  {
-    intent: INTENTS.GET_WASTE_TIPS,
-    keywords: ['waste reduction', 'recycling', 'recycle waste', 'plastic free', 'compost', 'waste segregation', 'segregate waste', 'garbage tips'],
-    confidence: 0.94,
-    tool: null,
-  },
-  {
-    intent: INTENTS.FIND_EVENTS,
-    keywords: ['meetups', 'meetup', 'eco-meetups', 'events', 'event', 'cleanup', 'plantation', 'drive', 'events near', 'nearby events', 'community events', 'volunteer', 'upcoming'],
-    confidence: 0.92,
-    tool: 'getNearbyMeetups',
-  },
-  {
-    intent: INTENTS.GET_AIR_QUALITY,
-    keywords: ['aqi', 'air quality', 'air pollution', 'pollution', 'pradushan', 'pm2.5', 'pm10', 'air', 'hawa', 'smog', 'dust', 'breathe', 'saans', 'meter', 'gauge'],
-    confidence: 0.88,
-    tool: 'getEnvironmentalData',
-  },
-  {
-    intent: INTENTS.GET_WATER_QUALITY,
-    keywords: ['water quality', 'paani', 'pani', 'drinking water', 'water pollution', 'jal', 'river pollution', 'creek', 'nadi'],
-    confidence: 0.9,
-    tool: null,
-  },
-  {
-    intent: INTENTS.GET_WEATHER,
-    keywords: ['weather', 'mausam', 'rain', 'baarish', 'temperature', 'garmi', 'thand', 'humidity', 'forecast', 'wind'],
-    confidence: 0.88,
-    tool: 'getEnvironmentalData',
-  },
-  {
-    intent: INTENTS.CREATE_REPORT,
-    keywords: ['report', 'complaint', 'shikayat', 'file', 'complain', 'issue', 'problem', 'garbage', 'kachra', 'burning', 'jalana', 'sewage', 'nali', 'plastic', 'illegal', 'dumping', 'tree', 'trees', 'cutting', 'cut', 'mangrove', 'felling', 'felled', 'chopped', 'damage'],
-    confidence: 0.86,
-    tool: 'createEnvironmentalReport',
-    requiresConfirmation: true,
-  },
-  {
-    intent: INTENTS.UPLOAD_PHOTO_REPORT,
-    keywords: ['photo', 'image', 'picture', 'tasveer', 'click', 'pic', 'capture', 'scan', 'analyze image', 'check image'],
-    confidence: 0.82,
-    tool: 'analyzeEnvironmentalImage',
-  },
-  {
-    intent: INTENTS.JOIN_EVENT,
-    keywords: ['join', 'rsvp', 'register', 'sign up', 'participate', 'book', 'attend', 'come', 'aaunga', 'jaaunga'],
-    confidence: 0.85,
-    tool: 'joinMeetup',
-    requiresConfirmation: true,
-  },
-  {
-    intent: INTENTS.CREATE_EVENT,
-    keywords: ['create event', 'organise', 'organize', 'host', 'plan event', 'new event', 'start event', 'create meetup', 'plan meetup'],
-    confidence: 0.9,
-    tool: 'createMeetup',
-    requiresConfirmation: true,
-  },
-  {
-    intent: INTENTS.CREATE_EMAIL,
-    keywords: ['email', 'mail', 'bhejo', 'send', 'authority', 'officer', 'official', 'complain to', 'write to', 'draft', 'letter', 'contact authority'],
-    confidence: 0.86,
-    tool: 'createEmailDraft',
-    requiresConfirmation: true,
-  },
-  {
-    intent: INTENTS.GET_COMMUNITY,
-    keywords: ['community feed', 'eco community', 'nearby reports', 'local environmental posts'],
-    confidence: 0.82,
-    tool: 'getCommunityFeed',
-  },
-  {
-    intent: INTENTS.GET_DAILY_PLAN,
-    keywords: ['eco daily plan', 'environmental action plan', 'green checklist', 'sustainability routine'],
-    confidence: 0.78,
-    tool: 'getDailyActionPlan',
-  },
-  {
-    intent: INTENTS.GET_USER_IMPACT,
-    keywords: ['my impact', 'my reports', 'mera', 'my stats', 'contribution', 'how much', 'my activity', 'profile', 'my account'],
-    confidence: 0.85,
-    tool: 'getUserImpact',
-  },
-];
+export { INTENTS } from './intentPatterns.js';
 
 const NAMED_SMOG_PLAN = /\b(?:smog (?:action )?plan|(?:clean[ -]air|cleaner[ -]air|indoor[ -]air|personali[sz]ed air) (?:action )?plan|low[ -]emission (?:daily )?routine)\b|(?:स्मॉग|धुंध).{0,20}(?:योजना|प्लान)/iu;
 const INTENT_DETAILS = new Map(INTENT_PATTERNS.map(pattern => [pattern.intent, pattern]));
 
 const PLAN_FOR_SMOG = /\b(?:plan|routine)\s+(?:for|during|around)\s+(?:(?:the|a|severe|heavy|winter|urban|local)\s+)*(?:smog|air pollution)\b/i;
-const AIR_TOPIC = /\b(?:smog|air pollution|polluted air|indoor air quality)\b/i;
-const DAILY_SETTING = /\b(?:home|household|family|families|kids|children|school|commute|community|neighbou?rhood|housing society)\b/i;
-const PRACTICAL_ADVICE = /\b(?:(?:reduce|lower|limit)\s+(?:(?:our|my|air pollution|particle|smog)\s+)*exposure|improve (?:our |my |the )?indoor air|clean[ -]air routine)\b/i;
+const AIR_TOPIC = /\b(?:smog|air pollution|polluted air|indoor air quality)\b|स्मॉग|प्रदूषण/i;
+const DAILY_SETTING = /\b(?:home|household|family|families|kids|children|grandparents?|school|commut(?:e|er)|community|neighbou?rhood|housing society|kitchen|cooking|outdoor(?:s| shift| work)?|delivery|street vendor|ghar)\b|घर/iu;
+const PRACTICAL_ADVICE = /\b(?:reduce|lower|limit|cut|improve)\b[^.!?;\n]{0,45}\b(?:exposure|emissions|indoor air|kitchen air)\b|\bkeep\b[^.!?;\n]{0,35}\b(?:air|kitchen)\b[^.!?;\n]{0,15}\bclean(?:er)?\b|\bclean[ -]air routine\b/i;
+const INDOOR_ADVICE_HI = /\bghar (?:ki|ki andar ki|mein) hawa\b.{0,25}\b(?:saaf|behtar)\b|घर की हवा.{0,25}(?:साफ़?|बेहतर)/iu;
 
 export function asksForSmogPlan(text) {
   if (NAMED_SMOG_PLAN.test(text)) return true;
   if (/\b(?:government|official|policy|news)\b/i.test(text)) return false;
-  return PLAN_FOR_SMOG.test(text) || (AIR_TOPIC.test(text) && DAILY_SETTING.test(text) && PRACTICAL_ADVICE.test(text));
+  if (PLAN_FOR_SMOG.test(text)) return true;
+  return AIR_TOPIC.test(text) && DAILY_SETTING.test(text) && (PRACTICAL_ADVICE.test(text) || INDOOR_ADVICE_HI.test(text));
 }
 
 const civicTopic = /\b(complaint|municipal|authority|pollution|garbage|dumping|burning|sewage|naala|nala|tree cutting|forest|traffic police|road obstruction|mpcb|nmmc|bmc|bbmp|mcd)\b/i;

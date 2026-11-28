@@ -57,22 +57,13 @@ export const MEETUP_STATUS = {
   COMPLETED: 'completed',
 };
 
-// Generate EcoPulse Report ID
-export const generateReportId = () => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let id = 'EP-';
-  for (let i = 0; i < 6; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return id;
-};
+const CODE_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
-// Generate EcoPulse Event ID
-export const generateEventId = () => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let id = 'EV-';
-  for (let i = 0; i < 6; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return id;
-};
+function publicCode(prefix) {
+  let code = prefix + '-';
+  for (let i = 0; i < 6; i++) code += CODE_CHARACTERS[Math.floor(Math.random() * CODE_CHARACTERS.length)];
+  return code;
+}
+
+export const generateReportId = () => publicCode('EP');
+export const generateEventId = () => publicCode('EV');

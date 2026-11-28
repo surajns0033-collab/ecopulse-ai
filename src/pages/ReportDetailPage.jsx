@@ -1,29 +1,13 @@
-// ReportDetailPage — full report details view
 import { useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { loadReport } from '../services/reportRecords.js';
 import { db } from '../firebase/firestoreClient';
 import { REPORT_CATEGORIES } from '../firebase/collections';
-import { MapPin, Calendar, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { MapPin, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import Header from '../components/chat/Header';
-
-function StatusBadge({ status }) {
-  const map = {
-    submitted: { cls: 'status-submitted', icon: <Clock size={12} />, label: 'Submitted' },
-    draft: { cls: 'status-draft', icon: <Clock size={12} />, label: 'Draft' },
-    under_review: { cls: 'status-submitted', icon: <AlertCircle size={12} />, label: 'Under Review' },
-    resolved: { cls: 'status-resolved', icon: <CheckCircle size={12} />, label: 'Resolved' },
-    closed: { cls: 'status-draft', icon: <CheckCircle size={12} />, label: 'Closed' },
-  };
-  const s = map[status] || map.draft;
-  return (
-    <span className={`status-badge ${s.cls}`}>
-      {s.icon} {s.label}
-    </span>
-  );
-}
+import { StatusBadge } from './ReportStatus.jsx';
 
 export default function ReportDetailPage() {
   const { id } = useParams();

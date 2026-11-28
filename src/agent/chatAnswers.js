@@ -1,11 +1,12 @@
-import { getCurrentAirQuality, getWeather, getAQIInsight, getAQICategory } from '../services/environmentalData.js';
-import { getAuthorityBundle, isIndianPlace } from '../services/authorityDirectory.js';
+import { getCurrentAirQuality, getWeather } from '../services/environmentalData.js';
+import { getAuthorityBundle } from '../services/authorityDirectory.js';
 import { getChatResponse, isAIUnavailable } from '../services/geminiService';
 import { tools } from '../services/agentTools';
 import { detectIssueCategory } from './civicIssues.js';
 import { buildFallbackReply } from './fallbackBrain.js';
 import { resolveCity } from './placeContext.js';
 import { logAction } from './activityLog';
+import { citySnapshot } from './citySnapshot.js';
 
 export async function handleGeneralQuestion(userMessage, conversationHistory, location, userId, { snapshot = false, web = false, webLocation, signal } = {}) {
   const city = resolveCity(location?.city);
@@ -28,45 +29,8 @@ export async function handleGeneralQuestion(userMessage, conversationHistory, lo
     ]);
   }
 
-  // A bare city name requests a snapshot; it does not set the user's local city.
-  if (snapshot && city) {
-    const outsideIndia = !isIndianPlace(city);
-    const lines = [`📍 **${city} — live environmental snapshot**`];
 
-    if (liveAqi) {
-      const category = getAQICategory(liveAqi.aqi);
-      lines.push(`🌬️ **AQI ${liveAqi.aqi} — ${category.label}** (PM2.5: ${liveAqi.pm25 ?? '—'} µg/m³, PM10: ${liveAqi.pm10 ?? '—'} µg/m³)`);
-    } else {
-      lines.push('🌬️ Live air-quality data is temporarily unavailable.');
-    }
-
-    if (liveWeather) {
-      lines.push(`🌤️ **${liveWeather.temp}°C**, ${liveWeather.description} ([${liveWeather.source}](${liveWeather.sourceUrl}))`);
-    } else {
-      lines.push('🌤️ Live weather data is temporarily unavailable.');
-    }
-
-    if (liveAqi) lines.push(`\n${getAQIInsight(liveAqi)}`);
-    lines.push(outsideIndia
-      ? '\nI can help with the map, live environmental data, photo understanding, and complaint wording. I will not invent local authority contacts for a country that is not in the verified directory.'
-      : '\nI can also show verified **local, state and national complaint contacts**, draft an email, or help report a problem from a photo.');
-
-    logAction(userId, 'city_snapshot', { city, hasAqi: Boolean(liveAqi), hasWeather: Boolean(liveWeather) });
-    return {
-      text: lines.join('\n'),
-      cards: [
-        ...(liveAqi ? [{ type: 'aqi', data: { ...liveAqi, insight: getAQIInsight(liveAqi) } }] : []),
-        { type: 'map', data: { lat, lng, city, label: city, query: city } },
-      ],
-      actions: [
-        ...(outsideIndia
-          ? [{ label: '📣 Complaint Guidance', action: 'START_COMPLAINT', variant: 'primary' }]
-          : [{ label: '📇 Authority Contacts', action: 'QUICK_ALL_CONTACTS', variant: 'primary' }]),
-        { label: '💊 Health Tips', action: 'QUICK_HEALTH_TIPS', variant: 'secondary' },
-      ],
-      status: 'success',
-    };
-  }
+  if (snapshot && city) return citySnapshot({ city, lat, lng, liveAqi, liveWeather, userId });
 
   let context = city
     ? `Most recently discussed city: ${city}. This is not evidence of the user's physical whereabouts. Use it only when the request clearly refers to that city.`

@@ -4,75 +4,9 @@ import { buildSmogPlan, getSmogPlan } from '../src/agent/smogPlan.js';
 import { routePlaceRequest } from '../src/agent/placeContext.js';
 import { INTENTS } from '../src/agent/intentEngine.js';
 import { parseSmogProfile } from '../src/agent/smogProfile.js';
+import { scenarios } from './planScenarios.mjs';
 
 const fixtureTime = Date.parse('2026-11-27T05:00:00Z');
-const scenarios = [
-  {
-    name: "Navi Mumbai, family with a car and gas stove",
-    city: "Navi Mumbai",
-    message: "I drive to school, cook with gas and have a child.",
-    aqi: 205,
-    expected: ["Very Unhealthy", "household sensitivity: children", "carpool", "gas stove runs", "cleaner indoor space"],
-  },
-  {
-    name: "Bengaluru, commuter using metro and induction",
-    city: "Bengaluru",
-    message: "I take the metro to the office and cook with induction.",
-    aqi: 42,
-    expected: ["Good", "public transport", "induction/electric", "long leg on transit"],
-    excluded: ["gas stove runs", "Move strenuous exercise indoors"],
-  },
-  {
-    name: "Delhi, cyclist doing outdoor work during hazardous smog",
-    city: "Delhi",
-    message: "I cycle to work and do outdoor work.",
-    aqi: 302,
-    expected: ["Hazardous", "postpone non-essential trips", "use transit for the polluted segment", "take breaks in a cleaner indoor space"],
-  },
-  {
-    name: "Pune, four-hour-old AQI and no purifier",
-    city: "Pune",
-    message: "I work from home and have no purifier.",
-    aqi: 270,
-    ageHours: 4,
-    expected: ["no recent timestamp", "damp-clean", "Check a fresh AQI"],
-    excluded: ["Current AQI: 270", "keep windows closed while outdoor air is poor"],
-  },
-  {
-    name: "Lucknow, community plan when readings are missing",
-    city: "Lucknow",
-    message: "skip",
-    aqi: null,
-    expected: ["Current AQI:** unavailable", "Avoid burning leaves or waste", "Avoiding burning and idling cuts emissions at the source", "no commute mode was assumed"],
-  },
-  {
-    name: "Navi Mumbai, gas cooking and explicit absence of induction",
-    city: "Navi Mumbai",
-    message: "I take the metro, cook with gas, and do not have an induction stove.",
-    aqi: 166,
-    expected: ["public transport; gas stove", "gas stove runs"],
-    excluded: ["public transport; induction/electric", "Use induction when practical"],
-  },
-  {
-    name: "Delhi school during very unhealthy smog",
-    city: "Delhi", message: "Plan for our school assembly.", aqi: 208,
-    expected: ["Move outdoor assembly", "engines at the school gate", "cuts emissions near pupils"],
-  },
-  {
-    name: "Pune residents without a current reading or a stated cooking fuel",
-    city: "Pune", message: "Our housing society needs a community smog plan.", aqi: null,
-    expected: ["Current AQI:** unavailable", "shared trips with neighbours", "collection or composting", "if one is available"],
-    excluded: ["Induction avoids", "gas stove runs", "Move outdoor assembly"],
-  },
-  {
-    name: "Hyderabad metro commuter who rules out a car, bike and household sensitivities",
-    city: "Hyderabad",
-    message: "I don’t have a car or a bike. I take the metro to the office and cook at home. No kids or asthma.",
-    aqi: 172,
-    expected: ["public transport; office/school; household sensitivity: not stated", "Keep the long leg on transit", "recheck AQI before both legs"],
-    excluded: ["carpool", "Bundle errands", "household members you flagged as sensitive", "gas stove runs"],
-  },
-];
 
 for (const scenario of scenarios) {
   test(scenario.name, () => {

@@ -95,39 +95,39 @@ EcoPulse directly addresses the challenge with:
 
 ## 🏗 Architecture
 
-AI and web-search provider keys are configured server-side. Vite serves `/api/ai/chat` locally; a Vercel Function serves it in production.
+A Chat turn follows the same path in the Vite development server and the Vercel deployment.
 
 ```mermaid
-flowchart TB
-    UI["React 19 PWA UI<br/>(Chat, Community, Events)"] --> IE["Intent Engine & Orchestrator<br/>(intentEngine.js / agentOrchestrator.js)"]
-
-    IE -->|"AQI & Weather"| OM["Open-Meteo APIs"]
-    IE -->|"Geocoding & Maps"| GEO["Open-Meteo + Photon + Nominatim"]
-    IE -->|"Civic Complaints"| DIR["Verified Authority Directory<br/>(authorityDirectory.js / agentTools.js)"]
-    IE -->|"Chat & Web Research"| PROXY["/api/ai/chat<br/>(Vite Dev Proxy / Vercel Function)"]
-
-    PROXY --> GEM["Google Gemini"]
-    PROXY --> TAV["Tavily Grounded Search"]
-    PROXY --> OR["OpenRouter Free Fallback"]
-
-    UI -->|"Image Upload"| VIS["Vision & OCR Pipeline"]
-    VIS -->|"Primary"| GEMV["Gemini Vision"]
-    VIS -->|"Private Fallback"| CLIP["On-Device CLIP (Transformers.js)"]
-    VIS -->|"Opt-In Text"| OCR["Tesseract.js (EN / HI / MR)"]
-
-    UI -->|"Auth & Community"| FB["Firebase (Google, Email Link, Guest, Firestore)"]
+flowchart LR
+    Chat["Guest or signed-in Chat"] --> Router["Intent and place routing"]
+    Router --> Plan["Smog plan and direct impacts"]
+    Plan --> Data["Cached AQI, weather and hourly forecast"]
+    Router --> Civic["Civic report preview and verified contacts"]
+    Chat -->|"Explain selected plan"| API["POST /api/ai/chat"]
+    API --> Schema["Byte limit and strict Zod schema"]
+    Schema --> Providers["Gemini and eligible fallback providers"]
+    Civic -->|"User chooses Submit Report"| Store["Owner-scoped report storage"]
 ```
+
+| Responsibility | Implementation |
+| --- | --- |
+| Select an intent and city | `intentEngine.js` classifies the request. `placeNames.js` extracts the city and `placeTurn.js` handles confirmation. A lookup in another city leaves the household's chosen location intact. |
+| Build a plan | `smogProfile.js` interprets stated conditions. `smogForecast.js` checks reading age and forecast hours. `smogAdvice.js` selects commute, indoor, cooking and community advice. `smogPlan.js` pairs each choice with its impact. |
+| Explain a choice | `server/chatRequest.js` caps the HTTP body and checks photo headers. `server/chatValidation.js` uses Zod to validate and normalize messages. Its output is checked against the interfaces in `server/chatSchema.ts`. `server/aiCore.js` gives eligible providers time within one shared deadline. |
+| Edit a report | The report card lets its owner correct the title, description, category and location before saving. Changing the location clears the old coordinates. `reportRecords.js` handles private cloud and device records. |
+| Recover from failures | `AppErrorBoundary.jsx` offers reload and return-to-Chat controls after a rendering failure. `diagnostics.js` records fixed operation names and optional numeric status codes. |
 
 ### Provider Routing & Resilience
 
 | Capability | Primary Provider | Fallback Chain |
 | :--- | :--- | :--- |
-| **Chat** | Google Gemini | OpenRouter Free → Deterministic `fallbackBrain.js` |
+| **Chat** | Google Gemini | Configured compatible provider, LLM7 or Pollinations → recorded plan impacts or a local reply |
 | **Civic complaint drafts** | User-provided details and verified directory, formatted locally | An unaddressed draft when no local email is verified |
 | **Grounded Web Search** | Tavily Basic Search | Gemini grounding |
 | **Image Classification** | Gemini Vision | On-device CLIP (`onDeviceVision.js`) → User confirmation |
 | **Document / Sign OCR** | Tesseract.js (opt-in) | Prompt user to clarify unclear text |
-| **AQI, Weather & Geo** | Open-Meteo | Photon / Nominatim (OSM) → Clear unavailable state |
+| **AQI and weather** | Configured WAQI/OpenWeather or Open-Meteo | Timestamped modeled data where available, otherwise an unavailable state |
+| **Geocoding** | Open-Meteo | Photon or Nominatim for supported place lookups |
 
 ---
 
@@ -177,12 +177,12 @@ ecopulse-ai/
 │   │   ├── MeetupsPage.jsx          # Event discovery, creation & RSVP
 │   │   └── ReportDetailPage.jsx     # Individual environmental report view
 │   ├── services/
-│   │   ├── agentTools.js            # Verified contacts, reports, drafts & meetups store
+│   │   ├── agentTools.js            # Tool entry points used by Chat and civic flows
 │   │   ├── aiClient.js              # Client wrapper for /api/ai/chat
 │   │   ├── authorityDirectory.js    # Official municipal & forest authority lookup
-│   │   ├── environmentalData.js     # AQI, weather, freshness checks and request cache
+│   │   ├── environmentalData.js     # AQI display helpers and environmental API exports
 │   │   ├── reportRecords.js         # Owner-scoped cloud and device reports
-│   │   ├── geminiService.js         # Gemini model chain & system instructions
+│   │   ├── geminiService.js         # Browser-side chat, JSON and photo requests
 │   │   ├── imageOcr.js              # Opt-in Tesseract.js OCR (EN/HI/MR)
 │   │   └── onDeviceVision.js        # Private on-device CLIP image classifier
 │   ├── App.jsx
@@ -288,7 +288,7 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run lint` | Run static checks with **Oxlint** |
 | `npm test` | Run the Node regression suite with mocked external services |
 | `npm run benchmark:submission` | Run and report the six submission criteria, including code complexity, coverage, security, startup budgets, accessibility and smog planning |
-| `npm run benchmark` | Run eleven smog scenarios and the request-cache check with fixed inputs |
+| `npm run benchmark` | Run 18 smog scenarios, route controls and a request-cache check with fixed inputs |
 | `npm run test:coverage` | Measure Node test coverage |
 | `npm run test:browser` | Check production bundle sizes and exercise Guest Chat, local photo fallback, plan explanations, private reports, events and keyboard access in Chrome after a device-only build |
 | `npm audit --audit-level=moderate` | Check installed versions against published security advisories |
@@ -298,6 +298,8 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 ---
 
 ## Verification
+
+CI counts physical lines in every application, server, API, test and stylesheet module. A module of 150 lines fails the build. Strict TypeScript checks cover the JavaScript validator and its output contract. A packaging test starts both API endpoints in a JavaScript-only function directory. Run `npm run quality:modules`, `npm run typecheck` and `npm run lint` for the code-quality checks. The full benchmark also runs Chrome, Firestore emulators and the production bundle checks.
 
 After `npm ci`, run `npm run benchmark:submission` to reproduce the CI report with Node 24, Chrome and Java 21. The [verification guide](docs/quality-verification.md) lists each threshold, its scope and a recorded run.
 

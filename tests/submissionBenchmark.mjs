@@ -6,16 +6,19 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const npm = process.env.npm_execpath;
 if (!npm) throw new Error('Run the submission benchmark with npm run benchmark:submission.');
 
-const scenarios = 'tests/submissionScenarios.test.js';
+const scenarios = new Set(['tests/submissionScenarios.test.js', 'tests/routineQuestions.test.js']);
 const clientEnvironment = 'tests/clientEnvironment.test.js';
 const unitTests = globSync('tests/**/*.test.{js,cjs,mjs}', { cwd: root })
   .map(path => path.replaceAll('\\', '/'))
-  .filter(path => path !== scenarios && path !== clientEnvironment)
+  .filter(path => !scenarios.has(path) && path !== clientEnvironment)
   .sort();
 if (!unitTests.length) throw new Error('No unit test files were discovered.');
 
 const checks = [
   { id: 'lint', label: 'Lint and function complexity', args: [npm, 'run', 'lint'] },
+  { id: 'modules', label: 'Physical module length', args: [npm, 'run', 'quality:modules'] },
+  { id: 'types', label: 'Strict chat contract', args: [npm, 'run', 'typecheck'] },
+  { id: 'inventory', label: 'Source-wide maintainability scan', args: [npm, 'run', 'quality:inventory'] },
   { id: 'audit', label: 'Dependency advisories', args: [npm, 'audit', '--audit-level=moderate'] },
   { id: 'client', label: 'Browser credential isolation', args: ['--test', clientEnvironment] },
   { id: 'unit', label: 'Node regressions and source coverage', args: [
@@ -32,7 +35,7 @@ const checks = [
 ];
 
 const criteria = [
-  ['Code Quality', 'High', ['lint']],
+  ['Code Quality', 'High', ['lint', 'modules', 'types', 'inventory']],
   ['Security', 'Medium', ['audit', 'client', 'rules']],
   ['Efficiency', 'Medium', ['plans', 'size']],
   ['Testing', 'Low', ['unit', 'plans', 'ui', 'client', 'rules', 'size']],

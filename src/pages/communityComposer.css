@@ -1,0 +1,52 @@
+/* ===== PUBLIC COMMUNITY CHANNEL COMPOSER ===== */
+.community-composer {
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.community-composer-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 3px 8px;
+  align-self: flex-start;
+}
+
+.community-composer-loc input {
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: #15803d;
+  width: 150px;
+  outline: none;
+}
+
+.community-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.community-composer-input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-size: 13px;
+  outline: none;
+  background: #f8fafc;
+}
+
+.community-composer-input:focus {
+  border-color: var(--green);
+  background: white;
+}
