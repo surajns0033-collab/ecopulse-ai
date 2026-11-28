@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { firebaseSettings } from '../src/firebase/settings.js';
 import { saveEmailDraft } from '../src/services/emailDrafts.js';
-import { selectUpcomingEvents } from '../src/services/meetupDiscovery.js';
+import { formatMeetupDate, meetupDayStart, selectUpcomingEvents } from '../src/services/meetupDiscovery.js';
 
 const config = { VITE_FIREBASE_API_KEY: 'fixture-key', VITE_FIREBASE_AUTH_DOMAIN: 'air-test.firebaseapp.com',
   VITE_FIREBASE_PROJECT_ID: 'air-test', VITE_FIREBASE_STORAGE_BUCKET: 'air-test.firebasestorage.app',
@@ -43,4 +43,17 @@ test('old events and other cities cannot hide a matching upcoming meetup', () =>
     { ...today, category: 'awareness' }, { ...today, date: 'broken' }, near, today];
   assert.deepEqual(selectUpcomingEvents(events, { since: new Date(date), city: 'Pune, Maharashtra, India',
     category: 'cleanup', max: 2 }).map(e => e.id), ['today', 'later']);
+});
+
+test('event cards preserve the chosen calendar day across time zones and stored date formats', () => {
+  const instant = new Date('2026-11-27T20:00:00Z');
+  assert.equal(meetupDayStart('Asia/Kolkata', instant).toISOString(), '2026-11-28T00:00:00.000Z');
+  assert.equal(meetupDayStart('America/Los_Angeles', instant).toISOString(), '2026-11-27T00:00:00.000Z');
+  const date = new Date('2026-11-28T00:00:00Z');
+  for (const value of [date, date.toISOString(), { toMillis: () => date.getTime() }, { seconds: date.getTime() / 1000 }]) {
+    assert.match(formatMeetupDate(value), /28 November 2026/);
+    assert.match(formatMeetupDate(value, true), /28 Nov/);
+  }
+  assert.equal(formatMeetupDate(null), 'Date TBD');
+  assert.equal(formatMeetupDate('date to follow', true), 'date to follow');
 });

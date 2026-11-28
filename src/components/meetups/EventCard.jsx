@@ -1,22 +1,11 @@
 // EventCard — full event card component
 import { Calendar, MapPin, Users, Clock, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatMeetupDate } from '../../services/meetupDiscovery.js';
+import { AttendanceButton } from './AttendanceButton.jsx';
 import { MEETUP_CATEGORIES } from '../../firebase/collections';
 
 export default function EventCard({ event, onJoin, onLeave, isJoined = false, pending = false }) {
   const catObj = MEETUP_CATEGORIES.find((c) => c.id === event.category);
-  const fillPct = event.capacity > 0 ? Math.min(100, Math.round(((event.participantCount || 0) / event.capacity) * 100)) : 0;
-  const isFull = event.capacity > 0 && event.participantCount >= event.capacity;
-
-  function formatEventDate(d) {
-    if (!d) return 'Date TBD';
-    try {
-      if (d?.toDate) return format(d.toDate(), 'EEEE, d MMMM yyyy');
-      if (d instanceof Date) return format(d, 'EEEE, d MMMM yyyy');
-      return String(d);
-    } catch { return 'Date TBD'; }
-  }
-
   return (
     <div className="event-card-full">
       <div className="event-card-top">
@@ -36,7 +25,7 @@ export default function EventCard({ event, onJoin, onLeave, isJoined = false, pe
 
         <div className="event-info-row">
           <Calendar size={13} color="#22c55e" />
-          <span>{formatEventDate(event.date)} • {event.time}</span>
+          <span>{formatMeetupDate(event.date)} • {event.time}</span>
         </div>
 
         {event.duration && (
@@ -71,30 +60,24 @@ export default function EventCard({ event, onJoin, onLeave, isJoined = false, pe
           </div>
         )}
 
-        <div className="participant-bar-container">
-          <div className="participant-bar-label">
-            <span>Participants</span>
-            <span>{event.participantCount || 0}{event.capacity > 0 && ` / ${event.capacity}`}</span>
-          </div>
-          <div className="participant-bar">
-            <div className="participant-fill" style={{ width: `${fillPct}%` }} />
-          </div>
-        </div>
+        <ParticipantBar event={event} />
+        <AttendanceButton event={event} joined={isJoined} pending={pending}
+          onChange={(item, joined) => (joined ? onLeave : onJoin)?.(item)} />
+      </div>
+    </div>
+  );
+}
 
-        {isJoined ? (
-          <button className="btn-danger" style={{ width: '100%', marginTop: 8 }} disabled={pending} onClick={() => onLeave?.(event)}>
-            {pending ? 'Saving…' : 'Cancel my place'}
-          </button>
-        ) : (
-          <button
-            className="btn-primary"
-            style={{ width: '100%', marginTop: 8 }}
-            onClick={() => onJoin && onJoin(event)}
-            disabled={isFull || pending}
-          >
-            {pending ? 'Saving…' : isFull ? 'Event full' : 'Join event'}
-          </button>
-        )}
+function ParticipantBar({ event }) {
+  const fillPct = event.capacity > 0 ? Math.min(100, Math.round(((event.participantCount || 0) / event.capacity) * 100)) : 0;
+  return (
+    <div className="participant-bar-container">
+      <div className="participant-bar-label">
+        <span>Participants</span>
+        <span>{event.participantCount || 0}{event.capacity > 0 && ` / ${event.capacity}`}</span>
+      </div>
+      <div className="participant-bar">
+        <div className="participant-fill" style={{ width: `${fillPct}%` }} />
       </div>
     </div>
   );

@@ -11,17 +11,23 @@ export function joinedMeetupIds(rows) {
   return new Set(rows.map(row => row.meetupDocId || row.meetupId).filter(Boolean));
 }
 
+async function eventReference(db, documentId, code) {
+  if (documentId) return doc(db, COLLECTIONS.MEETUPS, documentId);
+  // Older chat cards contain the public code alone.
+  const matches = await getDocs(query(collection(db, COLLECTIONS.MEETUPS), where('eventId', '==', code), limit(2)));
+  if (matches.size > 1) throw new Error('Open the event in the Events tab to choose the correct meetup.');
+  return matches.docs[0]?.ref || doc(db, COLLECTIONS.MEETUPS, code);
+}
+
+function missingEvent(tx, member, joining) {
+  if (joining) throw new Error('This meetup is no longer available.');
+  if (member.exists()) tx.delete(member.ref);
+  return { joined: false, changed: member.exists(), participantCount: 0 };
+}
+
 export async function saveMeetupAttendance(db, { userId, meetupDocId, meetupId, joining }) {
   if (!userId || !(meetupDocId || meetupId)) throw new Error('Sign in and select a meetup to continue.');
-  let eventRef;
-  if (meetupDocId) {
-    eventRef = doc(db, COLLECTIONS.MEETUPS, meetupDocId);
-  } else {
-    // Previously saved Chat cards may carry only the public event code.
-    const matches = await getDocs(query(collection(db, COLLECTIONS.MEETUPS), where('eventId', '==', meetupId), limit(2)));
-    if (matches.size > 1) throw new Error('Open the event in the Events tab to choose the correct meetup.');
-    eventRef = matches.docs[0]?.ref || doc(db, COLLECTIONS.MEETUPS, meetupId);
-  }
+  const eventRef = await eventReference(db, meetupDocId, meetupId);
   const receipt = doc(db, COLLECTIONS.RSVPS, attendanceId(userId, eventRef.id));
   let observed;
   const attempt = () => runTransaction(db, async tx => {
@@ -47,11 +53,7 @@ export async function saveMeetupAttendance(db, { userId, meetupDocId, meetupId, 
 function updatePlace(tx, event, member, joining, userId) {
   const eventRef = event.ref;
   const receipt = member.ref;
-  if (!event.exists()) {
-    if (joining) throw new Error('This meetup is no longer available.');
-    if (member.exists()) tx.delete(receipt);
-    return { joined: false, changed: member.exists(), participantCount: 0 };
-  }
+  if (!event.exists()) return missingEvent(tx, member, joining);
   const data = event.data();
   if (data.attendanceVersion !== 2) throw new Error('Attendance for this older meetup is being updated.');
   const count = data.participantCount;

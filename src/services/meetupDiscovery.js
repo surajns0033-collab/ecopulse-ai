@@ -26,3 +26,12 @@ export function selectUpcomingEvents(rows, { since, category, city, max }) {
     eventTime(event.date) >= since.getTime() && (!category || category === event.category) && venueMatches(event.location, city))
     .sort((a, b) => eventTime(a.date) - eventTime(b.date)).slice(0, max);
 }
+
+const shortDate = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const longDate = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+export function formatMeetupDate(date, compact = false) {
+  const time = eventTime(date);
+  if (Number.isFinite(time)) return (compact ? shortDate : longDate).format(time);
+  return typeof date === 'string' && date.trim() ? date : compact ? 'TBD' : 'Date TBD';
+}
