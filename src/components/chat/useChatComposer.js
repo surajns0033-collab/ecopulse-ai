@@ -1,14 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import { useComposerPhoto } from './useComposerPhoto.js';
 
 export function useChatComposer(onSend, disabled) {
 
   const [text, setText] = useState('');
-  const [imageData, setImageData] = useState(null); // { base64, mimeType, preview }
+  const photo = useComposerPhoto(disabled);
   const [isListening, setIsListening] = useState(false);
-  const [imageError, setImageError] = useState('');
-  const photoRequest = useRef(0);
-  useEffect(() => () => { photoRequest.current++; }, []);
-  const fileRef = useRef(null);
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
 
@@ -44,26 +41,13 @@ export function useChatComposer(onSend, disabled) {
     return () => rec.abort();
   }, []);
 
-  // Welcome/quick-action buttons can open the same image picker while keeping
-  // the normal text box available. The custom event fires within the user's
-  // button click, so browsers treat it as an intentional file-picker action.
-  useEffect(() => {
-    const openPicker = () => {
-      if (!disabled) fileRef.current?.click();
-    };
-    window.addEventListener('ecopulse:open-image-picker', openPicker);
-    return () => window.removeEventListener('ecopulse:open-image-picker', openPicker);
-  }, [disabled]);
-
   const handleSend = () => {
-    if (disabled) return;
+    if (disabled || photo.preparing) return;
     const msg = text.trim();
-    if (!msg && !imageData) return;
-    photoRequest.current++;
-    setImageError('');
-    onSend(msg, imageData);
+    if (!msg && !photo.imageData) return;
+    onSend(msg, photo.imageData);
     setText('');
-    setImageData(null);
+    photo.clearPhoto();
     textareaRef.current?.focus();
   };
 
@@ -73,22 +57,6 @@ export function useChatComposer(onSend, disabled) {
       handleSend();
     }
   };
-
-  async function handleImageFile(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    event.target.value = '';
-    const request = ++photoRequest.current;
-    setImageError('');
-    setImageData(null);
-    try {
-      const { prepareComposerPhoto } = await import('../../services/composerPhoto.js');
-      const prepared = await prepareComposerPhoto(file);
-      if (request === photoRequest.current) setImageData(prepared);
-    } catch (error) {
-      if (request === photoRequest.current) setImageError(error.message || 'Could not prepare this photo.');
-    }
-  }
 
   const toggleMic = () => {
     const rec = recognitionRef.current;
@@ -109,7 +77,7 @@ export function useChatComposer(onSend, disabled) {
     }
   };
 
-  const canSend = (text.trim() || imageData) && !disabled;
-
-  return { text, setText, imageError, imageData, setImageData, isListening, fileRef, textareaRef, handleSend, handleKeyDown, handleImageFile, toggleMic, canSend };
+  const hasDraft = Boolean(text.trim() || photo.imageData || photo.preparing);
+  return { text, setText, photo, isListening, textareaRef, handleSend, handleKeyDown, toggleMic,
+    hasDraft, canSend: hasDraft && !disabled && !photo.preparing };
 }

@@ -1,4 +1,4 @@
-import { normalize, qualifies, validPlace, namedWithRegion, editDistance } from './placeMatching.js';
+import { normalize, qualifies, validPlace, namedWithRegion, editDistance, toLocation } from './placeMatching.js';
 
 export function primaryPlaces(data, map, expected, qualifiers) {
   const rows = Array.isArray(data?.results) ? data.results.filter(row => typeof row?.name === 'string') : [];
@@ -38,4 +38,11 @@ export function suggestedPlace(places, name, qualifiers, map) {
     ((map && landmark(place.name) === landmark(name)) || (compact.length >= 5 &&
       editDistance(normalize(place.name).replaceAll(' ', ''), compact) <= (compact.length >= 8 ? 2 : 1))));
   return place ? { place, exact: false } : null;
+}
+
+export function deviceLocality(address, lat, lng) {
+  const label = value => typeof value === 'string' ? value.trim() : '';
+  const name = [address?.city, address?.town, address?.village, address?.municipality].map(label).find(Boolean);
+  const country = label(address?.country);
+  return name && country ? toLocation({ name, region: label(address.state), country, lat, lng }) : null;
 }

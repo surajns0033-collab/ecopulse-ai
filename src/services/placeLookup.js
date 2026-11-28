@@ -1,4 +1,4 @@
-import { primaryPlaces, secondaryPlaces, suggestedPlace } from './geocodingResults.js';
+import { primaryPlaces, secondaryPlaces, suggestedPlace, deviceLocality } from './geocodingResults.js';
 import { normalize, commonTypos, alias, selectExact, toLocation } from './placeMatching.js';
 
 async function readPlaces(url, signal, request) {
@@ -77,7 +77,5 @@ export async function getDevicePlace({ signal, geolocation = globalThis.navigato
   const lat = Number(coords.latitude.toFixed(2));
   const lng = Number(coords.longitude.toFixed(2));
   const result = await readPlaces(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2&zoom=10&accept-language=en`, signal, request);
-  const address = result?.address;
-  const name = address?.city || address?.town || address?.village || address?.municipality;
-  return name && address.country ? toLocation({ name, region: address.state, country: address.country, lat, lng }) : null;
+  return deviceLocality(result?.address, lat, lng);
 }
