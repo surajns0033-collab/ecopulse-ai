@@ -10,7 +10,7 @@ const PREPOSITION = /\b(?:in|at|for|near|around)\s+([^?!.;]+?)(?=\s+\b(?:in|at|f
 
 function beforeTimeQualifier(value) {
   for (const match of value.matchAll(/\s+(\p{L}+)/gu)) {
-    if (/^(?:today|tomorrow|tonight)$/i.test(recognitionText(match[1]))) return value.slice(0, match.index);
+    if (/^(?:today|tomorrow|tonight|yesterday)$/i.test(recognitionText(match[1]))) return value.slice(0, match.index);
   }
   return value;
 }
@@ -39,8 +39,8 @@ export function explicitPlace(text, environment = false) {
   const candidates = [...text.matchAll(PREPOSITION)].map((m) => placeName(m[1])).filter(Boolean);
   if (candidates.length) return candidates.join(', ');
   if (!environment) return '';
-  const schoolPlace = text.match(/^([\p{L}\p{M} .'-]{2,55}?)\s+(?:mein|me|में)\s+(?:kal|aaj|कल|आज|subah|सुबह|school|स्कूल)/iu);
-  if (schoolPlace) return placeName(schoolPlace[1]);
+  const scheduledPlace = text.match(/^([\p{L}\p{M} ,.'’-]{2,55}?)\s+(?:mein|me|में)\s+(?=\d|kal\b|aaj\b|subah\b|shaam\b|school\b|कल|आज|सुबह|शाम|स्कूल)/iu);
+  if (scheduledPlace) return placeName(scheduledPlace[1]);
   const localPattern = /(?:^|\s)(?:in\s+)?(.+?)\s*(?:\b(?:ka|ki|ke|mein|me|madhye|madhe)\b|में|का|की|के|मध्ये|चा|ची|चे)\s*(?:aqi|weather|mausam|hawa|havaman|smog|मौसम|हवामान|तापमान|हवा|प्रदूषण|स्मॉग|धुंध)/iu;
   const local = text.match(localPattern)?.[1];
   const afterTopic = text.match(/^(?:(?:check|latest|current|live)\s+)*(?:aqi|a q i|air quality|weather|temperature|forecast|mausam)\s+(.+)$/i)?.[1];

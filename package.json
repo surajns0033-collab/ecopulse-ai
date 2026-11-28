@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint --deny-warnings",
-    "quality:inventory": "oxlint --config tests/maintainability.oxlintrc.json --max-warnings=23 --format github src server api",
+    "quality:inventory": "oxlint --config tests/maintainability.oxlintrc.json --max-warnings=21 --format github src server api",
     "test": "node --test",
     "coverage:critical": "node tests/criticalCoverage.mjs",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/** --test-coverage-include=server/**",

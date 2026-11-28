@@ -15,6 +15,16 @@ The last competition result supplied by the project owner was **95.19/100** on A
 | P2 · low impact | Testing | 94 |
 | P2 · low impact | Accessibility | 96 |
 
+### Follow-up: complaint drafts and time-specific AQI
+
+Using Node 24.16.0 and Chrome on Windows, `npm test` passed 167/167 tests. The six [chat](../../tests/chatSpelling.browser.mjs) and [draft](../../tests/draftReview.browser.mjs) browser checks also passed with external responses replaced by fixtures:
+
+- Confirming `Dehli` as Delhi keeps the original observation in the Delhi complaint. Switching cities does not copy it into another draft. Refresh cancels an in-flight report analysis and accepts a new question.
+- A government smog-plan question uses sourced search. The chat reports when no source is available.
+- Asking for Delhi's 6 pm AQI uses one hourly request, no current-reading request, and the 18:00 slot in `Asia/Kolkata`. Asking for yesterday's value makes neither request. The [time and place tests](../../tests/requestedForecast.test.js) also cover `18:00`, a Hinglish commute question, and an earlier journey with a different time.
+
+The source-wide maintainability scan reported 21 findings; CI now enforces that ceiling. These checks measure application behavior, not a new competition score. [Follow-up branch checks](https://github.com/surajns0033-collab/ecopulse-ai/actions/workflows/verify.yml?query=branch%3Aair-quality-updates)
+
 ## Measurements
 
 | Measurement | Baseline on `b2e0a9b` | Candidate on `d1070dd` |
@@ -104,11 +114,11 @@ The npm install printed lifecycle-script policy notices for `@firebase/util`, `o
 - **Production controls.** A shared API quota should be checked on an authorized non-production target, including normal Guest requests and the user-visible response at the limit. The built-in platform option avoids adding a database or an external paid limiter to the browser or application. Provider credentials stayed server-side in the build check. Device-only storage still allows model-powered turns to send the question or prepared photo to the configured proxy. [Vercel Firewall](https://vercel.com/docs/vercel-firewall/vercel-waf/rate-limiting)
 - **External behavior.** Environmental, geocoding and AI responses in the regression suite were fixtures. Real-time upstream availability, provider quotas and photo-classification accuracy on labelled real incidents remain unmeasured for the candidate. Live Firebase rules and production Google/email sign-in were not exercised by the emulator run. [Test setup](../../tests/browserSupport.mjs) · [Firebase configuration](../../FIREBASE_SETUP.md)
 - **Accessibility.** The keyboard and axe results cover the tested Chrome states. Manual OS screen-reader operation and native browser zoom at 200% and 400% remain unverified. The 320-pixel viewport check gives independent reflow evidence.
-- **Maintainability.** The 23 remaining inventory warnings concern function complexity or counted lines. Some apply to the same function. Repository-wide coverage still has gaps, and critical coverage is an aggregate. CI now fails above the measured warning count. [Inventory annotations](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46150391538)
+- **Maintainability.** At `d1070dd` there were 23 findings about function complexity or length. Some applied to the same function. The follow-up above lowers the ceiling to 21. Repository-wide coverage still has gaps, and critical coverage is an aggregate. [Inventory annotations at `d1070dd`](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46150391538)
 - **Working environment.** The Windows helper could not launch a process during the audit and no local repository checkout was attached. Implementation and verification used the feature branch and a clean Actions checkout. Any uncommitted work on another computer was outside this review. [Environment evidence](BASELINE.md)
 
 <details>
-<summary>Remaining function inventory</summary>
+<summary>Function inventory at d1070dd</summary>
 
 | File | Function | Measured finding |
 | --- | --- | --- |

@@ -8,6 +8,33 @@ const periods = [
 ];
 const tomorrow = /\btomorrow\b|\bkal\b|कल|उद्या/iu;
 const outsideHorizon = /\b(?:next (?:week|month|year)|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday|day after tomorrow)\b|परसों|अगले हफ्ते/iu;
+const historical = /\b(?:yesterday|last (?:night|week|month|year)|(?:what|how) was (?:the )?(?:aqi|air quality|weather))\b/iu;
+const forecastWords = /\b(?:forecast|tonight|this (?:morning|afternoon|evening)|in the (?:morning|evening))\b|आने वाला/iu;
+
+// An earlier observation can have its own day and hour: use the question that follows it.
+function askedClause(text) {
+  const parts = text.split(/([.,;!?।])\s+(?=(?:what|how|will|is|was|check|show|aqi|kya|क्या)(?:\s|['’]))/iu);
+  const question = parts.at(-1);
+  // “At 6 pm, what will the AQI be?” keeps the leading time unless the question names its own.
+  if (parts.at(-2) === ',' && !/\b(?:now|current|currently|latest)\b/i.test(question) && timingKind(question) === 'current') {
+    return parts.at(-3) + ', ' + question;
+  }
+  return question;
+}
+
+function clockHour(text) {
+  const time = text.match(/\b(1[0-2]|0?[1-9])(?::[0-5]\d)?\s*([ap])\.?m\b/i);
+  if (time) return (+time[1] % 12) + (time[2].toLowerCase() === 'p' ? 12 : 0);
+  const clock = text.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
+  return clock ? +clock[1] : null;
+}
+
+function timingKind(text) {
+  if (historical.test(text) || outsideHorizon.test(text)) return 'unavailable';
+  return tomorrow.test(text) || forecastWords.test(text) || clockHour(text) !== null ? 'hourly' : 'current';
+}
+
+export const forecastKind = message => timingKind(askedClause(recognitionText(message)));
 
 function localParts(clock, time) {
   return Object.fromEntries(clock.formatToParts(time).map(({ type, value }) => [type, value]));
@@ -18,13 +45,8 @@ function dayString(parts, days = 0) {
 }
 
 function requestedHours(text) {
-  const time = text.match(/\b(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*([ap])\.?m\.?\b/i);
-  if (time) {
-    const hour = (+time[1] % 12) + (time[3].toLowerCase() === 'p' ? 12 : 0);
-    return [hour, hour + 1];
-  }
-  const clock = text.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
-  if (clock) return [+clock[1], +clock[1] + 1];
+  const hour = clockHour(text);
+  if (hour !== null) return [hour, hour + 1];
   const period = periods.find(([pattern]) => pattern.test(text));
   return period ? period.slice(1) : [0, 24];
 }
@@ -44,18 +66,8 @@ function forecastSlots(forecast, text, now) {
 
 const missing = 'I could not verify an hourly AQI forecast for the requested time. Recheck local advisories before outdoor activity.';
 
-export function describeRequestedForecast(forecast, message, now = Date.now()) {
-  const text = recognitionText(message);
-  if (!forecast?.timeZone || !forecast.hours?.length || outsideHorizon.test(text)) return { text: missing, status: 'unavailable' };
-  let slots;
-  try {
-    slots = forecastSlots(forecast, text, now);
-  } catch (error) {
-    if (error instanceof RangeError) return { text: missing, status: 'unavailable' };
-    throw error;
-  }
-  if (!slots.length) return { text: missing, status: 'unavailable' };
-  const clock = new Intl.DateTimeFormat('en-GB', { timeZone: forecast.timeZone, weekday: 'short',
+function formatSlots(slots, timeZone, question) {
+  const clock = new Intl.DateTimeFormat('en-GB', { timeZone, weekday: 'short',
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const range = slots.length === 1 ? clock.format(slots[0].time) :
     clock.formatRange(slots[0].time, slots.at(-1).time);
@@ -63,11 +75,25 @@ export function describeRequestedForecast(forecast, message, now = Date.now()) {
   const high = Math.max(...values);
   const low = Math.min(...values);
   let advice = 'Recheck the latest reading before going out.';
-  if (schoolActivity(text)) {
+  if (schoolActivity(question)) {
     advice = high >= 101 ? 'Plan an indoor alternative for strenuous school activities and check local school advisories.'
       : 'Recheck the latest reading before assembly or sports and keep an indoor option for sensitive pupils.';
   }
-  return { status: 'success', text: 'Available hourly forecast for ' + range + ' (' + forecast.timeZone +
+  return { status: 'success', text: 'Available hourly forecast for ' + range + ' (' + timeZone +
     '): modeled U.S. AQI ' + (low === high ? high : low + '–' + high) + '. ' + advice +
     ' [Open-Meteo / CAMS forecast](https://open-meteo.com/en/docs/air-quality-api).' };
+}
+
+export function describeRequestedForecast(forecast, message, now = Date.now()) {
+  const question = recognitionText(message);
+  const text = askedClause(question);
+  if (historical.test(text)) return { status: 'unavailable', text: 'I cannot verify historical AQI from this forecast feed.' };
+  if (!forecast?.timeZone || !forecast.hours?.length || outsideHorizon.test(text)) return { text: missing, status: 'unavailable' };
+  try {
+    const slots = forecastSlots(forecast, text, now);
+    return slots.length ? formatSlots(slots, forecast.timeZone, question) : { text: missing, status: 'unavailable' };
+  } catch (error) {
+    if (error instanceof RangeError) return { text: missing, status: 'unavailable' };
+    throw error;
+  }
 }

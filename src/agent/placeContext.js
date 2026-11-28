@@ -1,7 +1,7 @@
 import { asksForSmogPlan, detectIntent, INTENTS } from './intentEngine.js';
 import { communitySetting, isSmogProfile } from './smogProfile.js';
 import { correctedCity, explicitPlace, labeledCity, placeName, statedCity, PLACE_COMMAND } from './placeNames.js';
-import { recognitionText } from './chatLanguage.js';
+import { forecastKind } from './requestedForecast.js';
 import { WEB_COMMAND, routeTopic } from './placeTopics.js';
 
 export { labeledCity, placeName } from './placeNames.js';
@@ -13,7 +13,7 @@ const DEVICE_LOCATION = /^(?:(?:please\s+)?(?:use|share|detect|show|find|check) 
 const MAP = /^(?:(?:can you |please )?(?:show|open|find) (?:me )?(?:(?:the|a) )?)?maps?(?:\s+(?:of|in|for|to))?(?:\s+(.+))?$/i;
 const MAP_QUESTION = /^(?:where(?: is|['’]s)|locate|show (?:me )?(?:the )?location (?:of|for))\s+(.+)$/i;
 const ON_MAP = /^(?:can you |please )?show (?:me )?(.+?)\s+on (?:the |a )?map$/i;
-export const asksForForecast = (text) => /\b(?:forecast|tomorrow|tonight|next week|this (?:evening|weekend)|in the (?:morning|evening))\b|\bkal\b|आने वाला|कल|उद्या/iu.test(recognitionText(text));
+export const asksForForecast = text => forecastKind(text) !== 'current';
 
 export function resolveCity(city) {
   if (city && city !== 'your city' && city !== 'Unknown') return city;

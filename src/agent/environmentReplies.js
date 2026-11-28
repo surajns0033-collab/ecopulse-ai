@@ -1,4 +1,4 @@
-import { describeRequestedForecast } from './requestedForecast.js';
+import { describeRequestedForecast, forecastKind } from './requestedForecast.js';
 import { getAirQualityForecast, getCurrentAirQuality, getAQIInsight } from '../services/environmentalData.js';
 import { requestAI } from '../services/aiClient.js';
 import { getChatResponse, isAIUnavailable } from '../services/geminiService';
@@ -30,7 +30,7 @@ export async function explainSmogChoices(question, choices, signal) {
   return { text: result.text, cards: [], actions: [], status: 'success' };
 }
 
-export async function handleAirQuality(lat, lng, city, userId, { signal, forecast = false, message = '' } = {}) {
+export async function handleAirQuality(lat, lng, city, userId, { signal, message = '' } = {}) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {
       text: 'Which city should I check for air quality?',
@@ -44,8 +44,9 @@ export async function handleAirQuality(lat, lng, city, userId, { signal, forecas
     text: 'An official CPCB AQI is unavailable here. These feeds do not provide the required station observations, averaging periods and completeness records. Check the [CPCB national AQI portal](https://airquality.cpcb.gov.in/AQI_India/) for the official reading.',
     cards: [], actions: [], status: 'unavailable',
   };
-  if (forecast) {
-    const hourly = await getAirQualityForecast(lat, lng, { signal });
+  const timing = forecastKind(message);
+  if (timing !== 'current') {
+    const hourly = timing === 'hourly' ? await getAirQualityForecast(lat, lng, { signal }) : null;
     const reply = describeRequestedForecast(hourly, message);
     return { ...reply, text: (city ? '**' + city + '** — ' : '') + reply.text, cards: [], actions: [] };
   }

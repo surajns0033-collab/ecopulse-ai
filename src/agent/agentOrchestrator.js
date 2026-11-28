@@ -19,7 +19,7 @@ import { logAction } from './activityLog';
 // are handled once, before and after dispatch.
 const replies = {
   [INTENTS.GET_AIR_QUALITY]: ({ lat, lng, city, userId, message, signal }) =>
-    handleAirQuality(lat, lng, city, userId, { signal, message, forecast: asksForForecast(message) }),
+    handleAirQuality(lat, lng, city, userId, { signal, message }),
   [INTENTS.GET_WEATHER]: ({ lat, lng, city, userId, message, signal }) =>
     handleWeather(lat, lng, city, userId, { signal, forecast: asksForForecast(message) }),
   [INTENTS.GET_WATER_QUALITY]: ({ city }) => handleWaterQuality(city),

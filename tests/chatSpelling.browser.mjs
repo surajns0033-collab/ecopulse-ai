@@ -82,6 +82,7 @@ test('a commuter asking about 6 pm receives that hour instead of the current cit
   const sixPm = Date.parse('2026-11-28T12:30:00Z');
   await context.route('https://air-quality-api.open-meteo.com/**', route => {
     if (!new URL(route.request().url()).searchParams.has('hourly')) return route.fallback();
+    counts.forecast++;
     return route.fulfill({ json: { timezone: 'Asia/Kolkata', current: { time: midday / 1000 },
       hourly: { time: [sixPm / 1000], us_aqi: [112] } } });
   });
@@ -89,10 +90,13 @@ test('a commuter asking about 6 pm receives that hour instead of the current cit
   await page.clock.setFixedTime(new Date(midday));
   await page.goto(origin);
   await page.getByRole('button', { name: 'Continue as Guest' }).click();
-  await ask(page, 'What will the AQI be in Delhi, India at 6 pm?');
   const log = page.getByRole('log', { name: 'Chat messages' });
-  const answer = log.locator('.chat-bubble-ai').filter({ hasText: /hourly forecast|current air quality|verify the air-quality/i });
+  await ask(page, 'What was the AQI in Delhi, India yesterday at 6 pm?');
+  await log.getByText(/cannot verify historical AQI/i).waitFor();
+  assert.deepEqual(counts, { aqi: 0, weather: 0, forecast: 0 });
+  await ask(page, 'What will the AQI be in Delhi, India at 6 pm?');
+  const answer = log.locator('.chat-bubble-ai').filter({ hasText: /available hourly forecast|current air quality|verify the air-quality/i });
   await answer.waitFor();
   assert.match(await answer.innerText(), /18:00.*Asia\/Kolkata.*modeled U.S. AQI 112/is);
-  assert.equal(counts.aqi, 0);
+  assert.deepEqual(counts, { aqi: 0, weather: 0, forecast: 1 });
 });
