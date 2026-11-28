@@ -9,6 +9,7 @@
     "lint": "oxlint --deny-warnings",
     "quality:inventory": "oxlint --config tests/maintainability.oxlintrc.json --max-warnings=45 --format github src server api",
     "test": "node --test",
+    "coverage:critical": "node tests/criticalCoverage.mjs",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/** --test-coverage-include=server/**",
     "benchmark": "node --test tests/submissionScenarios.test.js tests/routineQuestions.test.js",
     "benchmark:submission": "node tests/submissionBenchmark.mjs",

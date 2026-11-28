@@ -38,7 +38,7 @@ function wantsNews(text, { localNews, relative, air, weather, contact }) {
 }
 
 function localTool(text, intent, topics, definition) {
-  if (!definition && intent === INTENTS.GET_HEALTH_TIPS) return intent;
+  if (!definition && [INTENTS.GET_HEALTH_TIPS, INTENTS.GET_ROUTES, INTENTS.GET_WATER_QUALITY].includes(intent)) return intent;
   if (topics.contact) return INTENTS.GET_AUTHORITY_CONTACTS;
   if (intent === INTENTS.CREATE_EMAIL) return intent;
   if (intent === INTENTS.CREATE_REPORT && /\b(?:burning|dumping|sewage|smoke|cutting|complaint|garbage|report|blocked)\b/i.test(text)) return intent;
