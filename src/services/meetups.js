@@ -1,4 +1,5 @@
-import { addDoc, collection, getDocs, limit, onSnapshot, orderBy, query, startAfter, Timestamp, where } from 'firebase/firestore';
+import { cloudUpcomingEvents } from './firestoreDiscovery.js';
+import { addDoc, collection, limit, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore';
 import { isFirebaseConfigured } from '../firebase/config';
 import { db } from '../firebase/firestoreClient';
 import { COLLECTIONS, generateEventId } from '../firebase/collections.js';
@@ -28,20 +29,7 @@ export async function getNearbyMeetups({ category, city, timeZone, limit: max = 
   const filters = { since, category, city, max };
   if (!isFirebaseConfigured) return selectUpcomingEvents(deviceEvents(await readLocalAttendance()), filters);
 
-  const collectionRef = collection(db, COLLECTIONS.MEETUPS);
-  const constraints = [where('status', '==', 'published'), where('date', '>=', Timestamp.fromDate(since))];
-  if (category) constraints.push(where('category', '==', category));
-  const pageSize = city ? Math.max(max, 30) : max;
-  const matches = [];
-  let cursor;
-  do {
-    signal?.throwIfAborted();
-    const paging = cursor ? [startAfter(cursor)] : [];
-    const snapshot = await getDocs(query(collectionRef, ...constraints, orderBy('date'), ...paging, limit(pageSize)));
-    matches.push(...selectUpcomingEvents(eventRows(snapshot), { ...filters, max: max - matches.length }));
-    cursor = snapshot.size === pageSize ? snapshot.docs.at(-1) : null;
-  } while (cursor && matches.length < max);
-  return matches;
+  return cloudUpcomingEvents(db, filters, signal);
 }
 
 export function subscribeMeetups(userId, onChange, onError) {

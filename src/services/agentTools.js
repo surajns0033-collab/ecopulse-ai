@@ -10,7 +10,6 @@ import { readLocalAttendance } from './localMeetupAttendance.js';
 import { joinedMeetupIds } from './meetupAttendance.js';
 import { findVerifiedRecipient } from './verifiedRecipient.js';
 import { saveEmailDraft } from './emailDrafts.js';
-import { localStore, firestoreOrLocal } from './toolStorage.js';
 import { communityTools } from './communityTools.js';
 
 export const tools = {
@@ -104,26 +103,5 @@ export const tools = {
       reportsSubmitted: reportsOnDevice(localStorage, userId).length,
       eventsJoined: joinedMeetupIds(mine).size,
     };
-  },
-
-  /**
-   * Save a user action to history
-   */
-  saveUserAction: async ({ userId, actionType, data }) => {
-    return firestoreOrLocal(
-      async () => {
-        await addDoc(collection(db, COLLECTIONS.USER_ACTIONS), {
-          userId,
-          actionType,
-          data,
-          createdAt: Timestamp.now(),
-        });
-        return { saved: true };
-      },
-      () => {
-        localStore.actions.push({ userId, actionType, data, createdAt: new Date().toISOString() });
-        return { saved: true };
-      }
-    );
   },
 };

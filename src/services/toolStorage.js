@@ -18,10 +18,6 @@ export const STORAGE_KEYS = {
   POSTS: 'echopulse_local_posts',
 };
 
-export const localStore = {
-  actions: [],
-};
-
 // Device storage is selected only for a device session. A rejected cloud write
 // must reach the caller so a private device record cannot look like a public post.
 export function firestoreOrLocal(firestoreFn, localFallback) {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { doc, collection, setDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, collection, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { cloudUpcomingEvents } from '../src/services/firestoreDiscovery.js';
 import { owner, guest, neighbour, permissionDenied, meetupData } from './rulesFixtures.mjs';
 
 test('report and draft writes validate their real fields and preserve ownership and creation data', async () => {
@@ -36,4 +37,22 @@ test('public posts and meetup organizer edits validate public fields and termina
   }
   await updateDoc(event, { status: 'cancelled' });
   await assert.rejects(updateDoc(event, { status: 'published' }), permissionDenied);
+});
+
+test('cloud discovery pages past other cities and applies the date and category before its limit', async () => {
+  const collectionRef = collection(owner.db, 'meetups');
+  const batch = writeBatch(owner.db);
+  const writeEvent = (location, day, category = 'cleanup') => {
+    const ref = doc(collectionRef);
+    batch.set(ref, { ...meetupData(), location, category, date: Timestamp.fromDate(new Date(day)) });
+    return ref.id;
+  };
+  const city = 'Fixtureville';
+  writeEvent(city, '2035-12-30');
+  writeEvent(city, '2036-01-01', 'awareness');
+  for (let i = 0; i < 32; i++) writeEvent('Different venue', '2036-01-02');
+  const expected = writeEvent(city, '2036-01-03');
+  await batch.commit();
+  const rows = await cloudUpcomingEvents(guest.db, { city, category: 'cleanup', since: new Date('2036-01-01'), max: 1 });
+  assert.deepEqual(rows.map(row => row.id), [expected]);
 });
