@@ -1,4 +1,4 @@
-import { emailPreviewData } from './civicReportDetails.js';
+import { emailPreviewData, forestDraftCopy } from './civicReportDetails.js';
 import { tools } from '../services/agentTools';
 import { buildComplaintEmailTemplate, contactLines } from './fallbackBrain.js';
 import { detectIssueCategory, hasConcreteIssue, ISSUE_LABELS } from './civicIssues.js';
@@ -33,9 +33,7 @@ async function askForObservation(result, city, location) {
 async function draftFromNote(note, city, photoLocation) {
   const category = detectIssueCategory(note);
   const recipient = await tools.findVerifiedRecipient({ issueCategory: category, city });
-  const isTree = /tree|mangrove|forest|cutting|felling/i.test(note);
-  const cc = isTree && recipient.forestEmail ? recipient.forestEmail : null;
-  const ccLabel = cc ? 'State Forest Department' : null;
+  const copy = forestDraftCopy(recipient, note);
   const template = buildComplaintEmailTemplate({
     situation: note,
     recipient,
@@ -48,7 +46,7 @@ async function draftFromNote(note, city, photoLocation) {
     text: `I couldn't analyze the photo automatically. I prepared a draft from your description instead. Review it and verify the recipient before sending.\n\n${contactLines(recipient).join('\n')}`,
     cards: [{
       type: 'email-preview',
-      data: emailPreviewData(recipient, city, template, { cc, ccLabel }),
+      data: emailPreviewData(recipient, city, template, copy),
     }],
     actions: [{
       label: '📋 Also file a report',

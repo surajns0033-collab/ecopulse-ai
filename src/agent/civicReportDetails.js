@@ -1,3 +1,5 @@
+import { mentionsForest } from './civicIssues.js';
+
 // Keep the original observation when the model omits a field or returns an invalid value.
 function modelText(value, limit) {
   return typeof value === 'string' ? value.trim().slice(0, limit) : '';
@@ -53,6 +55,14 @@ export function reportUrgency(recipient, forest, preview) {
   return preview
     ? '🚨 If there is fire, a hazardous leak, or immediate danger to life, call **112**; otherwise review the written complaint below.'
     : 'If there is fire or immediate danger to life, call **112**; otherwise use the official portal for a tracked complaint.';
+}
+
+export function forestDraftCopy(recipient, observation, request = '') {
+  const forest = mentionsForest(observation) || /\b(?:jungle|wood|felling|cutting)\b/i.test(observation)
+    || mentionsForest(request) || /\bcc\b/i.test(request);
+  if (!forest || !recipient.forestEmail) return { cc: null, ccLabel: null };
+  const ccLabel = recipient.forestHelpline ? 'State Forest Dept (Helpline: ' + recipient.forestHelpline + ')' : 'State Forest Department';
+  return { cc: recipient.forestEmail, ccLabel };
 }
 
 export function emailPreviewData(recipient, location, { subject, body }, { cc = null, ccLabel = null, disclaimer = recipient.disclaimer } = {}) {

@@ -1,8 +1,8 @@
-import { emailPreviewData } from './civicReportDetails.js';
+import { emailPreviewData, forestDraftCopy } from './civicReportDetails.js';
 import { tools } from '../services/agentTools';
 import { buildComplaintEmailTemplate } from './fallbackBrain.js';
 import { AWAITING_DRAFT_DETAILS, incidentCity } from './chatPlaces.js';
-import { describesIssue, detectIssueCategory, mentionsForest, ISSUE_LABELS, observationText } from './civicIssues.js';
+import { describesIssue, detectIssueCategory, ISSUE_LABELS, observationText } from './civicIssues.js';
 
 function previousIssue(conversationHistory) {
   const recentUserMessages = (conversationHistory || [])
@@ -18,20 +18,6 @@ function matchesIncidentCity(message, city) {
   const parts = (value) => String(value || '').toLowerCase().split(/\s*,\s*/).filter(Boolean);
   const currentCity = parts(city);
   return historyPlace && parts(historyPlace).every(part => currentCity.includes(part));
-}
-
-function forestCopy(recipient, situationText, userMessage) {
-  let cc = null;
-  let ccLabel = null;
-  const isTreeOrForestIssue =
-    mentionsForest(situationText) || /\b(?:jungle|wood|felling|cutting)\b/i.test(situationText) ||
-    mentionsForest(userMessage) || /\bcc\b/i.test(userMessage);
-
-  if (isTreeOrForestIssue && recipient.forestEmail) {
-    cc = recipient.forestEmail;
-    ccLabel = recipient.forestHelpline ? `State Forest Dept (Helpline: ${recipient.forestHelpline})` : 'State Forest Department';
-  }
-  return { cc, ccLabel };
 }
 
 export async function handleCreateEmail(userMessage, conversationHistory, city, turn) {
@@ -55,7 +41,7 @@ export async function handleCreateEmail(userMessage, conversationHistory, city, 
   const issueCategory = detectedCategory === 'default' ? (turn?.draftIssue || detectedCategory) : detectedCategory;
   const recipient = await tools.findVerifiedRecipient({ issueCategory, city });
 
-  const { cc, ccLabel } = forestCopy(recipient, situationText, userMessage);
+  const { cc, ccLabel } = forestDraftCopy(recipient, situationText, userMessage);
 
   // Keep the observed facts verbatim. Unknown dates and addresses stay as
   // placeholders, and we do not send complaint details to a model to guess them.
