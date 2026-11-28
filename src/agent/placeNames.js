@@ -28,7 +28,7 @@ export function placeName(value) {
   if (/^(?:\d{1,2}(?::\d{2})?\s*(?:a\.?m|p\.?m)|noon|midnight|yesterday|sunrise|sunset)\b/i.test(name)) return '';
   if (/[^\p{L}\p{M}\d\s,'’\-.]/u.test(name) || /^(?:i|it|its|is|are|can|could|do|does|please|how|why|who|what|where|when|tell|show|check|my|our|your|here|there|somewhere|near|nearby|around|the|a|local|outside|inside|home|office|me|us|this|that|today|tomorrow|tonight|now|right|good|yes|no|not|thanks|thank|sure|hello|hi|hey|okay|ok|actually|help|sounds|and|also|for|in|at|of|about|use|explain|describe|pain|trouble|danger|मेरा|मेरे|माझ्या|यहाँ|यहां|इथे)(?:['’]|\s|$)/iu.test(name)) return '';
   if (/^(?:area|city|location|locally|locality|region|town|neighbou?rhood|city cent(?:re|er)|current(?: (?:area|location))?|forecast|cancel|never mind)$/i.test(name)) return '';
-  if (/\b(?:the area|local area|on the map|area around|morning|afternoon|evening|weekend|week|aqi|weather|air quality|air pollution|smog|plan|somewhere|anything|something|feeling|live data)\b/i.test(name)) return '';
+  if (/\b(?:the area|local area|on the map|area around|morning|afternoon|evening|weekend|week|aqi|weather|air quality|air pollution|health (?:tips|advice|precautions)|smog|plan|somewhere|anything|something|feeling|live data)\b/i.test(name)) return '';
   if (/^(?:आज|उद्या|आत्ता|सध्या|घर|बाहेर|अभी|कल|बाहर|हमारे|यहाँ|यहां)(?:\s|$)/u.test(name)) return '';
   return name;
 }
