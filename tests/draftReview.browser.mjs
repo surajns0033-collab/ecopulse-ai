@@ -29,11 +29,16 @@ test('photo evidence and the original note reach an editable draft and require u
   assert.ok(photoRequest.messages[0].text.includes(note));
   assert.ok(!photoRequest.system.includes(note));
   assert.ok((await card.innerText()).includes(note));
+  const preview = card.getByRole('region', { name: 'Draft body preview' });
+  await preview.focus();
+  assert.ok(await preview.evaluate(element => element === document.activeElement));
+  await page.keyboard.press('ArrowDown');
   await auditAccessibility(page, 'Editable photo complaint and email draft');
   await card.getByRole('button', { name: /Open in Gmail/ }).click();
   await card.getByRole('button', { name: /Yes, Open Gmail/ }).waitFor();
   assert.equal(context.pages().length, 1);
-  await card.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.keyboard.press('Escape');
+  assert.ok(await card.getByRole('button', { name: /Open in Gmail/ }).evaluate(button => button === document.activeElement));
   await card.getByRole('button', { name: /Edit/ }).click();
   const body = card.getByRole('textbox', { name: 'Draft body' });
   assert.ok((await body.inputValue()).includes(observed));

@@ -4,10 +4,10 @@ function confirmation(title, message, id, actions = []) {
   return { cards: [{ type: 'confirmation', data: { title, message, id } }], actions };
 }
 
-async function publishMeetup(user, data) {
+async function publishMeetup(user, data, publicName) {
   const { createMeetup } = await import('../../services/meetups');
   const { title, description, category, location, date, time, capacity, lat, lng } = data;
-  const result = await createMeetup({ userId: user.uid, organizer: user.displayName || 'Guest Organizer',
+  const result = await createMeetup({ userId: user.uid, organizer: publicName || 'Community Member',
     title, description, category, location, date, time, capacity, lat, lng });
   return confirmation(result.localOnly ? 'Meetup saved on this device' : 'Meetup published',
     `"${title}" at ${location} is on your Events page.`, result.eventId,

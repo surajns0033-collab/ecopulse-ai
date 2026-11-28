@@ -36,7 +36,7 @@ export function handleJoinEventPrompt() {
   };
 }
 
-export async function handleCreateEventPrompt(userMessage, city, lat, lng) {
+export async function handleCreateEventPrompt(userMessage, city) {
   const defaultCity = city || 'Your City';
   const lower = (userMessage || '').toLowerCase();
   const hasDetails = userMessage && userMessage.trim().split(/\s+/).length >= 4 &&
@@ -65,8 +65,8 @@ Only use details the user actually gave; use sensible defaults for the rest.`,
             time: parsed.time || '7:00 AM',
             description: parsed.description || userMessage,
             capacity: parsed.capacity || 25,
-            lat,
-            lng,
+            // A chat location is not a verified coordinate for the event venue.
+            lat: null, lng: null,
           },
         }],
         actions: [],

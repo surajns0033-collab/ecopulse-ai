@@ -15,7 +15,7 @@ function emptyMeetupForm() {
 
 export function useMeetupListing() {
 
-  const { user } = useAuth();
+  const { user, communityName, communityNameConfirmed } = useAuth();
   const { location } = useApp();
   const { events, joinedIds, loading, error, retry } = useMeetups(user?.uid);
   const [pending, setPending] = useState(new Set());
@@ -50,7 +50,7 @@ export function useMeetupListing() {
     try {
       const result = await tools.createMeetup({
         userId: user?.uid || 'guest',
-        organizer: user?.displayName || 'Community Member',
+        organizer: communityNameConfirmed ? communityName : 'Community Member',
         title: form.title.trim(),
         category: form.category,
         location: venue.trim(),

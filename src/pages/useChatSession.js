@@ -19,7 +19,7 @@ function typingLabel(text, photo, choices) {
 
 export function useChatSession() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, communityName, communityNameConfirmed } = useAuth();
   const app = useApp();
   const { conversation, addMessage, chosenLocation, location, pendingAction } = app;
   const { status, run, cancel } = useChatActivity();
@@ -55,7 +55,7 @@ export function useChatSession() {
   function save(action, data) {
     if (!user || !data) return;
     const operation = RECORD_ACTIONS[action];
-    return run(operation.status, () => operation.save(user, data), reply, error => reply(recordError(action, error, user, data)));
+    return run(operation.status, () => operation.save(user, data, communityNameConfirmed ? communityName : null), reply, error => reply(recordError(action, error, user, data)));
   }
 
   function handleRefresh() {
