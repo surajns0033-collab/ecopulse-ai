@@ -18,7 +18,10 @@ export function exposureAdvice(aqi, { routine, vulnerable }) {
 export function commuteAdvice(commute, aqi) {
   switch (commute) {
     case 'car': return 'Bundle errands, carpool when practical, and turn off the engine when parked.';
-    case 'two-wheeler': return `${aqi >= 151 ? 'Use metro/train/bus for the longest leg today if practical; ' : ''}avoid waiting behind buses and trucks.`;
+    case 'two-wheeler': {
+      const travel = aqi >= 151 ? 'Use metro/train/bus for the longest leg today if practical. ' : '';
+      return travel + 'Group stops to avoid repeat trips, switch off the engine when parked, and avoid waiting behind buses and trucks.';
+    }
     case 'walk/cycle': return aqi >= 151
       ? 'Avoid strenuous roadside exercise today; use transit for the polluted segment if practical.'
       : 'Use quieter internal streets, and check current AQI before longer or strenuous trips.';
