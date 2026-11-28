@@ -85,5 +85,6 @@ test('draft history uses the most recent observation and its resolved jurisdicti
   const raw = city => [{ role: 'user', text: 'I saw smoke in ' + city + '.' }];
   assert.equal((await draft(raw('Paris, France'), Paris.city)).status, 'preview');
   assert.equal((await draft(raw('France'), Paris.city)).status, 'needs_info');
+  assert.equal((await draft(raw('Paris'), 'Paris, Texas, United States')).status, 'needs_info');
   assert.equal((await draft(raw('Paris, Texas'), Paris.city)).status, 'needs_info');
 });

@@ -95,3 +95,29 @@ test('a confirmed incident stays with its city in typed drafts and report shortc
   assert.match(fromReport, /Delhi, India/);
   assert.doesNotMatch(fromReport, /Pune|Edited by the model/);
 });
+
+test('refresh cancels the in-flight report analysis and accepts another question', { timeout: 60000 }, async t => {
+  const { context, origin } = await openBrowser(t);
+  await mockDelhi(context);
+  await context.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (resource, init) => {
+      if (resource !== '/api/ai/chat') return originalFetch(resource, init);
+      // Keep the model request pending until the caller cancels its actual fetch signal.
+      window.reportAnalysisSignal = init.signal;
+      return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    };
+  });
+  const page = await context.newPage();
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await ask(page, 'I saw garbage in Delhi, India.');
+  await page.waitForFunction(() => Boolean(window.reportAnalysisSignal));
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  assert.equal(await page.evaluate(() => window.reportAnalysisSignal.aborted), true,
+    'Resetting Chat should also stop the request that carries the report note.');
+  await ask(page, 'Check air quality in Delhi, India.');
+  const log = page.getByRole('log', { name: 'Chat messages' });
+  await log.getByRole('img', { name: 'U.S. AQI 208' }).waitFor();
+  assert.equal(await log.getByText('Report Preview', { exact: true }).count(), 0);
+});
