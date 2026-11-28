@@ -60,7 +60,7 @@ The module scan measured 173 first-party source, configuration, test and stylesh
 | Production-build measurement | Result |
 | --- | ---: |
 | Largest minified JavaScript file | 474,640 bytes |
-| JavaScript loaded on device-only Guest Chat entry | 434,432 bytes |
+| JavaScript loaded on device-only Guest Chat entry | 436,343 bytes |
 | On-demand WebAssembly binary for photo inference | 14.26 MB |
 
 The first two measurements use uncompressed bytes. CI checks both against 500,000 bytes. Vite's default warning threshold stays enabled. Guest Chat entry loads neither the classifier nor its model weights.
