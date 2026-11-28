@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classifyReport, describesIssue, detectIssueCategory, hasConcreteIssue, mentionsForest, observationText } from '../src/agent/civicIssues.js';
-import { reportContacts, reportFields, reportUrgency } from '../src/agent/civicReportDetails.js';
+import { forestDraftCopy, reportContacts, reportFields, reportUrgency } from '../src/agent/civicReportDetails.js';
 
 test('overlapping observations preserve report titles and authority routing', () => {
   const issues = [
@@ -82,4 +82,12 @@ test('the complaint flow distinguishes a witnessed issue from a question or draf
   assert.equal(describesIssue('What are the opening hours?'), false);
   assert.equal(mentionsForest('Two mango trees were cut.'), true);
   assert.equal(mentionsForest('My street is quiet.'), false);
+});
+
+test('a street observation cannot add a forest recipient to a complaint email', () => {
+  const office = { forestEmail: 'forest@example.test', forestHelpline: 'forest desk' };
+  assert.deepEqual(forestDraftCopy(office, 'I saw garbge on the street.'), { cc: null, ccLabel: null });
+  assert.equal(forestDraftCopy(office, 'I saw mangrove cutting').cc, office.forestEmail);
+  assert.equal(forestDraftCopy(office, 'Waste at the gate', 'Please CC the forest office.').cc, office.forestEmail);
+  assert.deepEqual(forestDraftCopy({}, 'Two trees were cut.'), { cc: null, ccLabel: null });
 });
