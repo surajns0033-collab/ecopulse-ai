@@ -1,4 +1,4 @@
-import { chatRequestSchema } from './chatSchema.ts';
+import { chatRequestSchema } from './chatValidation.js';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 
