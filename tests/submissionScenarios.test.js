@@ -73,7 +73,7 @@ test('a complete smog plan refreshes its three data sources only after cache exp
   const requests = t.mock.method(globalThis, 'fetch', async (url) => {
     const endpoint = new URL(url);
     if (endpoint.hostname === 'api.open-meteo.com') {
-      return Response.json({ current: { temperature_2m: 22, wind_speed_10m: 4, weather_code: 0 } });
+      return Response.json({ current: { temperature_2m: 22, wind_speed_10m: 4, weather_code: 0, time: new Date(now).toISOString() } });
     }
     if (endpoint.searchParams.has('hourly')) {
       const time = now / 1000;

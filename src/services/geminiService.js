@@ -12,17 +12,33 @@ export function isAIUnavailable(text) {
 }
 
 
-export async function getChatResponse(messages, systemContext = '', options = {}) {
-  const useSearch = options.useSearch ?? false;
+function chatHistory(messages, useSearch) {
   // Search gets only the current question, not private conversation context.
-  if (useSearch && messages?.at(-1)?.role !== 'user') return AI_UNAVAILABLE_TEXT;
+  if (useSearch && messages?.at(-1)?.role !== 'user') return [];
   const history = toHistory(useSearch ? messages?.slice(-1) : messages);
-  if (!history.length) return AI_UNAVAILABLE_TEXT;
+  if (!history.length) return [];
   // Gemini expects the history to end with the user's turn.
   if (history[history.length - 1].role !== 'user') {
     history.push({ role: 'user', text: 'Please continue.' });
   }
 
+  return history;
+}
+
+function answerWithSources(result, useSearch) {
+  if (!result?.text || (useSearch && !result.sources?.length)) return AI_UNAVAILABLE_TEXT;
+  const text = result.text.trim();
+  if (!result.sources?.length) return text;
+  const sources = result.sources
+    .map((source) => `• ${source.title}: ${source.url}`)
+    .join('\n');
+  return `${text}\n\n**Sources**\n${sources}`;
+}
+
+export async function getChatResponse(messages, systemContext = '', options = {}) {
+  const useSearch = options.useSearch ?? false;
+  const history = chatHistory(messages, useSearch);
+  if (!history.length) return AI_UNAVAILABLE_TEXT;
   const result = await requestAI({
     system: buildSystem(useSearch ? '' : systemContext),
     messages: history,
@@ -33,13 +49,8 @@ export async function getChatResponse(messages, systemContext = '', options = {}
     signal: options.signal,
   });
 
-  if (!result?.text || (useSearch && !result.sources?.length)) return AI_UNAVAILABLE_TEXT;
-  const text = result.text.trim();
-  if (!result.sources?.length) return text;
-  const sources = result.sources
-    .map((source) => `• ${source.title}: ${source.url}`)
-    .join('\n');
-  return `${text}\n\n**Sources**\n${sources}`;
+  options.signal?.throwIfAborted();
+  return answerWithSources(result, useSearch);
 }
 
 /**

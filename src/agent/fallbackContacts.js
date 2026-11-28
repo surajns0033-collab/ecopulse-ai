@@ -4,9 +4,7 @@ export function cityLabel(location) {
   return city;
 }
 
-export function contactLines(recipient) {
-  if (!recipient) return [];
-  if (recipient.jurisdiction !== 'india') return recipient.disclaimer ? [recipient.disclaimer] : [];
+function localContactLines(recipient) {
   const lines = [];
   if (recipient.localUnavailable) lines.push('📍 **No verified local contact**');
   else if (recipient.organization) lines.push(`🏛️ **Local — ${recipient.organization}**`);
@@ -19,27 +17,26 @@ export function contactLines(recipient) {
     lines.push(`🌳 Forest / Tree Cell: ${recipient.forestEmail}${recipient.forestHelpline ? ` · ${recipient.forestHelpline}` : ''}`);
   }
 
-  const state = recipient.stateAuthority;
-  if (state) {
-    const bits = [
-      state.emails?.length ? `📧 ${state.emails.slice(0, 2).join(' · ')}` : null,
-      state.phones?.length ? `📞 ${state.phones.slice(0, 2).join(' · ')}` : null,
-      state.portal ? `🌐 ${state.portal}` : null,
-    ].filter(Boolean);
-    lines.push(`🏛️ **State — ${state.name}**`);
-    if (bits.length) lines.push(bits.join('  |  '));
-  }
+  return lines;
+}
 
-  const national = (recipient.nationalAuthority || []).find((a) => a.id === 'cpcb');
-  if (national) {
-    const bits = [
-      national.emails?.length ? `📧 ${national.emails[0]}` : null,
-      national.phones?.length ? `📞 ${national.phones[0]}` : null,
-      national.portal ? `🌐 ${national.portal}` : null,
-    ].filter(Boolean);
-    lines.push(`🇮🇳 **National — ${national.name}**`);
-    if (bits.length) lines.push(bits.join('  |  '));
-  }
+function authorityLines(authority, heading, limit) {
+  if (!authority) return [];
+  const emails = authority.emails?.slice(0, limit).join(' · ');
+  const phones = authority.phones?.slice(0, limit).join(' · ');
+  const channels = [emails && '📧 ' + emails, phones && '📞 ' + phones, authority.portal && '🌐 ' + authority.portal];
+  return [heading + authority.name + '**', channels.filter(Boolean).join('  |  ')].filter(Boolean);
+}
+
+export function contactLines(recipient) {
+  if (!recipient) return [];
+  if (recipient.jurisdiction !== 'india') return recipient.disclaimer ? [recipient.disclaimer] : [];
+  const national = recipient.nationalAuthority?.find(authority => authority.id === 'cpcb');
+  const lines = [
+    ...localContactLines(recipient),
+    ...authorityLines(recipient.stateAuthority, '🏛️ **State — ', 2),
+    ...authorityLines(national, '🇮🇳 **National — ', 1),
+  ];
   if (recipient.nationalPortal) lines.push(`🧾 Tracked grievance: ${recipient.nationalPortal}`);
   if (recipient.civicDomain === 'traffic') {
     lines.push('🚨 Immediate danger / blocked emergency access: **112**');

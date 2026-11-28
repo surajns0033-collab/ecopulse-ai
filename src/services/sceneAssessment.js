@@ -41,54 +41,27 @@ function candidates(contextHint, promptResults) {
   return { best, margin, ranked, scoreFor, hintedCategory, hasCombinedLandFillingEvidence };
 }
 
+function uncertain(reason, ocr, score, provider = 'On-device CLIP') {
+  return { uncertain: true, reason, provider, confidence: score, visibleText: ocr.lines, ocrConfidence: ocr.confidence / 100 };
+}
+
+function ambiguous(best, margin, scoreFor, combinedLand) {
+  const combinedSmoke = ['burning', 'air'].includes(best.entry.category) && scoreFor('burning') + scoreFor('air') >= 0.36;
+  return !combinedSmoke && !combinedLand && (best.score < 0.30 || (best.score < 0.40 && margin < 0.04));
+}
+
 export function assessScene(contextHint, promptResults, ocr, explicitlyAskedForOcr) {
   const { best, margin, ranked, scoreFor, hintedCategory, hasCombinedLandFillingEvidence } = candidates(contextHint, promptResults);
-  // A page/sign containing several confidently read lines is primarily a text
-  // image. Unless the user also named an environmental issue, do not force it
-  // into one of the visual complaint categories.
   if (explicitlyAskedForOcr && ocr.lines.length >= 3 && !hintedCategory) {
-    return {
-      uncertain: true,
-      reason: 'text-dominant-image',
-      provider: 'On-device CLIP + OCR',
-      confidence: ocr.confidence ? ocr.confidence / 100 : 0,
-      visibleText: ocr.lines,
-      ocrConfidence: ocr.confidence ? ocr.confidence / 100 : 0,
-    };
+    return uncertain('text-dominant-image', ocr, ocr.confidence / 100, 'On-device CLIP + OCR');
   }
-  if (!best || best.entry.category === 'none' || best.entry.category === 'unclear') {
-    return {
-      uncertain: true,
-      reason: 'no-clear-environmental-issue',
-      provider: 'On-device CLIP',
-      confidence: Number(best?.score || 0),
-      visibleText: ocr.lines,
-      ocrConfidence: ocr.confidence ? ocr.confidence / 100 : 0,
-    };
+  if (!best || ['none', 'unclear'].includes(best.entry.category)) {
+    return uncertain('no-clear-environmental-issue', ocr, best?.score || 0);
   }
-
-  // CLIP probabilities are relative to the supplied labels. Require both a
-  // meaningful score and separation from the runner-up before making a claim.
-  const hasCombinedSmokeEvidence = ['burning', 'air'].includes(best.entry.category) &&
-    (scoreFor('burning') + scoreFor('air') >= 0.36);
-  if (!hasCombinedSmokeEvidence && !hasCombinedLandFillingEvidence && (best.score < 0.30 || (best.score < 0.40 && margin < 0.04))) {
-    return {
-      uncertain: true,
-      reason: 'ambiguous-image',
-      provider: 'On-device CLIP',
-      confidence: Number(best.score || 0),
-      visibleText: ocr.lines,
-      ocrConfidence: ocr.confidence ? ocr.confidence / 100 : 0,
-    };
-  }
-
-  const severity = best.entry.category === 'burning' || best.entry.category === 'air'
-    ? 'severe'
-    : 'moderate';
-
+  if (ambiguous(best, margin, scoreFor, hasCombinedLandFillingEvidence)) return uncertain('ambiguous-image', ocr, best.score);
   return {
     issue: best.entry.issue,
-    severity,
+    severity: null, // Scene categories alone cannot establish severity.
     category: best.entry.category,
     description: best.entry.description,
     actions: best.entry.actions,
@@ -96,7 +69,7 @@ export function assessScene(contextHint, promptResults, ocr, explicitlyAskedForO
     needsUserVerification: true,
     matchedPrompt: best.matchedPrompt,
     visibleText: ocr.lines,
-    ocrConfidence: ocr.confidence ? ocr.confidence / 100 : 0,
+    ocrConfidence: ocr.confidence / 100,
     alternatives: ranked.slice(1, 3).map((item) => ({
       category: item.entry.category,
       score: Number(item.score || 0),

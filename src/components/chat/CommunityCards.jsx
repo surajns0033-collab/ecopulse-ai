@@ -19,7 +19,7 @@ export function ConfirmationCard({ data }) {
 
 // ===== IMAGE ANALYSIS CARD =====
 export function ImageAnalysisCard({ data }) {
-  const severityClass = `severity-${data.severity || 'moderate'}`;
+  const severityClass = data.severity ? 'severity-' + data.severity : '';
   const catObj = REPORT_CATEGORIES.find((c) => c.id === data.category);
 
   return (
@@ -37,9 +37,9 @@ export function ImageAnalysisCard({ data }) {
       )}
       <div className="analysis-result">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <span className={`analysis-badge ${severityClass}`}>
-            {data.severity?.toUpperCase()} SEVERITY
-          </span>
+          {data.severity && <span className={`analysis-badge ${severityClass}`}>
+            {data.severity.toUpperCase()} SEVERITY
+          </span>}
           {catObj && (
             <span style={{ fontSize: 11, background: '#f3f4f6', padding: '3px 10px', borderRadius: 20, color: '#4b5563' }}>
               {catObj.icon} {catObj.label}
