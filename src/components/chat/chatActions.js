@@ -18,7 +18,7 @@ export function createWelcomeMessage(user) {
   return {
     id: 'welcome',
     role: 'ai',
-    text: `👋 Hi${name}! I'm **EcoPulse AI**, I can help your household or community plan for smog. Choose **Smog Action Plan** for commute and indoor-air advice and the impact of each choice.\n\nType a city name for a local snapshot, or say **“Set my city to…”** to save your choice.`,
+    text: (user?.offline ? 'Cloud sign-in is unavailable. You are using Guest mode on this device. Exit Guest mode to try account sign-in again.\n\n' : '') + `👋 Hi${name}! I'm **EcoPulse AI**, I can help your household or community plan for smog. Choose **Smog Action Plan** for commute and indoor-air advice and the impact of each choice.\n\nType a city name for a local snapshot, or say **“Set my city to…”** to save your choice.`,
     cards: [],
     actions: [
       { label: '🌫️ Smog Action Plan', action: 'QUICK_SMOG_PLAN', variant: 'primary' },
