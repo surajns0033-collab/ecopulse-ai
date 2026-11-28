@@ -69,11 +69,11 @@ The Chat router uses environmental APIs for current readings, verified directori
 | :--- | :--- | :--- |
 | **Conversational Assistant** | Natural-language chat in **English, Hindi, and Hinglish** with automatic language detection, daily-life civic guidance, and deterministic fallback responses. | Gemini AI, OpenRouter Free, `fallbackBrain.js` |
 | **Personalized Smog Action Plan** | Uses the confirmed city, household routine and upcoming daytime forecast. Families and schools can select **Explain these choices with AI** to ask how the recommended steps affect exposure and emissions. | `smogPlan.js`, Open-Meteo, server-side AI proxy |
-| **Air Quality & Weather** | Shows current modeled U.S. AQI, pollutant estimates, and weather. The smog plan displays the AQI source time and does not use stale or undated readings as current. | Open-Meteo Air Quality & Forecast APIs |
-| **Typo-Tolerant Global Maps** | Resolves misspelled or landmark-level locations (e.g., reserves, beaches, neighborhoods) into verified coordinates and Google Maps deep links. | Open-Meteo, Photon, Nominatim (OSM) |
+| **Air Quality & Weather** | Shows the AQI scale, provider, data type and source time. A recent WAQI station reading takes priority when configured. Otherwise EcoPulse checks Open-Meteo’s modeled current U.S. AQI. Local-time hourly forecasts are labelled separately. | WAQI, Open-Meteo / CAMS, OpenWeather |
+| **Chat spelling and places** | Common English and Hinglish typing errors work in plans, forecasts and complaint follow-ups. A likely city spelling is offered for confirmation. Maps use the verified coordinates. | `chatLanguage.js`, Open-Meteo Geocoding, Photon, Nominatim |
 | **Civic Grievance & Email Routing** | Identifies the incident jurisdiction, links official contacts where available, and prepares an editable draft. Opening Gmail requires confirmation and never sends the draft. | `authorityDirectory.js`, `agentTools.js` |
 | **Grounded Web Research** | Answers current-events and policy questions with clickable sources and asks for a city when a local search needs one. | Tavily Search API (`/api/ai/chat`) |
-| **Vision & Opt-In OCR** | Analyzes uploaded incident photos for severity and category, with private on-device classification and opt-in multilingual OCR (**English, Hindi, Marathi**). | Gemini Vision, Transformers.js (CLIP), Tesseract.js |
+| **Vision & Opt-In OCR** | Describes visible evidence and asks for clarification when classification is uncertain. Chat offers on-device classification if cloud analysis is unavailable. Optional OCR supports English, Hindi and Marathi. | Gemini Vision, Transformers.js (CLIP), Tesseract.js |
 | **Community & Eco-Meetups** | Public location-tagged channel with newest messages at the bottom, stable per-user identity colours, eco-events with live seat counts, private event registrations, and guest reading in the public channel. | Firebase Auth, Cloud Firestore |
 
 ---
@@ -111,11 +111,18 @@ flowchart LR
 
 | Responsibility | Implementation |
 | --- | --- |
-| Select an intent and city | `intentEngine.js` classifies the request. `placeNames.js` extracts the city and `placeTurn.js` handles confirmation. A lookup in another city leaves the household's chosen location intact. |
-| Build a plan | `smogProfile.js` interprets stated conditions. `smogForecast.js` checks reading age and forecast hours. `smogAdvice.js` selects commute, indoor, cooking and community advice. `smogPlan.js` pairs each choice with its impact. |
+| Recognize a request | `agentOrchestrator.js` coordinates the turn. `intentEngine.js` uses English, Hindi and Hinglish rules with a recognition-only spelling pass in `chatLanguage.js`. Chat history, report notes and location extraction retain the user’s wording. |
+| Resolve a place | `placeNames.js` extracts the place. `placeLookup.js` checks provider results, and `placeTurn.js` handles corrections and confirmation. A one-off lookup can use a different city from the household’s chosen city. |
+| Build a plan | `smogProfile.js` interprets the household’s stated conditions. `smogAdvice.js` selects actions and `smogPlan.js` pairs each with its impact. A commuter sees separate guidance on reducing inhaled pollution and reducing tailpipe emissions. |
+| Read environmental evidence | `airQuality.js` and `weatherData.js` validate provider responses. `environmentCache.js` shares in-flight requests and allows independent cancellation. `smogForecast.js` selects a daytime window. `requestedForecast.js` handles a question about a particular local day, hour or part of day. |
 | Explain a choice | `server/chatRequest.js` caps the HTTP body and checks photo headers. `server/chatValidation.js` uses Zod to validate and normalize messages. Its output is checked against the interfaces in `server/chatSchema.ts`. `server/aiCore.js` gives eligible providers time within one shared deadline. |
 | Edit a report | The report card lets its owner correct the title, description, category and location before saving. Changing the location clears the old coordinates. `reportRecords.js` handles private cloud and device records. |
+| Confirm a photo, draft or event | `photoAssessment.js` checks a model’s category, confidence and visible observations. `emailDrafts.js` reports the actual save destination. `meetupDraft.js` validates a generated event before preview. `meetupDiscovery.js` filters by date, venue and category. Firestore updates attendance and its private receipt in one transaction. |
 | Recover from failures | `AppErrorBoundary.jsx` offers reload and return-to-Chat controls after a rendering failure. `diagnostics.js` records fixed operation names and optional numeric status codes. |
+
+### Reading an AQI answer
+
+A station value uses WAQI’s published U.S. scale. The optional feed’s pollutant sub-indices stay out of concentration fields. Open-Meteo provides modeled U.S. AQI, pollutant concentrations when available, and hourly forecasts. Current guidance requires a source time within two hours, with up to 15 minutes of clock skew. The app links to the CPCB portal for an official Indian reading. The available feeds lack the observations and averaging history needed to calculate that index. [WAQI scale](https://aqicn.org/scale/) · [Open-Meteo air-quality documentation](https://open-meteo.com/en/docs/air-quality-api) · [CPCB](https://airquality.cpcb.gov.in/AQI_India/)
 
 ### Provider Routing & Resilience
 
@@ -254,7 +261,8 @@ See [`.env.example`](.env.example) for all optional keys (including OpenWeatherM
 
 - **Minimal Public Footprint:** EcoPulse never copies user email addresses, phone numbers, Google display names, or precise GPS coordinates into public Firestore documents. Community posts store only the Firebase UID, chosen public alias, message text, timestamp, and an optional city/global label.
 - **Chat location:** Chat verifies cities and asks you to confirm uncertain matches. Set a preferred city with “Set my city to …”, or explicitly share your device location to check rounded coordinates. Web search receives only the current query, not earlier conversation text.
-- **Guest Mode:** Anonymous users can browse the public community channel in read-only mode without creating an account, enforced by [`firestore.rules`](firestore.rules).
+- **Guest and sign-in.** A fresh session presents the choice. Cloud sign-in requires all six settings from the same registered Firebase web app. Device Guest works with incomplete settings and is available after a supported anonymous-auth outage. Public posting uses the chosen alias. Reports, email drafts and attendance receipts are owner-scoped in Firestore. [Firebase setup](FIREBASE_SETUP.md) · [Firestore rules](firestore.rules)
+- **Photo handling.** Chat checks size and image dimensions, then re-encodes the pixels before sending the image to the server-side vision provider. Optional OCR and the fallback classifier run on the device. The first fallback may download model weights. A person reviews the findings before saving a report or opening a complaint draft.
 - **Human-in-the-Loop Complaints:** Drafted complaint emails are **never** sent automatically. Users review, edit, copy, or open them in Gmail with explicit confirmation.
 - **Jurisdiction Checks:** When an Indian city has no verified local contact, EcoPulse links to the official national portal for the issue, such as [CPGRAMS](https://pgportal.gov.in). It does not reuse Indian contacts for a photo or request from another country.
 - **Distinguished Guidance:** Responses separate immediate on-the-spot emergency actions from formal grievance filing, and frame health tips as general information rather than medical diagnosis.
@@ -286,7 +294,10 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 | `npm run build` | Build optimized production bundle into `dist/` |
 | `npm run preview` | Preview the production build locally |
 | `npm run lint` | Run static checks with **Oxlint** |
-| `npm test` | Run the Node regression suite with mocked external services |
+| `npm test` | Run the standalone Node regression suite |
+| `npm run typecheck` | Strictly check the API schema, household and spelling logic, Firebase settings, and image and AI preview contracts |
+| `npm run quality:inventory` | List function length and complexity warnings across the app, server and API |
+| `npm run coverage:critical` | Check aggregate coverage of the named critical modules against 90% lines, 90% branches and 95% functions |
 | `npm run benchmark:submission` | Run and report the six submission criteria, including code complexity, coverage, security, startup budgets, accessibility and smog planning |
 | `npm run benchmark` | Run 18 smog scenarios, route controls and a request-cache check with fixed inputs |
 | `npm run test:coverage` | Measure Node test coverage |
@@ -299,14 +310,11 @@ The repository ships ready for Vercel with [`vercel.json`](vercel.json) and serv
 
 ## Verification
 
-CI counts physical lines in every application, server, API, test and stylesheet module. A module of 150 lines fails the build. Strict TypeScript checks cover the JavaScript validator and its output contract. A packaging test starts both API endpoints in a JavaScript-only function directory. Run `npm run quality:modules`, `npm run typecheck` and `npm run lint` for the code-quality checks. The full benchmark also runs Chrome, Firestore emulators and the production bundle checks.
+After `npm ci`, run `npm run benchmark:submission` with Node 24.12 or later in the 24.x series, Chrome and Java 21. CI also invokes `npm test` independently. The benchmark runs the strict contracts, module and function limits, dependency audit, scenario tests, coverage, targeted mutations, production build, Chrome journeys and Firebase emulators. It records a separate exit code for each check. [Verification guide](docs/quality-verification.md)
 
-After `npm ci`, run `npm run benchmark:submission` to reproduce the CI report with Node 24, Chrome and Java 21. The [verification guide](docs/quality-verification.md) lists each threshold, its scope and a recorded run.
+Try `mera smgo plan banao in Delhi, India. I cycle to work.` and then `air polution forcast in Delhi, India tommorow morning`. The Chrome regression checks the selected city, the local forecast period and the original text shown in Chat. Another journey edits a photo complaint and saves the reviewed draft. Browser fixtures supply synthetic readings and provider responses so the checks can run without service keys. [Chat spelling regression](tests/chatSpelling.browser.mjs) · [Photo and draft review](tests/draftReview.browser.mjs)
 
-- `npm test` covers city changes, stale AQI, severe-smog advice, Guest chat, photo request validation, and provider timeouts. It runs with mocked providers and requires no API keys.
-- CI runs the production build, dependency audit, Chrome accessibility checks and Auth/Firestore emulator tests. It also measures JavaScript requested on Guest Chat entry and exercises photo inference with a small offline test model. To reproduce the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` and run `npm run test:browser`.
-
-In Guest Chat, enter “Make a smog plan for our school in Delhi, India.” Select **Explain these choices with AI** to compare reducing exposure with reducing emissions. More prompts and reproducible checks are in the [verification guide](docs/quality-verification.md).
+The critical-coverage gate measures its listed modules together. The separate broad unit suite reports its exercised application and server code. Each JavaScript asset and the total JavaScript loaded on device-only Guest Chat entry have an independent 500,000-byte limit. [Critical module list](tests/criticalCoverage.mjs) · [Browser budgets](tests/vision.browser.mjs) · [Branch readiness report](docs/quality/FINAL-100-READINESS.md)
 
 ---
 

@@ -4,9 +4,10 @@ import { spawnSync } from 'node:child_process';
 // Pin the domain boundaries being measured so feature additions cannot silently
 // change the denominator. Browser and emulator checks run in their own suites.
 const groups = {
-  'src/agent': ['intentEngine', 'intentKeywords', 'localizedIntents', 'chatLanguage', 'placeContext',
+  'src/agent': ['intentEngine', 'intentKeywords', 'localizedIntents', 'chatLanguage', 'placeContext', 'placeNames', 'placeTurn', 'civicIssues',
     'smogPlan', 'smogForecast', 'smogAdvice', 'smogProfile', 'requestedForecast'],
-  'src/services': ['airQuality', 'environmentCache', 'photoAssessment', 'emailDrafts', 'meetupDiscovery'],
+  'src/services': ['airQuality', 'environmentCache', 'photoAssessment', 'imageDimensions', 'modelJson',
+    'placeLookup', 'emailDrafts', 'meetupDiscovery', 'meetupDraft'],
   'server': ['chatRequest', 'chatValidation'],
 };
 const include = Object.entries(groups).flatMap(([directory, files]) =>

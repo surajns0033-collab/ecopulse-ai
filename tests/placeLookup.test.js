@@ -109,3 +109,14 @@ test('an unusable reverse-geocoder field cannot become the device city', async (
   address = { city: ' ', town: 'Pune', state: {}, country: 'India' };
   assert.equal((await getDevicePlace({ geolocation, request })).city, 'Pune, India');
 });
+
+test('denied and cancelled device fixes never start a reverse lookup', async () => {
+  const denied = { getCurrentPosition(_, reject) { reject(new Error('Location permission denied')); } };
+  assert.equal(await getDevicePlace({ geolocation: denied, request: assert.fail }), null);
+  const broken = { getCurrentPosition() { throw new Error('Sensor unavailable'); } };
+  assert.equal(await getDevicePlace({ geolocation: broken, request: assert.fail }), null);
+  const controller = new AbortController();
+  const pending = getDevicePlace({ signal: controller.signal, geolocation: { getCurrentPosition() {} }, request: assert.fail });
+  controller.abort();
+  assert.equal(await pending, null);
+});

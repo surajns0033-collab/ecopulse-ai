@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyReport, detectIssueCategory, hasConcreteIssue, observationText } from '../src/agent/civicIssues.js';
+import { classifyReport, describesIssue, detectIssueCategory, hasConcreteIssue, mentionsForest, observationText } from '../src/agent/civicIssues.js';
 import { reportContacts, reportFields, reportUrgency } from '../src/agent/civicReportDetails.js';
 
 test('overlapping observations preserve report titles and authority routing', () => {
@@ -73,4 +73,13 @@ test('typing corrections identify the observation without changing the complaint
   assert.equal(detectIssueCategory('My chair needs repair'), 'default');
   assert.equal(classifyReport('मैंने सड़क पर कचरा देखा।').category, 'garbage');
   assert.equal(classifyReport('maine sadak par dhool dekhi').category, 'construction');
+});
+
+test('the complaint flow distinguishes a witnessed issue from a question or draft instruction', () => {
+  assert.equal(describesIssue('Where can I report tree cutting?'), false);
+  assert.equal(describesIssue('Please write a complaint about garbage.'), false);
+  assert.equal(describesIssue('Please write a complaint. I saw garbge near the gate.'), true);
+  assert.equal(describesIssue('What are the opening hours?'), false);
+  assert.equal(mentionsForest('Two mango trees were cut.'), true);
+  assert.equal(mentionsForest('My street is quiet.'), false);
 });

@@ -33,4 +33,12 @@ test('a guest can type a misspelled bilingual plan and ask a misspelled forecast
   await followUp.waitFor();
   assert.match(await followUp.innerText(), /Delhi.*Asia\/Kolkata.*modeled U.S. AQI 132/is);
   assert.doesNotMatch(await followUp.innerText(), /208/);
+
+  const mistypedCity = 'Check air qualty in Dehli, India';
+  await ask(page, mistypedCity);
+  await log.getByText(mistypedCity, { exact: true }).waitFor();
+  await log.getByText('Did you mean Delhi, India?', { exact: true }).waitFor();
+  await ask(page, 'haan');
+  await log.locator('.chat-bubble-ai').filter({ hasText: /current air quality for Delhi, India/i }).waitFor();
+  assert.ok(await log.getByText(mistypedCity, { exact: true }).isVisible());
 });

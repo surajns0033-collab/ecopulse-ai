@@ -4,7 +4,7 @@ EcoPulse helps families, schools and neighbourhoods make daily choices during wi
 
 ## Try the daily planning flows
 
-Open the live app in a fresh session, select **Continue as Guest** and ask a question in your own words.
+For the feature-branch checks, open a freshly built copy in a new browser session, select **Continue as Guest** and ask a question in your own words.
 
 > How can I reduce my smog exposure during a delivery shift in Nagpur, India? I work outdoors and ride a scooter.
 
@@ -12,7 +12,7 @@ Open the live app in a fresh session, select **Continue as Guest** and ask a que
 
 > How can our housing society cut emissions during winter smog in Lucknow, India?
 
-The delivery plan covers breaks during an outdoor shift. The kitchen plan works with the equipment the household has. The housing plan addresses idling and garden-waste burning. The default source provides modeled U.S. AQI. The plan shows its source time in UTC and searches the next 24 hours for a lower-exposure window between 06:00 and 18:00 local time. It labels missing or stale readings and gives a warning if the lowest daytime forecast still poses a risk.
+The delivery plan covers breaks during an outdoor shift. The kitchen plan respects the household’s equipment. The housing plan addresses idling and garden-waste burning. A current AQI answer identifies the station or model, scale and source time. The plan searches the next 24 hours for a lower-exposure window between 06:00 and 18:00 local time. A separate forecast question uses the requested local date or part of day. Stale and missing observations lead to an unavailable reading.
 
 Select **Explain these choices with AI** on a plan. The server-side AI proxy receives that plan's recommendations, their recorded impacts and the question. Each button remains attached to its original plan after another conversation turn. When the model is unavailable or reaches its output limit, Chat shows the recorded impacts. The explanation requests one exposure choice and one emissions choice. [Plan builder](../src/agent/smogPlan.js) · [AI explanation handler](../src/agent/environmentReplies.js)
 
@@ -22,14 +22,14 @@ Run `npm ci` followed by `npm run benchmark:submission`. Each push and pull requ
 
 | Criterion | Impact | What the benchmark verifies |
 | --- | --- | --- |
-| Code Quality | High | Repository lint treats warnings as errors. The file budget is 149 physical lines per code, test or CSS module. TypeScript strictly checks the Zod chat contract. The coordinator, intent, place, civic, smog and core environmental-data modules have a maximum complexity of 15 and a 60-line function limit excluding blank lines and comments. |
+| Code Quality | High | Oxlint treats primary lint warnings as errors. Each code, test and CSS module must have fewer than 150 physical lines. The core lint rules cap complexity at 15 and function length at 60 counted lines. The source-wide inventory also examines UI code. Its ceiling is 23 findings. Strict TypeScript covers the chat request, household and spelling logic, Firebase configuration, image checks and AI draft boundaries. |
 | Security | Medium | The dependency audit fails on moderate or higher advisories. A production Vite configuration test uses synthetic credentials to verify that AI keys stay out of browser settings. Firebase emulator tests check record ownership, public fields and registration permissions. |
 | Efficiency | Medium | Each production JavaScript file and device-only Guest Chat startup must fit 500,000 bytes. The plan cache must make three environmental requests initially, zero more on repeat, and three more after expiry. |
-| Testing | Low | Node tracks application and server modules exercised by the unit suite. Its minimum coverage is 80% lines, 75% branches and 85% functions. The runner executes unit, scenario, browser and rule tests separately. |
-| Accessibility | Low | Chrome checks keyboard navigation, a single Tab stop and arrow keys in the shortcuts toolbar, focus return, a 320-pixel viewport, and automated WCAG A/AA rules across five interfaces. |
-| Problem Statement Alignment | High | Fixed inputs test personalised travel, indoor air and school or community guidance. Cases include outdoor work, a gas kitchen without a purifier, a housing society, an older household, a cycle commute and a Hinglish request. The browser also exercises a selected plan's AI explanation and its offline fallback. |
+| Testing | Low | CI runs standalone Node test discovery. The unit coverage floors are 80% lines, 75% branches and 85% functions across exercised source. A named critical set has aggregate floors of 90%, 90% and 95%. Three mutation checks also require specific behavior tests to fail when the code is deliberately changed in a temporary copy. |
+| Accessibility | Low | Chrome checks keyboard shortcuts, dialog focus and return, 320-pixel reflow, reduced-motion settings and axe’s WCAG 2.0–2.2 A/AA rules in the exercised states. It covers sign-in, Chat, AQI, drafts, reports, the public feed, navigation and meetup creation. Native screen-reader and full browser-zoom checks are tracked separately. |
+| Problem Statement Alignment | High | Family, school, commuter and community scenarios check household details, stated equipment, source times and the difference between exposure and emissions. Chrome types misspelled English and Hinglish questions and exercises local-hour forecasts, original message text, reviewed photo drafts and event registration. |
 
-The function limits and coverage floors are project regression thresholds. The challenge platform assigns its own score. The earlier coordinator measured 71 for cyclomatic complexity and 111 lines under the same lint settings. The intent detector measured 41 and 155 lines. Its work is now divided between explicit requests and keyword matching. The coordinator delegates city selection, photos and reply dispatch. [Coordinator baseline](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46080141024) · [Intent baseline](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46079336789)
+The competition platform assigns the official score. These project thresholds detect code regressions. A full run prints its exit codes, byte counts, test totals, coverage and the remaining function warnings. The historical audit and branch report give the baseline and candidate measurements. [Baseline](quality/BASELINE.md) · [Readiness report](quality/FINAL-100-READINESS.md)
 
 ## Run individual checks
 
@@ -40,9 +40,12 @@ Use Node.js 24 LTS, version 24.12 or later, and install the lockfile with `npm c
 | `npm run benchmark:submission` | Runs the complete benchmark and prints evidence for all six criteria. |
 | `npm run lint` | Oxlint checks the repository and treats warnings as failures. |
 | `npm run quality:modules` | Counts physical lines in all first-party source, tests, configuration code and styles. |
-| `npm run quality:inventory` | Lists above-budget functions throughout the app and compares the count with the recorded maximum of 45. |
-| `npm run typecheck` | Compiles the chat schema and normalized request interfaces in strict mode. |
-| `npm run test:coverage` | Node tests exercise profile parsing, city corrections, environmental providers, the request cache, server request validation and AI responses. |
+| `npm run quality:inventory` | Lists long or complex functions in `src`, `server` and `api`. CI fails above 23. Each annotation identifies the file and function. |
+| `npm run typecheck` | Checks the API and application boundaries listed in `package.json` with `--strict --checkJs --noEmit`. |
+| `npm test` | Runs the standalone Node test discovery entry point, including synthetic provider failures and chat regressions. |
+| `npm run test:coverage` | Prints coverage from the standalone Node suite. The full benchmark runs a separate unit coverage group so scenario and browser results remain identifiable. |
+| `npm run coverage:critical` | Checks the explicit paths in `tests/criticalCoverage.mjs` together. Browser rendering, operating-system speech output and deployed cloud behavior need separate verification. |
+| `node tests/mutationChecks.mjs` | Tests reject a wrong forecast day, reversed exhaust-hood guidance and an unsafe relaxation of photo confidence. |
 | `npm run benchmark` | Eighteen scenarios check the advice and its direct impacts. Route controls cover definitions, readings and news. The cache test expects three environmental requests initially, zero additional requests on repeat and three more after expiry. |
 | `npm audit --audit-level=moderate` | Checks the locked dependency tree against published advisories. |
 | `npm run build` | Builds the production app. The Chat engine loads on the first request, and the on-device vision library loads when cloud photo analysis fails. |
@@ -51,19 +54,9 @@ Use Node.js 24 LTS, version 24.12 or later, and install the lockfile with `npm c
 
 For the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` or start from a clean checkout with no Firebase client credentials. Run `npm run build` and then `npm run test:browser`. The tests create a local Vite preview and block external browser traffic except for the configured test fixtures.
 
-The linked run, before the packaging and delivery regressions were added, passed 87 unit checks, one client-configuration check, 19 smog and routing checks, eight Chrome/build checks and ten Firestore rule checks. Unit coverage of exercised application and server modules reached 86.95% lines, 79.12% branches and 87.79% functions. The lockfile audit returned zero known vulnerabilities. Chrome exercises keyboard controls, edited private reports and recovery from a missing route bundle. It applies the WCAG 2.0/2.1 A and AA rules supported by axe to sign-in, Chat at 320 pixels, the account menu, report details and the meetup dialog. [Recorded benchmark](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46085321133)
-
-The module scan measured 173 first-party source, configuration, test and stylesheet modules. The largest was 149 physical lines. The strict lint check reported zero warnings. A second inventory across `src`, `server` and `api` found 45 function-complexity or length findings, down from 60. More than 45 fails CI. Each annotation links to a remaining function. [Inventory baseline](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46081983449) · [Current measurements](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46085321133)
-
 ### Chat startup and photo fallback
 
-| Production-build measurement | Result |
-| --- | ---: |
-| Largest minified JavaScript file | 474,640 bytes |
-| JavaScript loaded on device-only Guest Chat entry | 436,343 bytes |
-| On-demand WebAssembly binary for photo inference | 14.26 MB |
-
-The first two measurements use uncompressed bytes. CI checks both against 500,000 bytes. Vite's default warning threshold stays enabled. Guest Chat entry loads neither the classifier nor its model weights.
+The bundle regression measures uncompressed bytes for the largest emitted JavaScript file and total JavaScript requested at device-only Guest Chat entry. Each must stay within 500,000 bytes. It also checks that Guest entry fetches neither the classifier weights nor WebAssembly. [Bundle and browser check](../tests/vision.browser.mjs) · [Recorded measurements](quality/FINAL-100-READINESS.md)
 
 The photo regression uploads a synthetic image through Chat and simulates a cloud outage. Chrome executes the same WebAssembly runtime the app serves, using a small test model whose labels tie. The expected result asks the user to describe the image. This checks the fallback and its handling of uncertainty. Evaluating accuracy on real pollution photos requires labeled examples. The first use of the production fallback also fetches approximately 154 MB of quantized model weights, which the browser can cache for later photos. [Browser test](../tests/vision.browser.mjs) · [Production checkpoint](https://huggingface.co/Xenova/clip-vit-base-patch32/tree/main/onnx)
 
@@ -83,7 +76,7 @@ The chat router delegates to modules for environmental questions, general replie
 
 In Events or a Chat event card, **Join event** reserves one place and **Cancel my place** releases it. The Firestore transaction updates the public count and the attendee's private registration together. Anonymous Firebase accounts can join. Publishing a cloud event requires an email or Google account. Device-only builds identify local saves.
 
-The published-event query uses the collection index on `meetups.status` and `meetups.date` in `firestore.indexes.json`.
+Date-ordered discovery uses the indexes on published status and date, with an additional index for category-filtered results. Chat checks each page for a matching venue before reaching its result limit. [Index definitions](../firestore.indexes.json)
 
 ### Existing Firestore installations
 
