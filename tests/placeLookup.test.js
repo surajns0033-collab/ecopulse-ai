@@ -90,3 +90,13 @@ test('malformed primary and secondary place data safely produce no city', async 
     assert.deepEqual(result, {});
   }
 });
+
+test('a common city transposition proposes the geocoded city for confirmation', async () => {
+  const request = async url => {
+    assert.equal(new URL(url).searchParams.get('name'), 'Delhi');
+    return Response.json({ results: [{ ...openPlace('Delhi', 'Delhi', 'India', 28.6, 77.2), population: 1000000 }] });
+  };
+  const result = await lookupPlace('Dehli, India', { request });
+  assert.equal(result.candidate.city, 'Delhi, India');
+  assert.equal(result.location, undefined);
+});

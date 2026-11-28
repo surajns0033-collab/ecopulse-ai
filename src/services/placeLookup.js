@@ -1,4 +1,5 @@
-import { normalize, commonTypos, alias, qualifies, validPlace, selectExact, toLocation, namedWithRegion, editDistance } from './placeMatching.js';
+import { primaryPlaces, secondaryPlaces, suggestedPlace } from './geocodingResults.js';
+import { normalize, commonTypos, alias, selectExact, toLocation } from './placeMatching.js';
 
 async function readPlaces(url, signal, request) {
   try {
@@ -11,64 +12,41 @@ async function readPlaces(url, signal, request) {
   }
 }
 
-export async function lookupPlace(query, { map = false, signal, request = fetch } = {}) {
-  const [rawName, ...qualifiers] = query.split(',').map((part) => alias(part.trim())).filter(Boolean);
-  if (!rawName) return {};
-  // Resolve a common spelling error without relying on the
-  // availability of the fuzzy provider. The correction still needs consent.
-  const normalized = normalize(rawName);
-  const corrected = commonTypos.get(normalized);
-  const name = corrected || rawName;
-  const expected = normalize(name);
-  const data = await readPlaces(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&language=en&count=20`, signal, request);
-  const results = data?.results || [];
-  const matchingRegion = !map && results.some((p) => /^(?:ADM1|PCL[A-Z]*)$/.test(p.feature_code) &&
-    normalize(p.name) === expected && qualifies({ region: p.admin1 || p.name, country: p.country, countryCode: p.country_code }, qualifiers));
-  const places = results.filter((p) => /^PPL/.test(p.feature_code) || (map && /^(?:ADM|PCL)/.test(p.feature_code)))
-    .map((p) => ({
-      name: p.name, region: p.admin1, country: p.country, countryCode: p.country_code,
-      lat: p.latitude, lng: p.longitude, timeZone: p.timezone, population: p.population || 0,
-    }));
-  const exact = selectExact(places, expected, qualifiers);
-  if (matchingRegion) {
-    // Same-named settlements are not substitutes for a state or country.
-    return { ambiguous: true, candidate: exact?.location && places.some((p) => p.population >= 100000 && p.lat === exact.location.lat && p.lng === exact.location.lng) ? exact.location : null };
-  }
-  if (exact?.location || exact?.candidate) return corrected && exact.location ? { candidate: exact.location } : exact;
-
-  if (exact) return exact;
-
-  // Keep typo and landmark lookup, but never present a fuzzy hit as confirmed.
-  const queryWithRegion = [name, ...qualifiers].join(', ');
-  const photon = await readPlaces(`https://photon.komoot.io/api/?q=${encodeURIComponent(queryWithRegion)}&limit=10&lang=en`, signal, request);
-  const otherPlaces = (photon?.features || []).filter(({ properties: p = {} }) => map ||
-    ['city', 'town', 'village', 'municipality', 'locality', 'district', 'suburb'].includes(p.type) ||
-    (p.osm_key === 'place' && ['city', 'town', 'village', 'municipality', 'suburb'].includes(p.osm_value)))
-    .map(({ properties: p = {}, geometry }) => ({
-      name: p.name, region: p.state, country: p.country, countryCode: p.countrycode,
-      lat: geometry?.coordinates?.[1], lng: geometry?.coordinates?.[0], population: 0,
-    }));
-  const otherExact = selectExact(otherPlaces, expected, qualifiers);
-  // A secondary provider's single exact hit might hide namesakes (e.g. after
-  // a timeout above). Ask for confirmation before using its coordinates.
-  if (otherExact) return otherExact.location ? { candidate: otherExact.location } : otherExact;
-  if (!qualifiers.length) {
-    const qualified = [...places, ...otherPlaces].find((place) => validPlace(place) && namedWithRegion(place, expected));
-    if (qualified) return { candidate: toLocation(qualified) };
-  }
-  const compact = expected.replaceAll(' ', '');
-  const landmarkName = (value) => normalize(value).replace(/\b(?:railway|train|railroad|metro) station\b/g, 'station');
-  const close = [...places, ...otherPlaces].find((place) => validPlace(place) && qualifies(place, qualifiers) &&
-    ((map && landmarkName(place.name) === landmarkName(name)) ||
-      (compact.length >= 5 && editDistance(normalize(place.name).replaceAll(' ', ''), compact) <= (compact.length >= 8 ? 2 : 1))));
-  return close ? { candidate: toLocation(close) } : {};
+function regionCandidate(exact, places) {
+  const location = exact?.location;
+  const candidate = location && places.some(place => place.population >= 100000 && place.lat === location.lat && place.lng === location.lng)
+    ? location : null;
+  return { ambiguous: true, candidate };
 }
 
-// Only called after an explicit location request. Inaccurate fixes and reverse
-// geocoding failures must not turn into a default city or a full street address.
-export async function getDevicePlace({ signal, geolocation = globalThis.navigator?.geolocation, request = fetch } = {}) {
-  if (!geolocation || signal?.aborted) return null;
-  const coords = await new Promise((resolve) => {
+async function secondaryLookup(primary, name, qualifiers, map, signal, request) {
+  const query = [name, ...qualifiers].join(', ');
+  const url = 'https://photon.komoot.io/api/?q=' + encodeURIComponent(query) + '&limit=10&lang=en';
+  const secondary = secondaryPlaces(await readPlaces(url, signal, request), map);
+  const exact = selectExact(secondary, normalize(name), qualifiers);
+  if (exact) return exact.location ? { candidate: exact.location } : exact;
+  const suggestion = suggestedPlace([...primary, ...secondary], name, qualifiers, map);
+  if (!suggestion) return {};
+  const location = toLocation(suggestion.place);
+  return suggestion.exact ? { location } : { candidate: location };
+}
+
+export async function lookupPlace(query, { map = false, signal, request = fetch } = {}) {
+  const [rawName, ...qualifiers] = query.split(',').map(part => alias(part.trim())).filter(Boolean);
+  if (!rawName) return {};
+  const corrected = commonTypos.get(normalize(rawName));
+  const name = corrected || rawName;
+  const url = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(name) + '&language=en&count=20';
+  const data = await readPlaces(url, signal, request);
+  const { places, regionMatch } = primaryPlaces(data, map, normalize(name), qualifiers);
+  const exact = selectExact(places, normalize(name), qualifiers);
+  if (regionMatch) return regionCandidate(exact, places);
+  if (exact) return corrected && exact.location ? { candidate: exact.location } : exact;
+  return secondaryLookup(places, name, qualifiers, map, signal, request);
+}
+
+function readDeviceCoordinates(geolocation, signal) {
+  return new Promise((resolve) => {
     const timeout = setTimeout(() => finish(null), 5500);
     const aborted = () => finish(null);
     function finish(value) {
@@ -82,10 +60,20 @@ export async function getDevicePlace({ signal, geolocation = globalThis.navigato
         { timeout: 5000, maximumAge: 60000, enableHighAccuracy: false });
     } catch { finish(null); }
   });
-  if (signal?.aborted || !coords || !Number.isFinite(coords.accuracy) || coords.accuracy > 5000 ||
-      !Number.isFinite(coords.latitude) || Math.abs(coords.latitude) > 90 ||
-      !Number.isFinite(coords.longitude) || Math.abs(coords.longitude) > 180) return null;
+}
 
+function usableFix(coords) {
+  return coords && Number.isFinite(coords.accuracy) && coords.accuracy <= 5000 && coords.accuracy >= 0 &&
+    Number.isFinite(coords.latitude) && Math.abs(coords.latitude) <= 90 &&
+    Number.isFinite(coords.longitude) && Math.abs(coords.longitude) <= 180;
+}
+
+// Only called after an explicit location request. Inaccurate fixes and reverse
+// geocoding failures must not turn into a default city or a full street address.
+export async function getDevicePlace({ signal, geolocation = globalThis.navigator?.geolocation, request = fetch } = {}) {
+  if (!geolocation || signal?.aborted) return null;
+  const coords = await readDeviceCoordinates(geolocation, signal);
+  if (signal?.aborted || !usableFix(coords)) return null;
   const lat = Number(coords.latitude.toFixed(2));
   const lng = Number(coords.longitude.toFixed(2));
   const result = await readPlaces(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2&zoom=10&accept-language=en`, signal, request);
