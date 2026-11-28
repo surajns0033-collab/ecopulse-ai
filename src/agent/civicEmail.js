@@ -21,7 +21,8 @@ function matchesIncidentCity(message, city) {
   const parts = value => String(value || '').toLowerCase().split(/\s*,\s*/).filter(Boolean);
   const [place, ...qualifiers] = parts(incidentCity(message));
   const [current, ...jurisdiction] = parts(city);
-  return Boolean(place && place === current && qualifiers.every(part => jurisdiction.includes(part)));
+  // A bare place in an unresolved note can refer to a different city with the same name.
+  return Boolean(place && place === current && qualifiers.length && qualifiers.every(part => jurisdiction.includes(part)));
 }
 
 export async function handleCreateEmail(userMessage, conversationHistory, city, turn) {

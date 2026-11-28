@@ -74,3 +74,25 @@ test('official smog questions use only the current question for search and requi
   assert.equal(requests[1].useSearch, true);
   assert.deepEqual(counts, { aqi: 0, weather: 0, forecast: 0 });
 });
+
+test('a commuter asking about 6 pm receives that hour instead of the current city reading', { timeout: 60000 }, async t => {
+  const { context, origin } = await openBrowser(t);
+  const { counts } = await mockDelhi(context);
+  const midday = Date.parse('2026-11-28T06:30:00Z');
+  const sixPm = Date.parse('2026-11-28T12:30:00Z');
+  await context.route('https://air-quality-api.open-meteo.com/**', route => {
+    if (!new URL(route.request().url()).searchParams.has('hourly')) return route.fallback();
+    return route.fulfill({ json: { timezone: 'Asia/Kolkata', current: { time: midday / 1000 },
+      hourly: { time: [sixPm / 1000], us_aqi: [112] } } });
+  });
+  const page = await context.newPage();
+  await page.clock.setFixedTime(new Date(midday));
+  await page.goto(origin);
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await ask(page, 'What will the AQI be in Delhi, India at 6 pm?');
+  const log = page.getByRole('log', { name: 'Chat messages' });
+  const answer = log.locator('.chat-bubble-ai').filter({ hasText: /hourly forecast|current air quality|verify the air-quality/i });
+  await answer.waitFor();
+  assert.match(await answer.innerText(), /18:00.*Asia\/Kolkata.*modeled U.S. AQI 112/is);
+  assert.equal(counts.aqi, 0);
+});

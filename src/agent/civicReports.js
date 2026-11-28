@@ -1,5 +1,5 @@
-import { tools } from '../services/agentTools';
-import { getJsonResponse } from '../services/geminiService';
+import { findVerifiedRecipient } from '../services/verifiedRecipient.js';
+import { getJsonResponse } from '../services/geminiService.js';
 import { resolveCity } from './placeContext.js';
 import { classifyReport, describesIssue, mentionsForest } from './civicIssues.js';
 import { reportContacts, reportFields, reportUrgency } from './civicReportDetails.js';
@@ -30,7 +30,7 @@ function reportingInstructions(city, category, recipient, forest) {
   };
 }
 
-function extractObservation(userMessage, city) {
+function extractObservation(userMessage, city, signal) {
   return getJsonResponse(
     `Extract a concise report title, a clean factual 1-2 sentence description, and the specific locality from this complaint.
 Complaint: "${userMessage}"
@@ -38,19 +38,19 @@ Default city: "${city}".
 Rules: do not invent names, streets, dates or facts. If the locality is not stated, use the default city.
 Respond in JSON: {"title":"...","description":"...","locality":"..."}`,
     '',
-    { timeoutMs: 15000 }
+    { timeoutMs: 15000, signal }
   );
 }
 
-export async function handleCreateReport(userMessage, userId, location) {
+export async function handleCreateReport(userMessage, userId, location, signal) {
   const resolvedCity = resolveCity(location?.city);
   const city = resolvedCity || 'your area';
   const { category, title } = classifyReport(userMessage);
-  const recipient = await tools.findVerifiedRecipient({ issueCategory: category, city });
+  const recipient = await findVerifiedRecipient({ issueCategory: category, city });
   const forest = mentionsForest(userMessage);
   if (asksWhereToReport(userMessage)) return reportingInstructions(city, category, recipient, forest);
 
-  const structured = await extractObservation(userMessage, city);
+  const structured = await extractObservation(userMessage, city, signal);
   const fields = reportFields(userMessage, city, title, structured);
   const data = { ...fields, category, userId, lat: location?.lat, lng: location?.lng };
   const contacts = reportContacts(recipient, forest, true);

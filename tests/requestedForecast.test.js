@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { asksForForecast } from '../src/agent/placeContext.js';
 import { describeRequestedForecast } from '../src/agent/requestedForecast.js';
 
 // A fixture crosses local midnight in India while the UTC calendar date is unchanged.
@@ -26,4 +27,20 @@ test('unsupported horizons, missing slots and invalid time zones stay unavailabl
     assert.equal(describeRequestedForecast(data, message, now).status, 'unavailable');
   }
   assert.match(describeRequestedForecast(forecast, 'tomorrow at 9 am', now).text, /modeled U.S. AQI 98\./);
+});
+
+test('clock-time AQI questions select that local hour even without the word forecast', () => {
+  const midday = Date.parse('2026-11-28T06:30:00Z');
+  const evening = { timeZone: 'Asia/Kolkata', hours: [
+    { time: Date.parse('2026-11-28T11:30:00Z'), aqi: 160 },
+    { time: Date.parse('2026-11-28T12:30:00Z'), aqi: 112 },
+  ] };
+  for (const question of ['What will the AQI be in Delhi at 6 pm?', 'AQI in Delhi at 18:00?']) {
+    assert.equal(asksForForecast(question), true, question);
+    const answer = describeRequestedForecast(evening, question, midday);
+    assert.match(answer.text, /18:00.*Asia\/Kolkata.*modeled U.S. AQI 112/);
+    assert.doesNotMatch(answer.text, /160/);
+  }
+  assert.equal(asksForForecast('I left at 6 pm yesterday. What is the AQI right now?'), false);
+  assert.equal(describeRequestedForecast(evening, 'What was the AQI yesterday at 6 pm?', midday).status, 'unavailable');
 });
