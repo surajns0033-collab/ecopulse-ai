@@ -1,6 +1,6 @@
 # EcoPulse AI · Challenge 6 baseline and remediation plan
 
-Audit date 28 November 2026. This record captures the pre-implementation audit. The comparison point is GitHub `main` at `b2e0a9b533bef2e537c411afef6f2b3152865c59`. The requested remote branch `rank1/weighted-optimization` did not exist when the audit began or at the final reference check. The checked-in application, configuration, deployment and competition entry were untouched. [Pinned repository](https://github.com/surajns0033-collab/ecopulse-ai/tree/b2e0a9b533bef2e537c411afef6f2b3152865c59)
+Audit date 28 November 2026. This record captures the pre-implementation audit. The comparison point is GitHub `main` at `b2e0a9b533bef2e537c411afef6f2b3152865c59`. The audit used the pinned default-branch revision before the feature branch was created. The checked-in application, configuration, deployment and competition entry were untouched. [Pinned repository](https://github.com/surajns0033-collab/ecopulse-ai/tree/b2e0a9b533bef2e537c411afef6f2b3152865c59)
 
 ## Official starting point
 
@@ -252,12 +252,12 @@ Chrome/axe and keyboard flows passed under the repository's current rule selecti
 
 ## Implementation plan for approval
 
-1. Recheck remote and local branch state and isolate the worktree. Create or safely reuse `rank1/weighted-optimization` only after the audit is approved. Record any user changes first.
+1. Recheck remote and local branch state and isolate the worktree. Create or reuse a dedicated feature branch after audit approval. Record any user changes first.
 2. Establish failing regressions for the observed routing, profile loss, no-hood advice, uncertainty and persistence cases. Cover general chat and pending city corrections. Keep all working tests and existing thresholds.
 3. Refactor the routing and reply boundaries against those tests. Extend strict types where data changes shape, then fix high-impact domain behavior and remove confirmed unused direct packages. Run the full verification workflow after the P0 stage.
 4. Validate Firebase configuration and distinct device/cloud persistence results. Prepare schema changes against existing writers and legacy fixtures. Preserve the joint attendance transaction. Review the deployment-native quota option without changing production.
 5. Address cancellation and duplicate requests only with measured regressions. Repeat the byte measurements and protect lazy vision and Guest startup. Check default `npm test`, critical-module coverage, WCAG 2.2 checks, focus and manual assistive-technology gaps.
-6. Review the complete branch diff. Write `docs/quality/FINAL-100-READINESS.md` with the exact changed files, tests, before/after measurements and unresolved risks only after implementation. Stop before merge, production deployment, release publication or competition submission unless explicitly authorized.
+6. Review the complete branch diff. Write `docs/quality/READINESS.md` with the exact changed files, tests, before/after measurements and unresolved risks only after implementation. Stop before merge, production deployment, release publication or competition submission unless explicitly authorized.
 
 ## Inventory annotations
 

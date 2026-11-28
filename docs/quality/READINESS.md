@@ -1,19 +1,19 @@
 # EcoPulse AI readiness review
 
-**Verified on 28 November 2026.** The feature branch is `rank1/weighted-optimization`. All 14 checks in the submission benchmark passed on implementation commit `d1070dd9e5e30a3709603ec2ad70acdaf478705e`. Standalone Node test discovery also passed. This report is the subsequent documentation change. [Tested commit](https://github.com/surajns0033-collab/ecopulse-ai/commit/d1070dd9e5e30a3709603ec2ad70acdaf478705e) · [CI run](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46150391538) · [Full command output](https://github.com/surajns0033-collab/ecopulse-ai/commit/d1070dd9e5e30a3709603ec2ad70acdaf478705e/checks/140995531585/logs)
+**Verified on 28 November 2026.** The feature branch is `air-quality-updates`. All 14 checks in the submission benchmark passed on implementation commit `d1070dd9e5e30a3709603ec2ad70acdaf478705e`. Standalone Node test discovery also passed. [Latest branch checks](https://github.com/surajns0033-collab/ecopulse-ai/actions/workflows/verify.yml?query=branch%3Aair-quality-updates) · [Tested commit](https://github.com/surajns0033-collab/ecopulse-ai/commit/d1070dd9e5e30a3709603ec2ad70acdaf478705e) · [CI run](https://github.com/surajns0033-collab/ecopulse-ai/actions/runs/46150391538) · [Full command output](https://github.com/surajns0033-collab/ecopulse-ai/commit/d1070dd9e5e30a3709603ec2ad70acdaf478705e/checks/140995531585/logs)
 
 ## Official starting point
 
-The last competition result supplied by the project owner was **95.19/100** on Attempt 2. The portal did not identify the graded commit. A new official result and rank are pending the owner’s submission. The internal benchmark reports pass, fail or blocked for engineering checks. [Baseline audit](BASELINE.md)
+The last competition result supplied by the project owner was **95.19/100** on Attempt 2. The portal did not identify the graded commit. The internal benchmark reports pass, fail or blocked for engineering checks. [Baseline audit](BASELINE.md)
 
-| Priority | Criterion | Last official score | Target |
-| --- | --- | ---: | ---: |
-| P0 · high impact | Code Quality | 86 | 100 |
-| P0 · high impact | Problem Statement Alignment | 99 | 100 |
-| P1 · medium impact | Security | 98 | 100 |
-| P1 · medium impact | Efficiency | 100 | Maintain 100 |
-| P2 · low impact | Testing | 94 | 100 |
-| P2 · low impact | Accessibility | 96 | 100 |
+| Priority | Criterion | Last official score |
+| --- | --- | ---: |
+| P0 · high impact | Code Quality | 86 |
+| P0 · high impact | Problem Statement Alignment | 99 |
+| P1 · medium impact | Security | 98 |
+| P1 · medium impact | Efficiency | 100 |
+| P2 · low impact | Testing | 94 |
+| P2 · low impact | Accessibility | 96 |
 
 ## Measurements
 
@@ -149,7 +149,7 @@ The tested comparison contains 120 paths (85 modified and 35 added). The report 
 M  .github/workflows/verify.yml
 M  docs/quality-verification.md
 A  docs/quality/BASELINE.md
-A  docs/quality/FINAL-100-READINESS.md
+A  docs/quality/READINESS.md
 M  FIREBASE_SETUP.md
 M  firestore.indexes.json
 M  firestore.rules

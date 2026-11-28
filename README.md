@@ -314,7 +314,7 @@ After `npm ci`, run `npm run benchmark:submission` with Node 24.12 or later in t
 
 Try `mera smgo plan banao in Delhi, India. I cycle to work.` and then `air polution forcast in Delhi, India tommorow morning`. The Chrome regression checks the selected city, the local forecast period and the original text shown in Chat. Another journey edits a photo complaint and saves the reviewed draft. Browser fixtures supply synthetic readings and provider responses so the checks can run without service keys. [Chat spelling regression](tests/chatSpelling.browser.mjs) · [Photo and draft review](tests/draftReview.browser.mjs)
 
-The critical-coverage gate measures its listed modules together. The separate broad unit suite reports its exercised application and server code. Each JavaScript asset and the total JavaScript loaded on device-only Guest Chat entry have an independent 500,000-byte limit. [Critical module list](tests/criticalCoverage.mjs) · [Browser budgets](tests/vision.browser.mjs) · [Branch readiness report](docs/quality/FINAL-100-READINESS.md)
+The critical-coverage gate measures its listed modules together. The separate broad unit suite reports its exercised application and server code. Each JavaScript asset and the total JavaScript loaded on device-only Guest Chat entry have an independent 500,000-byte limit. [Critical module list](tests/criticalCoverage.mjs) · [Browser budgets](tests/vision.browser.mjs) · [Branch readiness report](docs/quality/READINESS.md)
 
 ---
 

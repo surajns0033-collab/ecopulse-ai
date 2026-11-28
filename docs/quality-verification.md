@@ -29,7 +29,7 @@ Run `npm ci` followed by `npm run benchmark:submission`. Each push and pull requ
 | Accessibility | Low | Chrome checks keyboard shortcuts, dialog focus and return, 320-pixel reflow, reduced-motion settings and axe’s WCAG 2.0–2.2 A/AA rules in the exercised states. It covers sign-in, Chat, AQI, drafts, reports, the public feed, navigation and meetup creation. Native screen-reader and full browser-zoom checks are tracked separately. |
 | Problem Statement Alignment | High | Family, school, commuter and community scenarios check household details, stated equipment, source times and the difference between exposure and emissions. Chrome types misspelled English and Hinglish questions and exercises local-hour forecasts, original message text, reviewed photo drafts and event registration. |
 
-The competition platform assigns the official score. These project thresholds detect code regressions. A full run prints its exit codes, byte counts, test totals, coverage and the remaining function warnings. The historical audit and branch report give the baseline and candidate measurements. [Baseline](quality/BASELINE.md) · [Readiness report](quality/FINAL-100-READINESS.md)
+The competition platform assigns the official score. These project thresholds detect code regressions. A full run prints its exit codes, byte counts, test totals, coverage and the remaining function warnings. The historical audit and branch report give the baseline and candidate measurements. [Baseline](quality/BASELINE.md) · [Readiness report](quality/READINESS.md)
 
 ## Run individual checks
 
@@ -56,7 +56,7 @@ For the Chrome suite, build with `VITE_FIREBASE_API_KEY=demo-key` or start from 
 
 ### Chat startup and photo fallback
 
-The bundle regression measures uncompressed bytes for the largest emitted JavaScript file and total JavaScript requested at device-only Guest Chat entry. Each must stay within 500,000 bytes. It also checks that Guest entry fetches neither the classifier weights nor WebAssembly. [Bundle and browser check](../tests/vision.browser.mjs) · [Recorded measurements](quality/FINAL-100-READINESS.md)
+The bundle regression measures uncompressed bytes for the largest emitted JavaScript file and total JavaScript requested at device-only Guest Chat entry. Each must stay within 500,000 bytes. It also checks that Guest entry fetches neither the classifier weights nor WebAssembly. [Bundle and browser check](../tests/vision.browser.mjs) · [Recorded measurements](quality/READINESS.md)
 
 The photo regression uploads a synthetic image through Chat and simulates a cloud outage. Chrome executes the same WebAssembly runtime the app serves, using a small test model whose labels tie. The expected result asks the user to describe the image. This checks the fallback and its handling of uncertainty. Evaluating accuracy on real pollution photos requires labeled examples. The first use of the production fallback also fetches approximately 154 MB of quantized model weights, which the browser can cache for later photos. [Browser test](../tests/vision.browser.mjs) · [Production checkpoint](https://huggingface.co/Xenova/clip-vit-base-patch32/tree/main/onnx)
 
